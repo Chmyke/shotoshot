@@ -68,7 +68,11 @@ fn instant() -> Result<(), Box<dyn Error>> {
     let image = capture()?;
     let folder = editor::user_dir("XDG_DESKTOP_DIR", "Desktop");
     std::fs::create_dir_all(&folder)?;
-    png_io::save(&image, &shotoshot_ui::capture_name::next_path(&folder)?)?;
+    let format = shotoshot_core::settings::SaveFormat::Png;
+    png_io::save(
+        &image,
+        &shotoshot_ui::capture_name::next_path(&folder, format)?,
+    )?;
     Ok(())
 }
 

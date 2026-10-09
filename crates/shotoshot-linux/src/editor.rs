@@ -3,7 +3,10 @@
 //! OWNER: One editor per capture; the process ends with it.
 //! INVARIANTS: Window pixels map to capture pixels by a per-axis scale (1:1 on one monitor).
 use crate::{clipboard, keymap, monitors, notice, png_io, settings};
-use shotoshot_core::{Modifiers, Point, settings::Settings};
+use shotoshot_core::{
+    Modifiers, Point,
+    settings::{SaveFormat, Settings},
+};
 use shotoshot_raster::{Raster, pixmap_from_bgra};
 use shotoshot_ui::{
     Canvas, Capture, CursorKind, DimensionFields, DimensionKey, FieldKey, Host, Image, Monitor,
@@ -473,7 +476,7 @@ impl Editor {
         let image = self.export()?;
         let folder = folder.map_or_else(pictures_dir, |f| f.to_path_buf());
         std::fs::create_dir_all(&folder)?;
-        let path = capture_name::next_path(&folder)?;
+        let path = capture_name::next_path(&folder, SaveFormat::Png)?;
         png_io::save(&image, &path)?;
         Ok(path)
     }

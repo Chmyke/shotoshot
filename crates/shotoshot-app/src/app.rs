@@ -601,7 +601,10 @@ impl App {
             Action::Save => {
                 if s.save(hwnd, &mut self.settings)? {
                     if self.persist_preferences
-                        && let Err(error) = Settings::save_editor_folder(&self.settings.folder)
+                        && let Err(error) = Settings::save_destination(
+                            &self.settings.folder,
+                            self.settings.save_format,
+                        )
                     {
                         message(hwnd, &format!("Could not save settings: {error}"));
                     }

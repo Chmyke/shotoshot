@@ -1,27 +1,61 @@
 use super::*;
+use crate::settings::SaveFormat;
+use std::path::{Path, PathBuf};
 
+/// Posted to the hook with the one-based entry of the type list as WPARAM.
 const UPDATE_CAPTURE_NAME: u32 = WM_APP + 83;
+/// The type list of the Save dialog: one entry per `SaveFormat::ALL`, in that order.
+const SAVE_FILTER: PCWSTR = w!("PNG image\0*.png\0JPEG image\0*.jpg;*.jpeg\0\0");
+
+fn listed_format(filter_index: u32) -> SaveFormat {
+    SaveFormat::ALL
+        .get((filter_index as usize).wrapping_sub(1))
+        .copied()
+        .unwrap_or_default()
+}
+/// The file is what its name says; any other name is written as listed.
+fn chosen_format(path: &Path, filter_index: u32) -> SaveFormat {
+    SaveFormat::of(path).unwrap_or_else(|| listed_format(filter_index))
+}
+/// The path the dialog left in its null-terminated buffer.
+fn chosen_path(buffer: &[u16]) -> PathBuf {
+    use std::os::windows::ffi::OsStringExt;
+    let length = buffer.iter().position(|v| *v == 0).unwrap_or(buffer.len());
+    PathBuf::from(std::ffi::OsString::from_wide(&buffer[..length]))
+}
 
 // Defer until Explorer has finished updating its filename field.
 unsafe extern "system" fn save_dialog_hook(
     hwnd: HWND,
     message: u32,
-    _: WPARAM,
+    wparam: WPARAM,
     lparam: LPARAM,
 ) -> usize {
     unsafe {
         if message == WM_NOTIFY && lparam.0 != 0 {
             let notification = &*(lparam.0 as *const OFNOTIFYW);
-            if notification.hdr.code == CDN_FOLDERCHANGE {
-                let _ = PostMessageW(Some(hwnd), UPDATE_CAPTURE_NAME, WPARAM(0), LPARAM(0));
+            if matches!(notification.hdr.code, CDN_FOLDERCHANGE | CDN_TYPECHANGE)
+                && !notification.lpOFN.is_null()
+            {
+                let listed = (*notification.lpOFN).nFilterIndex as usize;
+                let _ = PostMessageW(Some(hwnd), UPDATE_CAPTURE_NAME, WPARAM(listed), LPARAM(0));
             }
         }
         if message != UPDATE_CAPTURE_NAME {
             return 0;
         }
+        let format = listed_format(wparam.0 as u32);
         let Ok(dialog) = GetParent(hwnd) else {
             return 0;
         };
+        // A name typed without an extension takes the listed format's.
+        let extension = crate::wide(Path::new(format.extension()));
+        SendMessageW(
+            dialog,
+            CDM_SETDEFEXT,
+            Some(WPARAM(0)),
+            Some(LPARAM(extension.as_ptr() as isize)),
+        );
         let mut folder = vec![0u16; 32768];
         let length = SendMessageW(
             dialog,
@@ -47,27 +81,35 @@ unsafe extern "system" fn save_dialog_hook(
         let name = String::from_utf16_lossy(
             &name[..name.iter().position(|c| *c == 0).unwrap_or(name.len())],
         );
-        // Preserve a name the user has typed themselves.
-        if !name.is_empty()
-            && crate::capture_name::number(std::path::Path::new(&name)).is_none()
-            && !std::path::Path::new(&name).is_dir()
+        let typed = Path::new(&name);
+        let name = if !name.is_empty()
+            && crate::capture_name::number(typed).is_none()
+            && !typed.is_dir()
         {
-            return 0;
-        }
-        use std::os::windows::ffi::OsStringExt;
-        let folder = std::path::PathBuf::from(std::ffi::OsString::from_wide(
-            &folder[..length as usize - 1],
-        ));
-        if let Ok(path) = crate::capture_name::next_path(&folder) {
-            let name = crate::wide(std::path::Path::new(path.file_name().unwrap()));
-            // edt1 is the standard filename field of the Explorer-style save dialog.
-            SendMessageW(
-                dialog,
-                CDM_SETCONTROLTEXT,
-                Some(WPARAM(0x480)),
-                Some(LPARAM(name.as_ptr() as isize)),
-            );
-        }
+            // Preserve a name the user has typed themselves: only its image extension
+            // follows the type list.
+            match SaveFormat::of(typed) {
+                Some(current) if current != format => typed.with_extension(format.extension()),
+                _ => return 0,
+            }
+        } else {
+            use std::os::windows::ffi::OsStringExt;
+            let folder = PathBuf::from(std::ffi::OsString::from_wide(
+                &folder[..length as usize - 1],
+            ));
+            match crate::capture_name::next_path(&folder, format) {
+                Ok(path) => PathBuf::from(path.file_name().unwrap()),
+                Err(_) => return 0,
+            }
+        };
+        let name = crate::wide(&name);
+        // edt1 is the standard filename field of the Explorer-style save dialog.
+        SendMessageW(
+            dialog,
+            CDM_SETCONTROLTEXT,
+            Some(WPARAM(0x480)),
+            Some(LPARAM(name.as_ptr() as isize)),
+        );
         0
     }
 }
@@ -214,21 +256,23 @@ impl Session {
         unsafe {
             let folder = settings.save_folder()?;
             let folder_wide = crate::wide(&folder);
-            let suggested = crate::capture_name::next_path(&folder)
+            let suggested = crate::capture_name::next_path(&folder, settings.save_format)
                 .map_err(|e| Error::new(E_FAIL, e.to_string()))?;
             let filename = suggested.file_name().unwrap().to_string_lossy();
             let mut buffer = vec![0u16; 32768];
             for (i, c) in filename.encode_utf16().enumerate() {
                 buffer[i] = c;
             }
+            let extension = crate::wide(Path::new(settings.save_format.extension()));
             let mut dialog = OPENFILENAMEW {
                 lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
                 hwndOwner: hwnd,
-                lpstrFilter: w!("PNG image\0*.png\0\0"),
+                lpstrFilter: SAVE_FILTER,
+                nFilterIndex: settings.save_format.index() as u32 + 1,
                 lpstrFile: PWSTR(buffer.as_mut_ptr()),
                 nMaxFile: buffer.len() as u32,
                 lpstrInitialDir: PCWSTR(folder_wide.as_ptr()),
-                lpstrDefExt: w!("png"),
+                lpstrDefExt: PCWSTR(extension.as_ptr()),
                 Flags: OFN_OVERWRITEPROMPT
                     | OFN_PATHMUSTEXIST
                     | OFN_NOCHANGEDIR
@@ -247,18 +291,17 @@ impl Session {
                 }
                 return Ok(false);
             }
-            use std::os::windows::ffi::OsStringExt;
-            let path = std::path::PathBuf::from(std::ffi::OsString::from_wide(
-                &buffer[..buffer.iter().position(|v| *v == 0).unwrap_or(buffer.len())],
-            ));
+            let path = chosen_path(&buffer);
+            let format = chosen_format(&path, dialog.nFilterIndex);
             if crate::capture_name::number(&path).is_some() {
-                save_numbered_png(&output, &path)?;
+                save_numbered(&output, &path, format)?;
             } else {
-                save_png(&output, &path)?;
+                save_image(&output, &path, format)?;
             }
             if let Some(parent) = path.parent() {
                 settings.folder = parent.into();
             }
+            settings.save_format = format;
             Ok(true)
         }
     }
@@ -267,9 +310,29 @@ impl Session {
 #[cfg(test)]
 mod save_dialog_tests {
     use super::*;
+    /// What the probe does each time the dialog shows a name, in order.
+    enum Step {
+        /// Types this folder and confirms, which navigates there.
+        Navigate(PathBuf),
+        /// Types this name, if any, then picks this entry of the type list.
+        List(Option<&'static str>, usize),
+        /// Presses Save.
+        Confirm,
+    }
     struct Probe {
-        destination: Vec<u16>,
+        steps: Vec<Step>,
         names: Vec<String>,
+    }
+    unsafe fn type_name(dialog: HWND, name: &str) {
+        let name: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
+        unsafe {
+            SendMessageW(
+                dialog,
+                CDM_SETCONTROLTEXT,
+                Some(WPARAM(0x480)),
+                Some(LPARAM(name.as_ptr() as isize)),
+            );
+        }
     }
     unsafe extern "system" fn timeout(hwnd: HWND, _: u32, _: usize, _: u32) {
         unsafe {
@@ -284,6 +347,15 @@ mod save_dialog_tests {
     ) -> usize {
         unsafe {
             save_dialog_hook(hwnd, message, wparam, lparam);
+            if message == WM_NOTIFY
+                && lparam.0 != 0
+                && (*(lparam.0 as *const OFNOTIFYW)).hdr.code == CDN_INITDONE
+            {
+                // Once placed, move the dialog off the screens other tests read pixels from.
+                let dialog = GetParent(hwnd).unwrap();
+                let flags = SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE;
+                SetWindowPos(dialog, None, -30000, -30000, 0, 0, flags).unwrap();
+            }
             if message == WM_INITDIALOG {
                 let data = (*(lparam.0 as *const OPENFILENAMEW)).lCustData.0;
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, data);
@@ -303,59 +375,147 @@ mod save_dialog_tests {
                 state.names.push(String::from_utf16_lossy(
                     &name[..name.iter().position(|v| *v == 0).unwrap_or(0)],
                 ));
-                if state.names.len() == 1 {
-                    SendMessageW(
-                        dialog,
-                        CDM_SETCONTROLTEXT,
-                        Some(WPARAM(0x480)),
-                        Some(LPARAM(state.destination.as_ptr() as isize)),
-                    );
-                    let _ = PostMessageW(Some(dialog), WM_COMMAND, WPARAM(1), LPARAM(0));
-                }
-                if state.names.len() == 2 {
-                    let _ = KillTimer(Some(dialog), 123);
-                    let _ = PostMessageW(Some(dialog), WM_COMMAND, WPARAM(2), LPARAM(0));
+                match state.steps.get(state.names.len() - 1) {
+                    Some(Step::Navigate(folder)) => {
+                        type_name(dialog, &format!("{}\\", folder.display()));
+                        let _ = PostMessageW(Some(dialog), WM_COMMAND, WPARAM(1), LPARAM(0));
+                    }
+                    Some(Step::List(typed, entry)) => {
+                        if let Some(typed) = typed {
+                            type_name(dialog, typed);
+                        }
+                        // cmb1 is the standard type list. The dialog only reads it once
+                        // it closes, so the probe sends what a click on an entry sends.
+                        let list = GetDlgItem(Some(dialog), 0x470).unwrap();
+                        let notify = |code: u32| {
+                            SendMessageW(
+                                dialog,
+                                WM_COMMAND,
+                                Some(WPARAM(((code as usize) << 16) | 0x470)),
+                                Some(LPARAM(list.0 as isize)),
+                            );
+                        };
+                        notify(CBN_DROPDOWN);
+                        SendMessageW(list, CB_SETCURSEL, Some(WPARAM(*entry)), None);
+                        notify(CBN_SELENDOK);
+                        notify(CBN_CLOSEUP);
+                        notify(CBN_SELCHANGE);
+                    }
+                    last => {
+                        let _ = KillTimer(Some(dialog), 123);
+                        let button = if last.is_some() { 1 } else { 2 };
+                        let _ = PostMessageW(Some(dialog), WM_COMMAND, WPARAM(button), LPARAM(0));
+                    }
                 }
             }
             0
         }
     }
-    #[test]
-    fn native_save_dialog_renumbers_after_folder_navigation() {
+    /// Opens the real dialog on `root`, listing PNG, and plays `steps`. Returns every name
+    /// it showed and, when Save was pressed, the path and type list entry chosen.
+    fn shown(root: &Path, steps: Vec<Step>) -> (Vec<String>, Option<(PathBuf, u32)>) {
         let _com = crate::ComApartment::new().unwrap();
-        let root =
-            std::env::temp_dir().join(format!("shotoshot-save-dialog-{}", std::process::id()));
-        let old = root.join("old");
-        std::fs::create_dir_all(&old).unwrap();
-        std::fs::write(root.join("Capture 001.png"), b"keep").unwrap();
-        std::fs::write(old.join("Capture 008.png"), b"keep").unwrap();
         let mut state = Probe {
-            destination: format!("{}\\", old.display())
-                .encode_utf16()
-                .chain(Some(0))
-                .collect(),
+            steps,
             names: vec![],
         };
-        let folder = crate::wide(&root);
+        let folder = crate::wide(root);
         let mut buffer = vec![0u16; 32768];
-        let name = crate::wide(std::path::Path::new("Capture 001.png"));
+        let name = crate::wide(Path::new("Capture 001.png"));
         buffer[..name.len()].copy_from_slice(&name);
         let mut dialog = OPENFILENAMEW {
             lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
             lpstrInitialDir: PCWSTR(folder.as_ptr()),
             lpstrFile: PWSTR(buffer.as_mut_ptr()),
             nMaxFile: buffer.len() as u32,
-            lpstrFilter: w!("PNG image\0*.png\0\0"),
+            lpstrFilter: SAVE_FILTER,
+            nFilterIndex: 1,
             lpstrDefExt: w!("png"),
             Flags: OFN_EXPLORER | OFN_ENABLEHOOK | OFN_NOCHANGEDIR | OFN_PATHMUSTEXIST,
             lpfnHook: Some(probe),
             lCustData: LPARAM(&mut state as *mut Probe as isize),
             ..Default::default()
         };
-        unsafe {
-            let _ = GetSaveFileNameW(&mut dialog);
-        }
+        let saved = unsafe { GetSaveFileNameW(&mut dialog) }
+            .as_bool()
+            .then(|| (chosen_path(&buffer), dialog.nFilterIndex));
+        (state.names, saved)
+    }
+    // The real dialog takes the foreground, which the tests of windows that must not
+    // activate are watching: it runs apart, and one dialog plays the whole scenario.
+    #[test]
+    #[ignore = "real desktop: opens the Windows Save dialog, run alone by check.ps1"]
+    fn real_desktop_save_dialog_follows_the_folder_and_the_type_list() {
+        let root =
+            std::env::temp_dir().join(format!("shotoshot-save-dialog-{}", std::process::id()));
+        let old = root.join("old");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(root.join("Capture 001.png"), b"keep").unwrap();
+        std::fs::write(old.join("Capture 008.png"), b"keep").unwrap();
+        std::fs::write(old.join("Shot 011.jpg"), b"keep").unwrap();
+        let (names, saved) = shown(
+            &root,
+            vec![
+                Step::Navigate(old.clone()),
+                Step::List(None, 1),
+                Step::List(Some("Invoice May.jpg"), 0),
+                Step::List(Some("Invoice May"), 1),
+                Step::Confirm,
+            ],
+        );
         std::fs::remove_dir_all(root).unwrap();
-        assert_eq!(state.names, ["Shot 002.png", "Shot 009.png"]);
+        assert_eq!(
+            names,
+            [
+                "Shot 002.png",
+                // Renumbered for the folder reached, where a JPEG holds the largest number.
+                "Shot 012.png",
+                // The proposed name follows the type list.
+                "Shot 012.jpg",
+                // A typed name is kept; only its image extension follows.
+                "Invoice May.png",
+                // The dialog reports a bare name with the extension it is about to append.
+                "Invoice May.jpg",
+            ]
+        );
+        let (path, listed) = saved.unwrap();
+        assert_eq!(path.file_name().unwrap(), "Invoice May.jpg");
+        assert_eq!(path.parent().unwrap().file_name().unwrap(), "old");
+        assert_eq!(listed, 2);
+        assert_eq!(chosen_format(&path, listed), SaveFormat::Jpeg);
+    }
+    #[test]
+    fn the_name_decides_the_format_and_the_type_list_settles_the_rest() {
+        let chosen = |name: &str, listed| chosen_format(Path::new(name), listed);
+        assert_eq!(chosen("Shot 001.png", 2), SaveFormat::Png);
+        assert_eq!(chosen("photo.JPEG", 1), SaveFormat::Jpeg);
+        assert_eq!(chosen("notes.txt", 2), SaveFormat::Jpeg);
+        assert_eq!(chosen("bare", 1), SaveFormat::Png);
+    }
+    #[test]
+    fn type_list_entries_follow_the_save_formats() {
+        // The list ends at its first empty string.
+        let mut units = vec![];
+        let mut unit = SAVE_FILTER.0;
+        unsafe {
+            while *unit != 0 || *unit.add(1) != 0 {
+                units.push(*unit);
+                unit = unit.add(1);
+            }
+        }
+        let entries: Vec<_> = units
+            .split(|unit| *unit == 0)
+            .map(String::from_utf16_lossy)
+            .collect();
+        assert_eq!(entries.len(), SaveFormat::ALL.len() * 2);
+        for (format, entry) in SaveFormat::ALL.into_iter().zip(entries.chunks(2)) {
+            let pattern = format!("*.{}", format.extension());
+            assert!(
+                entry[1].starts_with(&pattern),
+                "{entry:?} is not {format:?}"
+            );
+            assert_eq!(listed_format(format.index() as u32 + 1), format);
+        }
+        assert_eq!(listed_format(0), SaveFormat::Png);
     }
 }

@@ -108,7 +108,7 @@ drawn keep theirs. Ctrl+Z undoes the whole stroke.
 | Del | Delete the selection |
 | Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z | Undo / redo |
 | Ctrl+C / Ctrl+V | Copy the selected annotations / duplicate them in the session; with no selection, Ctrl+C copies the image |
-| Ctrl+Shift+C / Ctrl+S | Copy the image explicitly / save as PNG |
+| Ctrl+Shift+C / Ctrl+S | Copy the image explicitly / save as PNG or JPEG |
 | Ctrl+G / F2 | Google Lens / live or frozen |
 | Esc | Cancel the gesture or the text entry in progress, then close the capture |
 
@@ -200,9 +200,17 @@ upload fails; the PNG is limited to 20 MB.
 
 ### Output
 
-The PNG and clipboard output is flattened and contains neither bars nor handles. The initial
-folder is the Windows Desktop; the last folder used is remembered, falling back to the Desktop if
-it disappears. A successful output closes the session; a failure keeps it open.
+The saved file and the clipboard output are flattened and contain neither bars nor handles. The
+initial folder is the Windows Desktop; the last folder used is remembered, falling back to the
+Desktop if it disappears. A successful output closes the session; a failure keeps it open.
+
+The type list of the Save dialog chooses the format, **PNG** or **JPEG**, and the proposed name
+follows it; a name typed with `.png`, `.jpg` or `.jpeg` is written in that format. Both are
+always written at their best, so there is no quality setting: PNG is lossless, JPEG uses the
+highest quality with color at full resolution. On an interface capture a JPEG is usually larger
+than the PNG; it is there for photos, video frames and sites that refuse PNG. The last format
+used is remembered, `Shot NNN` numbers are shared by both formats, and the instant screenshot
+stays a PNG. Linux saves PNG only.
 
 ## Presenting live, without capturing
 

@@ -68,9 +68,11 @@ impl InstantCapture {
 }
 
 fn save_to(image: &Image, folder: &Path) -> Result<()> {
-    let path =
-        crate::capture_name::next_path(folder).map_err(|e| Error::new(E_FAIL, e.to_string()))?;
-    crate::save_numbered_png(image, &path)?;
+    // No dialog, so no format choice: the instant capture stays lossless.
+    let format = crate::settings::SaveFormat::Png;
+    let path = crate::capture_name::next_path(folder, format)
+        .map_err(|e| Error::new(E_FAIL, e.to_string()))?;
+    crate::save_numbered(image, &path, format)?;
     Ok(())
 }
 

@@ -1,9 +1,11 @@
 #![cfg(windows)]
-use shotoshot_app::{ComApartment, Image, ImageExt, Renderer, load_png, save_png};
-use shotoshot_core::*;
+use shotoshot_app::{
+    ComApartment, Image, ImageExt, Renderer, load_png, save_image, save_numbered, save_png,
+};
+use shotoshot_core::{settings::SaveFormat, *};
 
 #[test]
-fn numbered_png_never_overwrites_an_existing_capture() {
+fn numbered_save_never_overwrites_an_existing_capture() {
     let _com = ComApartment::new().unwrap();
     let folder =
         std::env::temp_dir().join(format!("shotoshot-numbered-export-{}", std::process::id()));
@@ -11,14 +13,52 @@ fn numbered_png_never_overwrites_an_existing_capture() {
     let original = folder.join("Capture 001.png");
     std::fs::write(&original, b"previous screenshot").unwrap();
     let image = Image::solid(2, 2, [10, 20, 30, 255]);
-    let second = shotoshot_app::save_numbered_png(&image, &original).unwrap();
+    let second = save_numbered(&image, &original, SaveFormat::Png).unwrap();
     assert_eq!(second, folder.join("Shot 002.png"));
-    let third = shotoshot_app::save_numbered_png(&image, &original).unwrap();
+    let third = save_numbered(&image, &original, SaveFormat::Png).unwrap();
     assert_eq!(third, folder.join("Shot 003.png"));
     assert_eq!(std::fs::read(&original).unwrap(), b"previous screenshot");
     assert_eq!(load_png(&second).unwrap().pixels, image.pixels);
     assert_eq!(load_png(&third).unwrap().pixels, image.pixels);
+    // A JPEG taken by another editor meanwhile is kept, and the retry stays a JPEG.
+    let taken = folder.join("Shot 004.jpg");
+    std::fs::write(&taken, b"previous jpeg").unwrap();
+    let fifth = save_numbered(&image, &taken, SaveFormat::Jpeg).unwrap();
+    assert_eq!(fifth, folder.join("Shot 005.jpg"));
+    assert_eq!(std::fs::read(&taken).unwrap(), b"previous jpeg");
+    assert_eq!(&std::fs::read(&fifth).unwrap()[..3], &[0xFF, 0xD8, 0xFF]);
     std::fs::remove_dir_all(folder).unwrap();
+}
+
+#[test]
+fn jpeg_keeps_one_pixel_colored_lines_sharp() {
+    let _com = ComApartment::new().unwrap();
+    // Saturated one-pixel lines on white, as annotations are: a lower quality or a halved
+    // color resolution, the encoder's default, smears them.
+    let mut image = Image::solid(64, 48, [255, 255, 255, 255]);
+    for (index, pixel) in image.pixels.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+        let (x, y) = (index % 64, index / 64);
+        if x % 7 == 3 {
+            *pixel = [0, 0, 255, 255];
+        } else if y % 5 == 2 {
+            *pixel = [255, 0, 0, 255];
+        }
+    }
+    let file = std::env::temp_dir().join(format!("shotoshot-test-{}-é.jpg", std::process::id()));
+    save_image(&image, &file, SaveFormat::Jpeg).unwrap();
+    let signature = std::fs::read(&file).unwrap()[..3].to_vec();
+    let decoded = load_png(&file).unwrap();
+    std::fs::remove_file(file).unwrap();
+    assert_eq!(signature, [0xFF, 0xD8, 0xFF]);
+    assert_eq!((decoded.width, decoded.height), (64, 48));
+    let worst = image
+        .pixels
+        .iter()
+        .zip(&decoded.pixels)
+        .map(|(expected, actual)| expected.abs_diff(*actual))
+        .max()
+        .unwrap();
+    assert!(worst <= 4, "a channel moved by {worst}");
 }
 
 #[test]

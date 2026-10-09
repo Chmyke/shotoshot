@@ -1,11 +1,17 @@
 use crate::{Image, ImageExt};
+use shotoshot_core::settings::SaveFormat;
 use std::{os::windows::ffi::OsStrExt, path::Path};
 use windows::{
     Win32::{
         Foundation::*,
         Graphics::Imaging::*,
         Storage::FileSystem::*,
-        System::{Com::*, DataExchange::*, Memory::*},
+        System::{
+            Com::{StructuredStorage::*, *},
+            DataExchange::*,
+            Memory::*,
+            Variant::*,
+        },
     },
     core::*,
 };
@@ -17,9 +23,13 @@ pub fn wide(path: &Path) -> Vec<u16> {
     path.as_os_str().encode_wide().chain(Some(0)).collect()
 }
 pub fn save_png(image: &Image, path: &Path) -> Result<()> {
+    save_image(image, path, SaveFormat::Png)
+}
+/// Writes `image` in `format`; `path` is replaced only by a complete file.
+pub fn save_image(image: &Image, path: &Path, format: SaveFormat) -> Result<()> {
     image.validate()?;
     let temporary = path.with_extension(format!("{}.tmp", std::process::id()));
-    let outcome = encode(image, &temporary).and_then(|()| unsafe {
+    let outcome = encode(image, &temporary, format).and_then(|()| unsafe {
         MoveFileExW(
             PCWSTR(wide(&temporary).as_ptr()),
             PCWSTR(wide(path).as_ptr()),
@@ -32,11 +42,15 @@ pub fn save_png(image: &Image, path: &Path) -> Result<()> {
     outcome
 }
 // Never replace a numbered capture, even if another editor saved after the dialog opened.
-pub fn save_numbered_png(image: &Image, requested: &Path) -> Result<std::path::PathBuf> {
+pub fn save_numbered(
+    image: &Image,
+    requested: &Path,
+    format: SaveFormat,
+) -> Result<std::path::PathBuf> {
     image.validate()?;
     let temporary = requested.with_extension(format!("{}.tmp", std::process::id()));
     let result = (|| {
-        encode(image, &temporary)?;
+        encode(image, &temporary, format)?;
         let mut destination = requested.to_path_buf();
         loop {
             match unsafe {
@@ -53,6 +67,7 @@ pub fn save_numbered_png(image: &Image, requested: &Path) -> Result<std::path::P
                 {
                     destination = crate::capture_name::next_path(
                         requested.parent().unwrap_or(Path::new(".")),
+                        format,
                     )
                     .map_err(|e| Error::new(E_FAIL, e.to_string()))?;
                 }
@@ -66,29 +81,53 @@ pub fn save_numbered_png(image: &Image, requested: &Path) -> Result<std::path::P
     result
 }
 
-fn encode(image: &Image, path: &Path) -> Result<()> {
+fn encode(image: &Image, path: &Path, format: SaveFormat) -> Result<()> {
     unsafe {
         let wic = factory()?;
         let stream = wic.CreateStream()?;
         stream.InitializeFromFilename(PCWSTR(wide(path).as_ptr()), GENERIC_WRITE.0)?;
-        encode_stream(image, &wic, &stream)
+        encode_stream(image, &wic, &stream, format)
     }
 }
-fn encode_stream(image: &Image, wic: &IWICImagingFactory, stream: &IStream) -> Result<()> {
+fn encode_stream(
+    image: &Image,
+    wic: &IWICImagingFactory,
+    stream: &IStream,
+    format: SaveFormat,
+) -> Result<()> {
     unsafe {
-        let encoder = wic.CreateEncoder(&GUID_ContainerFormatPng, std::ptr::null())?;
+        // JPEG stores no alpha: the same pixels are read as opaque.
+        let (container, mut stored, memory) = match format {
+            SaveFormat::Png => (
+                &GUID_ContainerFormatPng,
+                GUID_WICPixelFormat32bppBGRA,
+                &GUID_WICPixelFormat32bppBGRA,
+            ),
+            SaveFormat::Jpeg => (
+                &GUID_ContainerFormatJpeg,
+                GUID_WICPixelFormat24bppBGR,
+                &GUID_WICPixelFormat32bppBGR,
+            ),
+        };
+        let encoder = wic.CreateEncoder(container, std::ptr::null())?;
         encoder.Initialize(stream, WICBitmapEncoderNoCache)?;
         let mut frame = None;
-        encoder.CreateNewFrame(&mut frame, std::ptr::null_mut())?;
-        let frame = frame.ok_or_else(|| Error::new(E_FAIL, "PNG frame missing"))?;
-        frame.Initialize(None)?;
+        let mut options = None;
+        encoder.CreateNewFrame(&mut frame, &mut options)?;
+        let frame = frame.ok_or_else(|| Error::new(E_FAIL, "Image frame missing"))?;
+        if format == SaveFormat::Jpeg {
+            let options = options
+                .as_ref()
+                .ok_or_else(|| Error::new(E_FAIL, "JPEG options missing"))?;
+            best_jpeg(options)?;
+        }
+        frame.Initialize(options.as_ref())?;
         frame.SetSize(image.width, image.height)?;
-        let mut format = GUID_WICPixelFormat32bppBGRA;
-        frame.SetPixelFormat(&mut format)?;
+        frame.SetPixelFormat(&mut stored)?;
         let source = wic.CreateBitmapFromMemory(
             image.width,
             image.height,
-            &GUID_WICPixelFormat32bppBGRA,
+            memory,
             image.width * 4,
             &image.pixels,
         )?;
@@ -96,6 +135,37 @@ fn encode_stream(image: &Image, wic: &IWICImagingFactory, stream: &IStream) -> R
         frame.Commit()?;
         encoder.Commit()
     }
+}
+/// The best the JPEG encoder can do; there is no quality setting. Its defaults (quality
+/// 0.9, color stored at half resolution) smear one-pixel annotations.
+fn best_jpeg(options: &IPropertyBag2) -> Result<()> {
+    let option = |name: PCWSTR| PROPBAG2 {
+        pstrName: PWSTR(name.0.cast_mut()),
+        ..Default::default()
+    };
+    let value = |vt, value| VARIANT {
+        Anonymous: VARIANT_0 {
+            Anonymous: std::mem::ManuallyDrop::new(VARIANT_0_0 {
+                vt,
+                Anonymous: value,
+                ..Default::default()
+            }),
+        },
+    };
+    let names = [
+        option(w!("ImageQuality")),
+        option(w!("JpegYCrCbSubsampling")),
+    ];
+    let values = [
+        value(VT_R4, VARIANT_0_0_0 { fltVal: 1. }),
+        value(
+            VT_UI1,
+            VARIANT_0_0_0 {
+                bVal: WICJpegYCrCbSubsampling444.0 as u8,
+            },
+        ),
+    ];
+    unsafe { options.Write(names.len() as u32, names.as_ptr(), values.as_ptr()) }
 }
 pub fn load_png(path: &Path) -> Result<Image> {
     unsafe {
@@ -229,7 +299,7 @@ pub(crate) fn png_bytes(image: &Image) -> Result<Vec<u8>> {
             HGLOBAL::default(),
             true,
         )?;
-        encode_stream(image, &factory()?, &stream)?;
+        encode_stream(image, &factory()?, &stream, SaveFormat::Png)?;
         let mut stat = STATSTG::default();
         stream.Stat(&mut stat, STATFLAG_NONAME)?;
         if stat.cbSize > 20 * 1024 * 1024 {

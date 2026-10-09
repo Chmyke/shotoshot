@@ -75,6 +75,47 @@ impl InputLayout {
         }
     }
 }
+/// Image file format written by Save; the dialog reopens on the last one chosen.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum SaveFormat {
+    /// Lossless.
+    #[default]
+    Png,
+    /// Always written at the highest quality: there is no quality setting.
+    Jpeg,
+}
+impl SaveFormat {
+    pub const ALL: [Self; 2] = [Self::Png, Self::Jpeg];
+    pub fn index(self) -> usize {
+        match self {
+            Self::Png => 0,
+            Self::Jpeg => 1,
+        }
+    }
+    fn decode(value: &str) -> std::result::Result<Self, String> {
+        match value {
+            "0" => Ok(Self::Png),
+            "1" => Ok(Self::Jpeg),
+            _ => Err("Invalid save format".into()),
+        }
+    }
+    /// Extension given to a new file.
+    pub fn extension(self) -> &'static str {
+        match self {
+            Self::Png => "png",
+            Self::Jpeg => "jpg",
+        }
+    }
+    /// Format named by the extension of `path`, when it is one Save writes.
+    pub fn of(path: &Path) -> Option<Self> {
+        let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+        match extension.as_str() {
+            "png" => Some(Self::Png),
+            "jpg" | "jpeg" => Some(Self::Jpeg),
+            _ => None,
+        }
+    }
+}
 /// Sizes of the presentation diagram, in percent of its natural size.
 pub const INPUT_SCALES: [u32; 3] = [100, 150, 200];
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -214,6 +255,7 @@ pub struct Settings {
     // Legacy file-format slot, preserved for compatibility only.
     pub legacy_style: bool,
     pub folder: PathBuf,
+    pub save_format: SaveFormat,
     pub presentation: PresentationSettings,
     pub last_custom_color: [u8; 3],
 }
@@ -232,6 +274,7 @@ impl Default for Settings {
             key: 0,
             legacy_style: false,
             folder: PathBuf::new(),
+            save_format: SaveFormat::default(),
             presentation: PresentationSettings::default(),
             last_custom_color: [237, 79, 92],
         }
@@ -271,6 +314,7 @@ impl Settings {
             Some("9") => 20,
             Some("10" | "11") => 22,
             Some("12") => 24,
+            Some("13") => 25,
             _ => 0,
         };
         if fields.len() != expected_len {
@@ -295,7 +339,7 @@ impl Settings {
             // An arrow left on the old default follows the editor's letter, unless Alt+A
             // already draws another shape. Formats 11 and later keep an Alt+F chosen since.
             let arrow = DEFAULT_SHAPE_SHORTCUTS[0];
-            if !matches!(version, Some("11" | "12"))
+            if !matches!(version, Some("11" | "12" | "13"))
                 && presentation.shape_shortcuts[0] == OLD_ARROW_SHORTCUT
                 && !presentation.shape_shortcuts.contains(&arrow)
             {
@@ -397,6 +441,11 @@ impl Settings {
             modifiers,
             legacy_style: fields[3] == "1",
             folder,
+            save_format: fields
+                .get(24)
+                .map(|v| SaveFormat::decode(v))
+                .transpose()?
+                .unwrap_or_default(),
             presentation,
             last_custom_color: if let Some(color) = fields.get(17) {
                 if color.len() != 6 || !color.bytes().all(|byte| byte.is_ascii_hexdigit()) {
@@ -418,7 +467,7 @@ impl Settings {
             .join(",");
         let color = |[red, green, blue]: [u8; 3]| format!("{red:02x}{green:02x}{blue:02x}");
         format!(
-            "{HEADER}12\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{},{}\n{},{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n",
+            "{HEADER}13\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{},{}\n{},{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n{}\n",
             self.modifiers,
             self.key,
             u8::from(self.legacy_style),
@@ -447,7 +496,8 @@ impl Settings {
             self.instant_shortcut.key,
             u8::from(self.instant_sound),
             self.presentation.input_layout.index(),
-            self.presentation.input_scale
+            self.presentation.input_scale,
+            self.save_format.index()
         )
     }
     /// Changes only the editor's custom color, preserving the other stored preferences.
@@ -463,7 +513,7 @@ impl Settings {
         path: &Path,
         color: Option<[u8; 3]>,
         width: Option<u32>,
-        folder: Option<&Path>,
+        destination: Option<(&Path, SaveFormat)>,
         replace: Replace,
     ) -> std::result::Result<(), String> {
         let mut current = Self::load_from(path)?;
@@ -473,8 +523,9 @@ impl Settings {
         if let Some(width) = width {
             current.capture_stroke_width = width;
         }
-        if let Some(folder) = folder {
+        if let Some((folder, format)) = destination {
             current.folder = folder.to_path_buf();
+            current.save_format = format;
         }
         current.write_to(path, replace)
     }
@@ -542,13 +593,54 @@ mod tests {
             ..Default::default()
         };
         let encoded = settings.encode();
-        assert!(encoded.starts_with("shotoshot-settings-12\n"));
+        assert!(encoded.starts_with("shotoshot-settings-13\n"));
         let legacy = encoded.replacen("shotoshot-settings-", "shotshot-settings-", 1);
         assert_eq!(Settings::decode(&legacy).unwrap(), settings);
         let oldest = Settings::decode("shotshot-settings-1\n3\n65\n1\n43,3a,2f,e9\n").unwrap();
         assert_eq!((oldest.modifiers, oldest.key), (3, 65));
         assert!(Settings::decode(&encoded.replacen("shotoshot-", "other-", 1)).is_err());
-        assert!(Settings::decode(&encoded.replacen("-12\n", "-13\n", 1)).is_err());
+        assert!(Settings::decode(&encoded.replacen("-13\n", "-14\n", 1)).is_err());
+    }
+    #[test]
+    fn save_format_roundtrips_and_older_files_keep_png() {
+        let fields: Vec<String> = Settings::default()
+            .encode()
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        assert_eq!(&fields[24..], &["0"]);
+        let mut old = fields[..24].to_vec();
+        old[0] = "shotoshot-settings-12".into();
+        let migrated = Settings::decode(&old.join("\n")).unwrap();
+        assert_eq!(migrated.save_format, SaveFormat::Png);
+        for format in SaveFormat::ALL {
+            let settings = Settings {
+                save_format: format,
+                ..Default::default()
+            };
+            assert_eq!(Settings::decode(&settings.encode()).unwrap(), settings);
+        }
+        for invalid in ["2", "jpg", "00", " 1"] {
+            let mut damaged = fields.clone();
+            damaged[24] = invalid.into();
+            assert!(
+                Settings::decode(&damaged.join("\n")).is_err(),
+                "accepted save format {invalid:?}"
+            );
+        }
+    }
+    #[test]
+    fn save_format_follows_the_file_extension() {
+        let of = |name: &str| SaveFormat::of(Path::new(name));
+        assert_eq!(of("C:/été/Shot 001.PNG"), Some(SaveFormat::Png));
+        assert_eq!(of("photo.jpg"), Some(SaveFormat::Jpeg));
+        assert_eq!(of("photo.JPEG"), Some(SaveFormat::Jpeg));
+        assert_eq!(of("notes.txt"), None);
+        assert_eq!(of("png"), None);
+        for format in SaveFormat::ALL {
+            let path = Path::new("Shot 001").with_extension(format.extension());
+            assert_eq!(SaveFormat::of(&path), Some(format));
+        }
     }
     #[test]
     fn input_layout_and_size_roundtrip_and_older_files_keep_the_full_keyboard() {
@@ -557,7 +649,7 @@ mod tests {
             .lines()
             .map(str::to_owned)
             .collect();
-        assert_eq!(&fields[22..], &["0", "100"]);
+        assert_eq!(&fields[22..24], &["0", "100"]);
         for version in ["10", "11"] {
             let mut old = fields[..22].to_vec();
             old[0] = format!("shotoshot-settings-{version}");
@@ -601,7 +693,7 @@ mod tests {
         old[0] = "shotoshot-settings-9".into();
         let migrated = Settings::decode(&old.join("\n")).unwrap().encode();
         let fields: Vec<_> = migrated.lines().collect();
-        assert_eq!(fields[0], "shotoshot-settings-12");
+        assert_eq!(fields[0], "shotoshot-settings-13");
         assert_eq!(&fields[20..22], &["0,145", "1"]);
         let mut custom: Vec<_> = fields.iter().map(|v| v.to_string()).collect();
         custom[20] = "6,122".into();
@@ -644,7 +736,7 @@ mod tests {
             .take(18)
             .collect::<Vec<_>>()
             .join("\n")
-            .replacen("settings-12", "settings-8", 1);
+            .replacen("settings-13", "settings-8", 1);
         assert!(Settings::decode(&old).unwrap().start_with_windows);
     }
     #[test]
@@ -681,8 +773,10 @@ mod tests {
         };
         resident.save_to(&path, None, Some(9), rename).unwrap();
         let folder = std::env::temp_dir().join("editor-last-folder");
-        Settings::save_editor_to(&path, Some([10, 20, 30]), None, Some(&folder), rename).unwrap();
+        let destination = Some((folder.as_path(), SaveFormat::Jpeg));
+        Settings::save_editor_to(&path, Some([10, 20, 30]), None, destination, rename).unwrap();
         let stored = Settings::load_from(&path).unwrap();
+        assert_eq!(stored.save_format, SaveFormat::Jpeg);
         assert_eq!(stored.key, 77);
         assert!(stored.live_capture);
         assert!(!stored.start_with_windows);
@@ -860,9 +954,11 @@ mod tests {
             fields[0] = format!("shotoshot-settings-{version}");
             fields[10] = arrow.into();
             fields[11] = rectangle.into();
-            // Formats 10 and 11 end before the input layout and size.
-            if version != "12" {
-                fields.truncate(22);
+            // Formats 10 and 11 end before the input layout and size, 12 before the save format.
+            match version {
+                "10" | "11" => fields.truncate(22),
+                "12" => fields.truncate(24),
+                _ => {}
             }
             let settings = Settings::decode(&(fields.join("\n") + "\n")).unwrap();
             settings.presentation.shape_shortcuts[0]
@@ -889,6 +985,7 @@ mod tests {
             "Alt+F chosen again after the change is kept"
         );
         assert_eq!(stored("12", "1,70", "1,82"), alt(0x46));
+        assert_eq!(stored("13", "1,70", "1,82"), alt(0x46));
     }
     #[test]
     fn custom_shortcuts_roundtrip_and_invalid_shortcuts_are_rejected() {
@@ -964,7 +1061,7 @@ mod tests {
             assert_eq!(
                 settings.encode(),
                 format!(
-                    "shotoshot-settings-12\n3\n65\n1\n43,3a,2f,e9\n{live_capture}\n3000\nffd340\ned4f5c\n4\n1,65\n1,82\n1,67\n5\n28\n-\n0\ned4f5c\n1\n3\n0,145\n1\n0\n100\n"
+                    "shotoshot-settings-13\n3\n65\n1\n43,3a,2f,e9\n{live_capture}\n3000\nffd340\ned4f5c\n4\n1,65\n1,82\n1,67\n5\n28\n-\n0\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n"
                 )
             );
         }
@@ -979,7 +1076,7 @@ mod tests {
             assert_eq!(
                 settings.encode(),
                 format!(
-                    "shotoshot-settings-12\n3\n65\n0\n43,3a,2f,e9\n1\n{duration}\n00aaff\nff0001\n4\n1,65\n1,82\n1,67\n5\n28\n-\n0\ned4f5c\n1\n3\n0,145\n1\n0\n100\n"
+                    "shotoshot-settings-13\n3\n65\n0\n43,3a,2f,e9\n1\n{duration}\n00aaff\nff0001\n4\n1,65\n1,82\n1,67\n5\n28\n-\n0\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n"
                 )
             );
         }
@@ -1031,6 +1128,7 @@ mod tests {
             key: 65,
             legacy_style: true,
             folder: PathBuf::from("C:/été/图像"),
+            save_format: SaveFormat::Jpeg,
             last_custom_color: [237, 79, 92],
             presentation: PresentationSettings {
                 stroke_width: 5,
