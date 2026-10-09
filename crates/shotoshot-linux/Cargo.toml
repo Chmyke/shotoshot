@@ -1,0 +1,27 @@
+[package]
+name = "shotoshot-linux"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Linux platform layer (lot 1 of the port, docs/contexte/portage.md). Empty elsewhere.
+[target.'cfg(target_os = "linux")'.dependencies]
+shotoshot-core = { path = "../shotoshot-core" }
+shotoshot-ui = { path = "../shotoshot-ui" }
+shotoshot-raster = { path = "../shotoshot-raster" }
+# D-Bus for the desktop portal (screenshots under Wayland).
+zbus = "5"
+# PNG decoding of portal captures and encoding of saved captures; already used by tiny-skia.
+png = "0.18"
+# Full-screen capture window on Wayland and X11; libraries are loaded at run time.
+winit = { version = "0.30", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen"] }
+# Presents the CPU-rendered frame without a GPU stack.
+softbuffer = { version = "0.4", default-features = false, features = ["x11", "x11-dlopen", "wayland", "wayland-dlopen"] }
+# Frame buffers of the capture window.
+tiny-skia = "0.12"
+# Clipboard on X11 and Wayland (wlr data-control), served by a detached helper process.
+arboard = { version = "3.6", default-features = false, features = ["image-data", "wayland-data-control"] }
+# Notification-area icon (StatusNotifierItem over D-Bus), on the same async-io stack as zbus.
+ksni = { version = "0.3", default-features = false, features = ["async-io", "blocking"] }
+# Direct screenshots on X11 sessions; already in the tree through winit.
+x11rb = "0.13"

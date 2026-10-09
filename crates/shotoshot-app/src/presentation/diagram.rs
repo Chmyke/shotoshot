@@ -1,0 +1,725 @@
+//! ROLE: Physical keyboard and mouse with transient pressed-character labels.
+//! OWNER: Presentation layer supplies its reusable target and brush.
+//! INVARIANTS: Immutable geometry and reusable text format; no per-frame allocations.
+use super::devices::Devices;
+use crate::render::color;
+use crate::settings::InputLayout;
+use windows::Win32::Graphics::{
+    Direct2D::{Common::*, *},
+    DirectWrite::*,
+};
+pub const WIDTH: i32 = Plan::FULL.width();
+pub const HEIGHT: i32 = 140;
+pub const LOCK_SIZE: i32 = 17;
+const PITCH: f32 = 18.;
+/// Left edge of the mouse body beside the full keyboard, where its outlines are authored.
+const MOUSE_X: i32 = 455;
+
+/// What the diagram shows; its width and the place of its lock follow.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Plan {
+    pub layout: InputLayout,
+    pub keyboard: bool,
+    pub mouse: bool,
+}
+impl Plan {
+    /// The whole keyboard beside the mouse.
+    pub const FULL: Self = Self {
+        layout: InputLayout::Full,
+        keyboard: true,
+        mouse: true,
+    };
+    /// Right edge of the keyboard panel, 0 without a keyboard.
+    const fn panel(self) -> i32 {
+        if !self.keyboard {
+            return 0;
+        }
+        match self.layout {
+            InputLayout::Full => 431,
+            InputLayout::Compact => 347,
+            InputLayout::Gaming => 144,
+        }
+    }
+    const fn mouse_x(self) -> i32 {
+        if self.keyboard { self.panel() + 24 } else { 12 }
+    }
+    pub const fn width(self) -> i32 {
+        if self.mouse {
+            self.mouse_x() + 65
+        } else {
+            self.panel() + 1
+        }
+    }
+    /// Top-left corner of the lock: the highest free key place on the right of the keyboard,
+    /// or above a lone mouse.
+    pub const fn lock(self) -> (i32, i32) {
+        if !self.keyboard {
+            return (self.mouse_x() + 48 - LOCK_SIZE, 4);
+        }
+        match self.layout {
+            InputLayout::Full => (407, 8),
+            InputLayout::Compact => (323, 70),
+            InputLayout::Gaming => (119, 8),
+        }
+    }
+}
+// Scan code, horizontal position and width in physical key units.
+type Key = (u16, f32, f32);
+const NUMBER: &[Key] = &[
+    (41, 0., 1.),
+    (2, 1., 1.),
+    (3, 2., 1.),
+    (4, 3., 1.),
+    (5, 4., 1.),
+    (6, 5., 1.),
+    (7, 6., 1.),
+    (8, 7., 1.),
+    (9, 8., 1.),
+    (10, 9., 1.),
+    (11, 10., 1.),
+    (12, 11., 1.),
+    (13, 12., 1.),
+    (14, 13., 2.),
+];
+const TOP: &[Key] = &[
+    (15, 0., 1.5),
+    (16, 1.5, 1.),
+    (17, 2.5, 1.),
+    (18, 3.5, 1.),
+    (19, 4.5, 1.),
+    (20, 5.5, 1.),
+    (21, 6.5, 1.),
+    (22, 7.5, 1.),
+    (23, 8.5, 1.),
+    (24, 9.5, 1.),
+    (25, 10.5, 1.),
+    (26, 11.5, 1.),
+    (27, 12.5, 1.),
+];
+const HOME: &[Key] = &[
+    (58, 0., 1.75),
+    (30, 1.75, 1.),
+    (31, 2.75, 1.),
+    (32, 3.75, 1.),
+    (33, 4.75, 1.),
+    (34, 5.75, 1.),
+    (35, 6.75, 1.),
+    (36, 7.75, 1.),
+    (37, 8.75, 1.),
+    (38, 9.75, 1.),
+    (39, 10.75, 1.),
+    (40, 11.75, 1.),
+    (43, 12.75, 1.),
+];
+const BOTTOM: &[Key] = &[
+    (42, 0., 1.25),
+    (86, 1.25, 1.),
+    (44, 2.25, 1.),
+    (45, 3.25, 1.),
+    (46, 4.25, 1.),
+    (47, 5.25, 1.),
+    (48, 6.25, 1.),
+    (49, 7.25, 1.),
+    (50, 8.25, 1.),
+    (51, 9.25, 1.),
+    (52, 10.25, 1.),
+    (53, 11.25, 1.),
+    (54, 12.25, 2.75),
+];
+/// Right edge, in key units, of the left-hand block on the number, top, home and bottom rows.
+const LEFT_HAND: [f32; 4] = [6., 6.5, 6.75, 7.25];
+
+/// Visits every rectangular key cap of `plan`: scan code, extended flag, position in logical
+/// pixels, then width and height in key units. The ISO Enter outline is drawn apart.
+fn caps(plan: Plan, ansi: bool, mut cap: impl FnMut(u16, bool, f32, f32, f32, f32)) {
+    if !plan.keyboard {
+        return;
+    }
+    let gaming = plan.layout == InputLayout::Gaming;
+    cap(1, false, 8., 9., 1., 1.);
+    for index in 0..if gaming { 4 } else { 12 } {
+        let scan = if index < 10 {
+            59 + index
+        } else {
+            87 + index - 10
+        };
+        let x = 8. + (2. + index as f32 + (index / 4) as f32 * 0.5) * PITCH;
+        cap(scan, false, x, 9., 1., 1.);
+    }
+    for (row, keys) in [NUMBER, TOP, HOME, BOTTOM].iter().enumerate() {
+        for &(scan, mut x, mut w) in *keys {
+            if ansi {
+                if scan == 86 {
+                    continue;
+                }
+                if scan == 42 {
+                    w = 2.25;
+                }
+                if scan == 43 {
+                    x = 13.5;
+                    w = 1.5;
+                }
+            }
+            let row = if ansi && scan == 43 { 1 } else { row };
+            if gaming && x + w > LEFT_HAND[row] {
+                continue;
+            }
+            cap(scan, false, 8. + x * PITCH, 35. + row as f32 * PITCH, w, 1.);
+        }
+    }
+    if gaming {
+        for (scan, ext, x, w) in [
+            (29, false, 0., 1.25),
+            (91, true, 1.25, 1.25),
+            (56, false, 2.5, 1.25),
+            (57, false, 3.75, 3.5),
+        ] {
+            cap(scan, ext, 8. + x * PITCH, 107., w, 1.);
+        }
+        return;
+    }
+    if ansi {
+        cap(28, false, 8. + 12.75 * PITCH, 71., 2.25, 1.);
+    }
+    for (scan, ext, x, w) in [
+        (29, false, 0., 1.25),
+        (91, true, 1.25, 1.25),
+        (56, false, 2.5, 1.25),
+        (57, false, 3.75, 6.25),
+        (56, true, 10., 1.25),
+        (92, true, 11.25, 1.25),
+        (93, true, 12.5, 1.25),
+        (29, true, 13.75, 1.25),
+    ] {
+        cap(scan, ext, 8. + x * PITCH, 107., w, 1.);
+    }
+    for (scan, ext, x, y) in [
+        (55, true, 0., 9.),
+        (70, false, 1., 9.),
+        (69, true, 2., 9.),
+        (82, true, 0., 35.),
+        (71, true, 1., 35.),
+        (73, true, 2., 35.),
+        (83, true, 0., 53.),
+        (79, true, 1., 53.),
+        (81, true, 2., 53.),
+        (72, true, 1., 89.),
+        (75, true, 0., 107.),
+        (80, true, 1., 107.),
+        (77, true, 2., 107.),
+    ] {
+        cap(scan, ext, 288. + x * PITCH, y, 1., 1.);
+    }
+    if plan.layout != InputLayout::Full {
+        return;
+    }
+    for (scan, ext, x, y, w, h) in [
+        (69, false, 0., 35., 1., 1.),
+        (53, true, 1., 35., 1., 1.),
+        (55, false, 2., 35., 1., 1.),
+        (74, false, 3., 35., 1., 1.),
+        (71, false, 0., 53., 1., 1.),
+        (72, false, 1., 53., 1., 1.),
+        (73, false, 2., 53., 1., 1.),
+        (78, false, 3., 53., 1., 2.),
+        (75, false, 0., 71., 1., 1.),
+        (76, false, 1., 71., 1., 1.),
+        (77, false, 2., 71., 1., 1.),
+        (79, false, 0., 89., 1., 1.),
+        (80, false, 1., 89., 1., 1.),
+        (81, false, 2., 89., 1., 1.),
+        (28, true, 3., 89., 1., 2.),
+        (82, false, 0., 107., 2., 1.),
+        (83, false, 2., 107., 1., 1.),
+    ] {
+        cap(scan, ext, 354. + x * PITCH, y, w, h);
+    }
+}
+/// The ISO Enter key is an outline of its own, not a cap.
+fn iso_enter(plan: Plan, ansi: bool) -> bool {
+    plan.keyboard && !ansi && plan.layout != InputLayout::Gaming
+}
+/// Whether `plan` draws this key: an unseen key must cost no repaint.
+pub(super) fn shows(plan: Plan, ansi: bool, scan: u16, extended: bool) -> bool {
+    let mut shown = iso_enter(plan, ansi) && (scan, extended) == (28, false);
+    caps(plan, ansi, |key, ext, _, _, _, _| {
+        shown |= (key, ext) == (scan, extended)
+    });
+    shown
+}
+struct Painter<'a> {
+    target: &'a ID2D1RenderTarget,
+    brush: &'a ID2D1SolidColorBrush,
+    format: &'a IDWriteTextFormat,
+    small_format: &'a IDWriteTextFormat,
+    outlines: &'a Outlines,
+    scale: f32,
+    devices: &'a Devices,
+    now: u64,
+}
+impl Painter<'_> {
+    fn box_at(&self, x: f32, y: f32, w: f32, h: f32, radius: f32, active: bool) {
+        let s = self.scale;
+        let shape = D2D1_ROUNDED_RECT {
+            rect: D2D_RECT_F {
+                left: x * s,
+                top: y * s,
+                right: (x + w) * s,
+                bottom: (y + h) * s,
+            },
+            radiusX: radius * s,
+            radiusY: radius * s,
+        };
+        unsafe {
+            self.brush.SetColor(&color(
+                if active {
+                    [113, 195, 255]
+                } else {
+                    [32, 32, 35]
+                },
+                if active {
+                    0.96
+                } else if radius <= 2. {
+                    0.72
+                } else if radius >= 20. {
+                    0.14
+                } else {
+                    0.22
+                },
+            ));
+            self.target.FillRoundedRectangle(&shape, self.brush);
+            self.brush.SetColor(&color(
+                if active {
+                    [184, 226, 255]
+                } else {
+                    [110, 110, 118]
+                },
+                if active {
+                    0.95
+                } else if radius <= 2. {
+                    0.72
+                } else if radius >= 20. {
+                    0.28
+                } else {
+                    0.38
+                },
+            ));
+            self.target
+                .DrawRoundedRectangle(&shape, self.brush, s, None);
+        }
+    }
+    fn key(&self, scan: u16, extended: bool, x: f32, y: f32, w: f32, h: f32) {
+        self.box_at(
+            x,
+            y,
+            w * PITCH - 3.,
+            h * PITCH - 3.,
+            2.,
+            self.devices.active(scan, extended, self.now),
+        );
+        self.label(scan, extended, x, y, w, h);
+    }
+    fn label(&self, scan: u16, extended: bool, x: f32, y: f32, w: f32, h: f32) {
+        let (text, alpha) = self.devices.label(scan, extended, self.now);
+        if text.is_empty() || alpha <= 0. {
+            return;
+        }
+        let s = self.scale;
+        let area = D2D_RECT_F {
+            left: x * s,
+            top: y * s,
+            right: (x + w * PITCH - 3.) * s,
+            bottom: (y + h * PITCH - 3.) * s,
+        };
+        unsafe {
+            let rgb = if self.devices.active(scan, extended, self.now) {
+                [20, 37, 50]
+            } else {
+                [235, 241, 250]
+            };
+            self.brush.SetColor(&color(rgb, alpha));
+            self.target.DrawText(
+                text,
+                if text.len() >= 3 {
+                    self.small_format
+                } else {
+                    self.format
+                },
+                &area,
+                self.brush,
+                D2D1_DRAW_TEXT_OPTIONS_CLIP,
+                DWRITE_MEASURING_MODE_NATURAL,
+            );
+        }
+    }
+}
+pub(super) fn draw(
+    target: &ID2D1RenderTarget,
+    brush: &ID2D1SolidColorBrush,
+    formats: (&IDWriteTextFormat, &IDWriteTextFormat),
+    outlines: &Outlines,
+    devices: &Devices,
+    now: u64,
+) {
+    let (plan, scale) = (outlines.plan, outlines.scale);
+    let p = Painter {
+        target,
+        brush,
+        format: formats.0,
+        small_format: formats.1,
+        outlines,
+        scale,
+        devices,
+        now,
+    };
+    if plan.keyboard {
+        p.box_at(1., 1., plan.panel() as f32 - 1., 132., 7., false);
+        caps(plan, devices.ansi, |scan, extended, x, y, w, h| {
+            p.key(scan, extended, x, y, w, h)
+        });
+    }
+    // A single rounded ISO outline avoids the seam made by overlapping keycaps.
+    if iso_enter(plan, devices.ansi) {
+        let active = devices.active(28, false, now);
+        unsafe {
+            brush.SetColor(&color(
+                if active {
+                    [113, 195, 255]
+                } else {
+                    [32, 32, 35]
+                },
+                if active { 0.96 } else { 0.72 },
+            ));
+            target.FillGeometry(&p.outlines.enter, brush, None);
+            brush.SetColor(&color(
+                if active {
+                    [184, 226, 255]
+                } else {
+                    [110, 110, 118]
+                },
+                if active { 0.95 } else { 0.72 },
+            ));
+            target.DrawGeometry(&p.outlines.enter, brush, scale, None);
+        }
+        p.label(28, false, 255.5, 62., 1.25, 1.);
+    }
+    if !plan.mouse {
+        return;
+    }
+    let x = plan.mouse_x() as f32;
+    p.box_at(x, 24., 48., 102., 24., false);
+    for (index, shape) in p.outlines.mouse.iter().enumerate() {
+        let active = devices.mouse_active(index, now);
+        unsafe {
+            brush.SetColor(&color(
+                if active {
+                    [113, 195, 255]
+                } else {
+                    [32, 32, 35]
+                },
+                if active { 0.96 } else { 0.18 },
+            ));
+            target.FillGeometry(shape, brush, None);
+            brush.SetColor(&color(
+                if active {
+                    [184, 226, 255]
+                } else {
+                    [110, 110, 118]
+                },
+                if active { 0.95 } else { 0.38 },
+            ));
+            target.DrawGeometry(shape, brush, scale, None);
+        }
+    }
+    p.box_at(x + 22., 38., 4., 19., 2.5, devices.mouse_active(2, now));
+    p.box_at(x + 23., 42., 2., 11., 2.5, devices.mouse_active(5, now));
+    p.box_at(x - 5., 57., 3., 15., 2.5, devices.mouse_active(4, now));
+    p.box_at(x - 5., 77., 3., 15., 2.5, devices.mouse_active(3, now));
+}
+
+// Cached once per layer/DPI, never allocated while drawing.
+fn enter_geometry(factory: &ID2D1Factory, scale: f32) -> windows::core::Result<ID2D1PathGeometry> {
+    let points = [
+        (251., 53.),
+        (275., 53.),
+        (275., 86.),
+        (255.5, 86.),
+        (255.5, 68.),
+        (251., 68.),
+    ];
+    let point = |p: (f32, f32)| windows_numerics::Vector2 {
+        X: p.0 * scale,
+        Y: p.1 * scale,
+    };
+    let toward = |a: (f32, f32), b: (f32, f32)| {
+        let length = (b.0 - a.0).hypot(b.1 - a.1);
+        (
+            a.0 + (b.0 - a.0) * 1.5 / length,
+            a.1 + (b.1 - a.1) * 1.5 / length,
+        )
+    };
+    unsafe {
+        let geometry = factory.CreatePathGeometry()?;
+        let sink = geometry.Open()?;
+        sink.BeginFigure(
+            point(toward(points[0], points[5])),
+            D2D1_FIGURE_BEGIN_FILLED,
+        );
+        for index in 0..points.len() {
+            let vertex = points[index];
+            sink.AddLine(point(toward(vertex, points[(index + 5) % 6])));
+            sink.AddQuadraticBezier(&D2D1_QUADRATIC_BEZIER_SEGMENT {
+                point1: point(vertex),
+                point2: point(toward(vertex, points[(index + 1) % 6])),
+            });
+        }
+        sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+        sink.Close()?;
+        Ok(geometry)
+    }
+}
+
+/// Curved outlines of one plan at one scale; `draw` paints that plan.
+pub(super) struct Outlines {
+    pub plan: Plan,
+    scale: f32,
+    enter: ID2D1PathGeometry,
+    mouse: [ID2D1PathGeometry; 2],
+}
+impl Outlines {
+    pub(super) fn new(
+        factory: &ID2D1Factory,
+        scale: f32,
+        plan: Plan,
+    ) -> windows::core::Result<Self> {
+        let shift = (plan.mouse_x() - MOUSE_X) as f32;
+        Ok(Self {
+            plan,
+            scale,
+            enter: enter_geometry(factory, scale)?,
+            mouse: [
+                mouse_button(factory, scale, shift, false)?,
+                mouse_button(factory, scale, shift, true)?,
+            ],
+        })
+    }
+}
+fn mouse_button(
+    factory: &ID2D1Factory,
+    scale: f32,
+    shift: f32,
+    right: bool,
+) -> windows::core::Result<ID2D1PathGeometry> {
+    let point = |x: f32, y: f32| windows_numerics::Vector2 {
+        X: ((if right { 958. - x } else { x }) + shift) * scale,
+        Y: y * scale,
+    };
+    unsafe {
+        let geometry = factory.CreatePathGeometry()?;
+        let sink = geometry.Open()?;
+        sink.BeginFigure(point(478., 25.), D2D1_FIGURE_BEGIN_FILLED);
+        sink.AddBezier(&D2D1_BEZIER_SEGMENT {
+            point1: point(465., 25.),
+            point2: point(456., 35.),
+            point3: point(456., 48.),
+        });
+        sink.AddLine(point(456., 63.));
+        sink.AddQuadraticBezier(&D2D1_QUADRATIC_BEZIER_SEGMENT {
+            point1: point(456., 66.),
+            point2: point(459., 66.),
+        });
+        sink.AddLine(point(473., 66.));
+        sink.AddQuadraticBezier(&D2D1_QUADRATIC_BEZIER_SEGMENT {
+            point1: point(476., 66.),
+            point2: point(476., 63.),
+        });
+        sink.AddLine(point(476., 38.));
+        sink.AddBezier(&D2D1_BEZIER_SEGMENT {
+            point1: point(476., 33.),
+            point2: point(478., 33.),
+            point3: point(478., 29.),
+        });
+        sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+        sink.Close()?;
+        Ok(geometry)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn plan(layout: InputLayout, keyboard: bool, mouse: bool) -> Plan {
+        Plan {
+            layout,
+            keyboard,
+            mouse,
+        }
+    }
+    /// Every box of the keyboard in logical pixels, the ISO Enter as its two halves.
+    fn boxes(plan: Plan, ansi: bool) -> Vec<(u16, bool, [f32; 4])> {
+        let mut boxes = Vec::new();
+        caps(plan, ansi, |scan, extended, x, y, w, h| {
+            boxes.push((
+                scan,
+                extended,
+                [x, y, x + w * PITCH - 3., y + h * PITCH - 3.],
+            ))
+        });
+        if iso_enter(plan, ansi) {
+            boxes.push((28, false, [251., 53., 275., 68.]));
+            boxes.push((28, false, [255.5, 68., 275., 86.]));
+        }
+        boxes
+    }
+    fn scans(plan: Plan, ansi: bool) -> Vec<(u16, bool)> {
+        let mut scans: Vec<_> = boxes(plan, ansi)
+            .into_iter()
+            .map(|(scan, extended, _)| (scan, extended))
+            .collect();
+        scans.sort();
+        scans.dedup();
+        scans
+    }
+    fn apart(a: [f32; 4], b: [f32; 4]) -> bool {
+        a[2] <= b[0] || b[2] <= a[0] || a[3] <= b[1] || b[3] <= a[1]
+    }
+
+    #[test]
+    fn the_full_diagram_keeps_its_size_and_lock() {
+        assert_eq!((WIDTH, HEIGHT), (520, 140));
+        assert_eq!(Plan::FULL.lock(), (407, 8));
+        assert_eq!(Plan::FULL.mouse_x(), MOUSE_X);
+    }
+
+    #[test]
+    fn every_plan_fits_its_window_without_overlapping_keys_or_lock() {
+        for layout in InputLayout::ALL {
+            for (keyboard, mouse) in [(true, true), (true, false), (false, true)] {
+                let plan = plan(layout, keyboard, mouse);
+                let (lock_x, lock_y) = plan.lock();
+                let lock = [
+                    lock_x as f32,
+                    lock_y as f32,
+                    (lock_x + LOCK_SIZE) as f32,
+                    (lock_y + LOCK_SIZE) as f32,
+                ];
+                assert!(
+                    lock[0] >= 0. && lock[2] <= plan.width() as f32 && lock[3] <= HEIGHT as f32,
+                    "{plan:?}: lock outside the window"
+                );
+                if mouse {
+                    let body = plan.mouse_x() as f32;
+                    assert!(
+                        body - 5. >= plan.panel() as f32,
+                        "{plan:?}: mouse over the keys"
+                    );
+                    assert!(body + 48. < plan.width() as f32, "{plan:?}: mouse cut off");
+                    assert!(apart(lock, [body, 24., body + 48., 126.]), "{plan:?}");
+                }
+                for ansi in [false, true] {
+                    let boxes = boxes(plan, ansi);
+                    assert_eq!(boxes.is_empty(), !keyboard);
+                    for (index, (scan, _, cap)) in boxes.iter().enumerate() {
+                        assert!(
+                            cap[0] >= 8. && cap[1] >= 9. && cap[3] <= 122.,
+                            "{plan:?}: key {scan} leaves the panel"
+                        );
+                        assert!(
+                            cap[2] <= plan.panel() as f32 - 8.,
+                            "{plan:?}: key {scan} passes the right edge"
+                        );
+                        assert!(apart(*cap, lock), "{plan:?}: key {scan} under the lock");
+                        for (other, _, earlier) in &boxes[..index] {
+                            assert!(
+                                apart(*cap, *earlier),
+                                "{plan:?}: keys {scan} and {other} overlap"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn gaming_is_the_left_hand_block_with_a_short_space_bar() {
+        let gaming = plan(InputLayout::Gaming, true, true);
+        let mut expected: Vec<(u16, bool)> = [
+            vec![1, 59, 60, 61, 62],
+            vec![41, 2, 3, 4, 5, 6],
+            vec![15, 16, 17, 18, 19, 20],
+            vec![58, 30, 31, 32, 33, 34],
+            vec![42, 86, 44, 45, 46, 47, 48],
+            vec![29, 56, 57],
+        ]
+        .concat()
+        .into_iter()
+        .map(|scan| (scan, false))
+        .collect();
+        expected.push((91, true));
+        expected.sort();
+        assert_eq!(scans(gaming, false), expected);
+        // An ANSI keyboard has no key between Shift and Z.
+        expected.retain(|key| *key != (86, false));
+        assert_eq!(scans(gaming, true), expected);
+        let right_edge = |wanted: u16| {
+            boxes(gaming, false)
+                .into_iter()
+                .find(|(scan, ..)| *scan == wanted)
+                .unwrap()
+                .2[2]
+        };
+        assert_eq!(right_edge(57), right_edge(48), "the space bar ends under B");
+    }
+
+    #[test]
+    fn compact_only_drops_the_numeric_pad() {
+        for ansi in [false, true] {
+            let full = scans(plan(InputLayout::Full, true, true), ansi);
+            let compact = scans(plan(InputLayout::Compact, true, true), ansi);
+            let pad: Vec<(u16, bool)> = full
+                .iter()
+                .copied()
+                .filter(|key| !compact.contains(key))
+                .collect();
+            let mut expected: Vec<(u16, bool)> = [55, 69, 71, 72, 73, 74, 75, 76, 77, 78]
+                .into_iter()
+                .chain([79, 80, 81, 82, 83])
+                .map(|scan| (scan, false))
+                .chain([(28, true), (53, true)])
+                .collect();
+            expected.sort();
+            assert_eq!(pad, expected);
+            assert!(compact.iter().all(|key| full.contains(key)));
+        }
+    }
+
+    #[test]
+    fn shows_matches_what_each_plan_draws() {
+        let full = plan(InputLayout::Full, true, true);
+        let gaming = plan(InputLayout::Gaming, true, false);
+        for ansi in [false, true] {
+            assert!(shows(full, ansi, 28, false), "Enter, outline or cap");
+            assert!(shows(full, ansi, 71, false));
+            assert!(!shows(
+                plan(InputLayout::Compact, true, true),
+                ansi,
+                71,
+                false
+            ));
+            assert!(shows(gaming, ansi, 17, false));
+            assert!(!shows(gaming, ansi, 28, false));
+            assert!(!shows(gaming, ansi, 54, false), "right Shift is hidden");
+            assert!(!shows(gaming, ansi, 29, true), "right Ctrl is hidden");
+            assert!(!shows(
+                plan(InputLayout::Full, false, true),
+                ansi,
+                17,
+                false
+            ));
+        }
+        assert!(shows(gaming, false, 86, false));
+        assert!(!shows(gaming, true, 86, false));
+    }
+}

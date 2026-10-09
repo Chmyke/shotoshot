@@ -1,0 +1,12 @@
+[package]
+name = "shotoshot-raster"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Portable CPU renderer for Linux and macOS: the same Canvas as Direct2D on Windows.
+[dependencies]
+shotoshot-core = { path = "../shotoshot-core" }
+shotoshot-ui = { path = "../shotoshot-ui" }
+tiny-skia = "0.12"
+cosmic-text = "0.19"

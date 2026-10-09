@@ -1,0 +1,8 @@
+[package]
+name = "shotoshot-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+shotoshot-core = { path = "../shotoshot-core" }

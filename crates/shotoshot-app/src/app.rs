@@ -1,0 +1,641 @@
+//! ROLE: Owns the Windows resident, first-run shortcut setup and capture session.
+//! OWNER: Main thread; window callbacks borrow checked RefCell state.
+//! INVARIANTS: No polling or rendering while idle; presentation input is explicitly opt-in.
+mod editor_events;
+mod editor_process;
+mod events;
+mod input;
+mod instant;
+mod notice;
+mod pulse;
+mod warm_probe;
+use notice::Notice;
+mod runtime;
+mod setup;
+mod tray_menu;
+use crate::{
+    session::{Session, control, modifiers},
+    settings::{Settings, Store},
+    toolbar::Action,
+    *,
+};
+pub use runtime::run;
+use shotoshot_core::Point;
+use std::cell::RefCell;
+use windows::{
+    Win32::{
+        Foundation::*,
+        Graphics::Gdi::*,
+        System::{LibraryLoader::*, Threading::*},
+        UI::{HiDpi::*, Input::KeyboardAndMouse::*, Shell::*, WindowsAndMessaging::*},
+    },
+    core::*,
+};
+
+const TRAY_MESSAGE: u32 = WM_APP + 1;
+const CAPTURE_MESSAGE: u32 = WM_APP + 2;
+const GOOGLE_FINISHED: u32 = WM_APP + 4;
+const RENDERER_READY: u32 = WM_APP + 7;
+const STROKE_WIDTH_TIMER: usize = 0x5357;
+const STROKE_WIDTH_DELAY_MS: u32 = 250;
+#[cfg(test)]
+mod display_tests;
+#[cfg(test)]
+mod tests;
+struct App {
+    settings: Settings,
+    session: Option<Session>,
+    setup: bool,
+    setup_ui: setup::Setup,
+    hotkey: crate::hotkey::Hotkey,
+    instant: instant::InstantCapture,
+    tray: NOTIFYICONDATAW,
+    quit_after_capture: bool,
+    persist_preferences: bool,
+    pending_stroke_width: Option<(u32, std::time::Instant)>,
+    worker: Option<editor_process::EditorProcess>,
+    prepared: Option<crate::session::Preparation>,
+    notification_owner: Option<HWND>,
+    toast: Option<notice::Toast>,
+    google_search: Option<std::sync::mpsc::Receiver<std::result::Result<String, String>>>,
+    first_frame: Option<crate::diagnostics::FirstFrame>,
+    presentation: Option<Box<RefCell<crate::presentation::Presentation>>>,
+}
+/// Paints the notification menu off screen, then closes it, for the resident diagnostic.
+pub(crate) fn menu_probe() -> Result<()> {
+    tray_menu::probe()
+}
+fn message(hwnd: HWND, text: &str) {
+    unsafe {
+        MessageBoxW(
+            Some(hwnd),
+            &HSTRING::from(text),
+            w!("Shotoshot"),
+            MB_OK | MB_ICONINFORMATION,
+        );
+    }
+}
+fn invalidate(hwnd: HWND) {
+    unsafe {
+        let _ = InvalidateRect(Some(hwnd), None, false);
+    }
+}
+
+unsafe extern "system" fn window_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT {
+    // PITFALL: No Rust unwind may cross the system callback; reentrant notifications cannot alias state.
+    let outcome = std::panic::catch_unwind(|| unsafe {
+        if msg == WM_ACTIVATEAPP
+            && GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32 & WS_EX_APPWINDOW.0 != 0
+        {
+            // Alt+Tab changes only the window's stacking, never the capture or native inputs.
+            // Handle this outside App's borrow: Save dialogs dispatch it in a nested loop.
+            let _ = SetWindowPos(
+                hwnd,
+                Some(if w.0 != 0 {
+                    HWND_TOPMOST
+                } else {
+                    // NOTOPMOST still places us above normal apps if activation arrived late.
+                    HWND_BOTTOM
+                }),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
+        }
+        if let Some(result) = crate::presentation::resident_message(hwnd, msg, w, l) {
+            return result;
+        }
+        if matches!(msg, WM_MEASUREITEM | WM_DRAWITEM)
+            && let Some(result) = tray_menu::message(hwnd, msg, l)
+        {
+            return result;
+        }
+        if msg == WM_NCCREATE {
+            let create = &*(l.0 as *const CREATESTRUCTW);
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, create.lpCreateParams as isize);
+        }
+        let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const RefCell<App>;
+        if !pointer.is_null()
+            && let Ok(mut app) = (*pointer).try_borrow_mut()
+        {
+            match app.handle(hwnd, msg, w, l) {
+                Ok(Some(value)) => return value,
+                Ok(None) => {}
+                Err(error) => {
+                    message(hwnd, &error.to_string());
+                    if app.quit_after_capture && app.session.is_none() {
+                        PostQuitMessage(1);
+                    }
+                }
+            }
+        } else if !pointer.is_null()
+            && matches!(
+                msg,
+                editor_process::READY | editor_process::EXITED | WM_DISPLAYCHANGE
+            )
+        {
+            editor_events::defer(hwnd, msg, w, l);
+            return LRESULT(0);
+        } else if !pointer.is_null() && msg == instant::FINISHED {
+            // Menus dispatch messages reentrantly while borrowing App. Retry after that borrow,
+            // rather than losing the one completion event and leaving the worker busy forever.
+            SetTimer(Some(hwnd), instant::RETRY_TIMER, 30, None);
+            return LRESULT(0);
+        }
+        DefWindowProcW(hwnd, msg, w, l)
+    });
+    match outcome {
+        Ok(value) => value,
+        Err(_) => {
+            unsafe {
+                PostQuitMessage(1);
+            }
+            LRESULT(0)
+        }
+    }
+}
+impl App {
+    fn worker_busy(&self) -> bool {
+        self.worker.as_ref().is_some_and(|worker| worker.busy())
+    }
+    fn prepare_editor(&mut self, hwnd: HWND) {
+        // Preparation is optional: an unavailable renderer must never show a boot dialog
+        // or trigger an automatic restart loop. The next explicit request can try cold.
+        if self.worker.is_none() {
+            self.worker = editor_process::EditorProcess::spawn(hwnd, true).ok();
+        }
+    }
+    fn activate_editor(&mut self, window: HWND) -> Result<()> {
+        let Some(worker) = &self.worker else {
+            return Ok(());
+        };
+        unsafe {
+            let _ = AllowSetForegroundWindow(worker.pid());
+        }
+        let result = (|| {
+            if let Some(presentation) = &self.presentation {
+                presentation.borrow_mut().suspend_capture()?;
+            }
+            unsafe { PostMessageW(Some(window), CAPTURE_MESSAGE, WPARAM(0), LPARAM(0)) }
+        })();
+        if result.is_err() {
+            // request/ready marks the child active. Never leave it busy after a failed send.
+            // Keep the slot occupied until EXIT confirms death: at most two processes,
+            // even if another hotkey is queued while termination is finishing.
+            if let Some(worker) = &self.worker {
+                worker.stop();
+            }
+            if let Some(presentation) = &self.presentation {
+                presentation.borrow_mut().resume_capture()?;
+            }
+        }
+        result
+    }
+    fn editor_exited(&mut self, hwnd: HWND, pid: u32) -> Result<()> {
+        let Some(worker) = &self.worker else {
+            return Ok(());
+        };
+        if worker.pid() != pid {
+            return Ok(());
+        }
+        let Some(code) = worker.exit_code()? else {
+            return Ok(());
+        };
+        let (replenish, retry_cold) = (worker.replenish(code), worker.retry_cold());
+        let failed_request = worker.pending_request() && !retry_cold;
+        self.worker = None;
+        if let Some(presentation) = &self.presentation {
+            presentation.borrow_mut().resume_capture()?;
+        }
+        if retry_cold {
+            self.start_capture(hwnd)?;
+        } else if replenish {
+            self.prepare_editor(hwnd);
+        } else if failed_request {
+            return Err(Error::new(
+                E_FAIL,
+                "The editor could not start. Please try another capture.",
+            ));
+        }
+        Ok(())
+    }
+    fn show_setup(&mut self, hwnd: HWND) -> Result<()> {
+        self.show_shortcut_setup(hwnd, setup::ShortcutTarget::Capture)
+    }
+    fn show_shortcut_setup(&mut self, hwnd: HWND, target: setup::ShortcutTarget) -> Result<()> {
+        if self.persist_preferences {
+            self.settings = Settings::load().map_err(|e| Error::new(E_FAIL, e))?;
+        }
+        unsafe {
+            if let Some(p) = &self.presentation {
+                p.borrow_mut().suspend_shortcuts()?;
+            }
+            self.setup = true;
+            self.setup_ui = if target == setup::ShortcutTarget::Capture && self.settings.key == 0 {
+                setup::Setup::first_run()
+            } else {
+                setup::Setup::change(
+                    target,
+                    if let Some(index) = target.shape_index() {
+                        let s = self.settings.presentation.shape_shortcuts[index];
+                        Some((s.modifiers, s.key))
+                    } else if target == setup::ShortcutTarget::Instant {
+                        Some((
+                            self.settings.instant_shortcut.modifiers,
+                            self.settings.instant_shortcut.key,
+                        ))
+                    } else {
+                        (self.settings.key != 0)
+                            .then_some((self.settings.modifiers, self.settings.key))
+                    },
+                )
+            };
+            SetWindowLongPtrW(
+                hwnd,
+                GWL_STYLE,
+                (WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU).0 as isize,
+            );
+            let dark: i32 = 1;
+            let _ = windows::Win32::Graphics::Dwm::DwmSetWindowAttribute(
+                hwnd,
+                windows::Win32::Graphics::Dwm::DWMWA_USE_IMMERSIVE_DARK_MODE,
+                (&dark as *const i32).cast(),
+                std::mem::size_of_val(&dark) as u32,
+            );
+            let dpi = GetDpiForWindow(hwnd);
+            let mut bounds = RECT {
+                right: setup::WIDTH * dpi as i32 / 96,
+                bottom: setup::HEIGHT * dpi as i32 / 96,
+                ..Default::default()
+            };
+            AdjustWindowRectExForDpi(
+                &mut bounds,
+                WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
+                false,
+                WS_EX_TOOLWINDOW,
+                dpi,
+            )?;
+            let mut monitor = MONITORINFO {
+                cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+                ..Default::default()
+            };
+            let _ = GetMonitorInfoW(
+                MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST),
+                &mut monitor,
+            );
+            let width = bounds.right - bounds.left;
+            let height = bounds.bottom - bounds.top;
+            SetWindowPos(
+                hwnd,
+                Some(HWND_NOTOPMOST),
+                monitor.rcWork.left + (monitor.rcWork.right - monitor.rcWork.left - width) / 2,
+                monitor.rcWork.top + (monitor.rcWork.bottom - monitor.rcWork.top - height) / 2,
+                width,
+                height,
+                SWP_FRAMECHANGED | SWP_SHOWWINDOW,
+            )?;
+            let _ = SetForegroundWindow(hwnd);
+            invalidate(hwnd);
+            Ok(())
+        }
+    }
+    fn close_setup(&mut self, hwnd: HWND) -> Result<()> {
+        self.setup = false;
+        // The resident keeps no renderer at rest.
+        self.setup_ui.painter = None;
+        if let Some(p) = &self.presentation {
+            let _conflicts = p.borrow_mut().resume_shortcuts()?;
+        }
+        unsafe {
+            if self.hotkey.active()
+                || self.instant.hotkey.active()
+                || self.setup_ui.target.shape_index().is_some()
+            {
+                let _ = ShowWindow(hwnd, SW_HIDE);
+            } else {
+                PostQuitMessage(0);
+            }
+        }
+        Ok(())
+    }
+    fn save_shape_shortcut(
+        &mut self,
+        hwnd: HWND,
+        index: usize,
+        mods: u32,
+        key: u32,
+    ) -> Result<bool> {
+        let mut next = self.settings.clone();
+        next.presentation.shape_shortcuts[index] = crate::settings::Shortcut {
+            modifiers: mods,
+            key,
+        };
+        let result = (|| -> Result<()> {
+            next.presentation
+                .validate_shape_shortcuts()
+                .map_err(|e| Error::new(E_INVALIDARG, e))?;
+            if (self.settings.modifiers == mods && self.settings.key == key)
+                || self.settings.instant_shortcut
+                    == (crate::settings::Shortcut {
+                        modifiers: mods,
+                        key,
+                    })
+            {
+                return Err(Error::new(
+                    E_INVALIDARG,
+                    "This combination is already used for capture.",
+                ));
+            }
+            // A real collision is allowed: drawing shortcuts now take priority through the hook.
+            let reserved = match unsafe {
+                RegisterHotKey(Some(hwnd), 99, HOT_KEY_MODIFIERS(mods) | MOD_NOREPEAT, key)
+            } {
+                Ok(()) => true,
+                Err(error)
+                    if error.code() == HRESULT::from_win32(ERROR_HOTKEY_ALREADY_REGISTERED.0) =>
+                {
+                    false
+                }
+                Err(error) => return Err(error),
+            };
+            let save = if self.persist_preferences {
+                next.save().map_err(|e| Error::new(E_FAIL, e))
+            } else {
+                Ok(())
+            };
+            if reserved {
+                unsafe {
+                    let _ = UnregisterHotKey(Some(hwnd), 99);
+                }
+            }
+            save?;
+            if let Some(p) = &self.presentation {
+                p.borrow_mut()
+                    .update_preferences(next.presentation.clone())?;
+            }
+            Ok(())
+        })();
+        if let Err(error) = result {
+            self.setup_ui.error = format!("Shortcut unavailable or invalid: {}", error.message());
+            invalidate(hwnd);
+            return Ok(false);
+        }
+        self.settings = next;
+        Ok(true)
+    }
+    fn start_capture(&mut self, hwnd: HWND) -> Result<()> {
+        self.toast = None;
+        self.instant.clear_feedback();
+        if self.session.is_some() || self.setup {
+            return Ok(());
+        }
+        if !self.quit_after_capture {
+            if self.worker.is_none() {
+                self.worker = Some(editor_process::EditorProcess::spawn(hwnd, false)?);
+            }
+            let worker = self.worker.as_mut().unwrap();
+            unsafe {
+                let _ = AllowSetForegroundWindow(worker.pid());
+            }
+            if let Some(window) = worker.request() {
+                self.activate_editor(window)?;
+            }
+            return Ok(());
+        }
+        if self.persist_preferences {
+            self.settings = Settings::load().map_err(|e| Error::new(E_FAIL, e))?;
+        }
+        let live = self.settings.live_capture;
+        let image = if live {
+            crate::image::blank_desktop()?
+        } else {
+            capture_desktop()?
+        };
+        let (left, top, width, height) = (image.left, image.top, image.width, image.height);
+        let prepared = match self.prepared.take() {
+            Some(prepared) => prepared,
+            None => crate::session::Preparation::cold(width, height, live)?,
+        };
+        let mut session = prepared.activate(image, live)?;
+        session.capture.monitors = session.frame_monitors();
+        session.capture.custom_color = self.settings.last_custom_color;
+        session.capture.editor.style.width = self.settings.capture_stroke_width as f64;
+        let mut pointer = POINT::default();
+        if unsafe { GetCursorPos(&mut pointer) }.is_ok() {
+            session.capture.pointer = Point {
+                x: (pointer.x - left) as f64,
+                y: (pointer.y - top) as f64,
+            };
+        }
+        if live {
+            unsafe {
+                SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)?;
+                let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+                SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED.0 as isize);
+            }
+        }
+        session.prepare_acceleration(hwnd, RENDERER_READY)?;
+        self.session = Some(session);
+        unsafe {
+            SetWindowLongPtrW(hwnd, GWL_STYLE, WS_POPUP.0 as isize);
+            SetWindowPos(
+                hwnd,
+                Some(HWND_TOPMOST),
+                left,
+                top,
+                width as i32,
+                height as i32,
+                SWP_FRAMECHANGED | SWP_SHOWWINDOW,
+            )?;
+            let _ = SetForegroundWindow(hwnd);
+            let _ = SetFocus(Some(hwnd));
+        }
+        invalidate(hwnd);
+        Ok(())
+    }
+    fn persist_stroke_width(&mut self, hwnd: HWND) -> Result<()> {
+        if let Some(s) = &self.session {
+            let width = s.capture.editor.style.width as u32;
+            if self.settings.capture_stroke_width != width {
+                self.settings.capture_stroke_width = width;
+                self.pending_stroke_width = Some((
+                    width,
+                    std::time::Instant::now()
+                        + std::time::Duration::from_millis(STROKE_WIDTH_DELAY_MS as u64),
+                ));
+                if unsafe { SetTimer(Some(hwnd), STROKE_WIDTH_TIMER, STROKE_WIDTH_DELAY_MS, None) }
+                    == 0
+                {
+                    self.flush_stroke_width()?;
+                }
+            }
+        }
+        Ok(())
+    }
+    fn flush_stroke_width(&mut self) -> Result<()> {
+        let persist = self.persist_preferences;
+        self.flush_stroke_width_with(|width| {
+            if persist {
+                Settings::save_stroke_width(width)
+            } else {
+                Ok(())
+            }
+        })
+    }
+    fn flush_stroke_width_with(
+        &mut self,
+        save: impl FnOnce(u32) -> std::result::Result<(), String>,
+    ) -> Result<()> {
+        if let Some((width, _)) = self.pending_stroke_width {
+            save(width).map_err(|error| Error::new(E_FAIL, error))?;
+            self.pending_stroke_width = None;
+        }
+        Ok(())
+    }
+    fn stroke_width_timer(&mut self, hwnd: HWND) -> Result<()> {
+        unsafe {
+            let _ = KillTimer(Some(hwnd), STROKE_WIDTH_TIMER);
+        }
+        if let Some((_, deadline)) = self.pending_stroke_width {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero()
+                || unsafe {
+                    SetTimer(
+                        Some(hwnd),
+                        STROKE_WIDTH_TIMER,
+                        remaining.as_millis().max(1) as u32,
+                        None,
+                    )
+                } == 0
+            {
+                self.flush_stroke_width()?;
+            }
+        }
+        Ok(())
+    }
+    fn close_session(&mut self, hwnd: HWND) {
+        if let Err(error) = self
+            .persist_stroke_width(hwnd)
+            .and_then(|_| self.flush_stroke_width())
+        {
+            message(hwnd, &format!("Could not save settings: {error}"));
+        }
+        unsafe {
+            let _ = KillTimer(Some(hwnd), crate::toolbar::HINT_TIMER);
+            let _ = KillTimer(Some(hwnd), STROKE_WIDTH_TIMER);
+        }
+        if let Err(error) = self.persist_custom_color() {
+            message(hwnd, &error.to_string());
+        }
+        if let Some(s) = &mut self.session {
+            s.native.finish_text(&mut s.capture, hwnd, false);
+        }
+        self.session = None;
+        self.google_search = None;
+        unsafe {
+            let _ = ShowWindow(hwnd, SW_HIDE);
+        }
+        if self.quit_after_capture {
+            unsafe {
+                PostQuitMessage(0);
+            }
+        }
+    }
+    fn action(&mut self, hwnd: HWND, action: Action) -> Result<()> {
+        let Some(s) = &mut self.session else {
+            return Ok(());
+        };
+        if s.native.has_dimensions_input()
+            && !s
+                .native
+                .finish_dimensions(&mut s.capture, hwnd, !matches!(action, Action::Close))
+        {
+            invalidate(hwnd);
+            return Ok(());
+        }
+        match action {
+            Action::CopyColor(rgb) => {
+                crate::copy_text(
+                    hwnd,
+                    &format!("#{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]),
+                )?;
+            }
+            Action::Live => {
+                s.set_live(hwnd, !s.capture.live)?;
+            }
+            Action::GoogleSearch => {
+                if self.google_search.is_some() {
+                    return Ok(());
+                }
+                let image = s.capture_output()?;
+                let (tx, rx) = std::sync::mpsc::channel();
+                let owner = hwnd.0 as usize;
+                std::thread::Builder::new()
+                    .name("Shotoshot Google Lens".into())
+                    .spawn(move || {
+                        let result = crate::google_search::upload(&image).map_err(|e| e.message());
+                        if tx.send(result).is_ok() {
+                            unsafe {
+                                let _ = PostMessageW(
+                                    Some(HWND(owner as *mut _)),
+                                    GOOGLE_FINISHED,
+                                    WPARAM(0),
+                                    LPARAM(0),
+                                );
+                            }
+                        }
+                    })
+                    .map_err(|e| Error::new(E_FAIL, e.to_string()))?;
+                s.capture.searching = true;
+                self.google_search = Some(rx);
+                self.notify(Notice::Searching);
+            }
+            Action::Copy => {
+                let output = s.capture_output()?;
+                copy_image(&output, hwnd)?;
+                self.notify(Notice::Copied);
+                self.close_session(hwnd);
+            }
+            Action::Save => {
+                if s.save(hwnd, &mut self.settings)? {
+                    if self.persist_preferences
+                        && let Err(error) = Settings::save_editor_folder(&self.settings.folder)
+                    {
+                        message(hwnd, &format!("Could not save settings: {error}"));
+                    }
+                    self.notify(Notice::Saved);
+                    self.close_session(hwnd);
+                }
+            }
+            Action::Close => self.close_session(hwnd),
+            _ => {
+                s.action(hwnd, action);
+                s.refresh_live_sample(s.capture.pointer)?;
+                if s.capture.picker.is_some() || s.capture.eyedropper {
+                    unsafe {
+                        let _ = SetFocus(Some(hwnd));
+                    }
+                } else {
+                    s.focus_text();
+                }
+            }
+        }
+        invalidate(hwnd);
+        Ok(())
+    }
+    fn persist_custom_color(&mut self) -> Result<()> {
+        if let Some(session) = &mut self.session
+            && session.capture.custom_color_changed
+        {
+            if self.persist_preferences {
+                Settings::save_custom_color(session.capture.custom_color)
+                    .map_err(|error| Error::new(E_FAIL, error))?;
+            }
+            self.settings.last_custom_color = session.capture.custom_color;
+            session.capture.custom_color_changed = false;
+        }
+        Ok(())
+    }
+}
