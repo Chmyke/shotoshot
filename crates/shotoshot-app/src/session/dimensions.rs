@@ -47,7 +47,7 @@ impl Native {
                     None,
                     None,
                 )?;
-                let font = match super::text::configure_input(window, font_size) {
+                let font = match super::text::configure_input(window, font_size, Face::Interface) {
                     Ok(font) => font,
                     Err(error) => {
                         let _ = DestroyWindow(window);
@@ -60,6 +60,7 @@ impl Native {
                     position: Point::default(),
                     object: None,
                     size: font_size,
+                    face: Face::Interface,
                     color: [240, 240, 240],
                     font,
                     rotation: 0.,

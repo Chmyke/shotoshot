@@ -16,7 +16,7 @@ impl Native {
                 Some(WPARAM((&mut start as *mut u32) as usize)),
                 Some(LPARAM((&mut end as *mut u32) as isize)),
             );
-            let font = super::text::configure_input(input.window, size)?;
+            let font = super::text::configure_input(input.window, size, input.face)?;
             let _ = DeleteObject(input.font.into());
             input.font = font;
             input.size = size;

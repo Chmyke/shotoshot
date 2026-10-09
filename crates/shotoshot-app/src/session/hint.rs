@@ -4,48 +4,53 @@ use super::*;
 use shotoshot_ui::Monitor;
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 
+/// Every monitor's bounds relative to the desktop point (`left`, `top`), with its interface
+/// scale.
+pub(super) fn monitors_from(left: i32, top: i32) -> Vec<Monitor> {
+    unsafe extern "system" fn collect(
+        monitor: HMONITOR,
+        _: HDC,
+        bounds: *mut RECT,
+        list: LPARAM,
+    ) -> BOOL {
+        // A failed query keeps 96 DPI: the interface at its 100 % size.
+        let (mut dpi, mut vertical) = (96, 96);
+        unsafe {
+            let _ = GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi, &mut vertical);
+            (*(list.0 as *mut Vec<(RECT, u32)>)).push((*bounds, dpi));
+        }
+        TRUE
+    }
+    let mut list = Vec::<(RECT, u32)>::new();
+    unsafe {
+        let _ = EnumDisplayMonitors(
+            None,
+            None,
+            Some(collect),
+            LPARAM(&mut list as *mut Vec<(RECT, u32)> as isize),
+        );
+    }
+    list.iter()
+        .map(|(r, dpi)| Monitor {
+            bounds: Rect {
+                min: Point {
+                    x: (r.left - left) as f64,
+                    y: (r.top - top) as f64,
+                },
+                max: Point {
+                    x: (r.right - left) as f64,
+                    y: (r.bottom - top) as f64,
+                },
+            },
+            scale: *dpi as f64 / 96.,
+        })
+        .collect()
+}
+
 impl Session {
     /// Every monitor's bounds, in frame coordinates, with its interface scale.
     pub fn frame_monitors(&self) -> Vec<Monitor> {
-        unsafe extern "system" fn collect(
-            monitor: HMONITOR,
-            _: HDC,
-            bounds: *mut RECT,
-            list: LPARAM,
-        ) -> BOOL {
-            // A failed query keeps 96 DPI: the interface at its 100 % size.
-            let (mut dpi, mut vertical) = (96, 96);
-            unsafe {
-                let _ = GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi, &mut vertical);
-                (*(list.0 as *mut Vec<(RECT, u32)>)).push((*bounds, dpi));
-            }
-            TRUE
-        }
-        let mut list = Vec::<(RECT, u32)>::new();
-        unsafe {
-            let _ = EnumDisplayMonitors(
-                None,
-                None,
-                Some(collect),
-                LPARAM(&mut list as *mut Vec<(RECT, u32)> as isize),
-            );
-        }
-        let image = &self.capture.image;
-        list.iter()
-            .map(|(r, dpi)| Monitor {
-                bounds: Rect {
-                    min: Point {
-                        x: (r.left - image.left) as f64,
-                        y: (r.top - image.top) as f64,
-                    },
-                    max: Point {
-                        x: (r.right - image.left) as f64,
-                        y: (r.bottom - image.top) as f64,
-                    },
-                },
-                scale: *dpi as f64 / 96.,
-            })
-            .collect()
+        monitors_from(self.capture.image.left, self.capture.image.top)
     }
     /// Monitor under the pointer, in frame coordinates; the whole frame if unknown.
     pub(super) fn pointer_monitor(&self) -> Rect {

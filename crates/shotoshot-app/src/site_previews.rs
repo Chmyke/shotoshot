@@ -696,7 +696,7 @@ fn support_heart_film(folder: &Path) -> Result<()> {
         .session
         .native
         .renderer
-        .measure_text(THANKS, film.session.capture.text_size)?
+        .measure_annotation_text(THANKS, film.session.capture.text_size)?
         .x;
     film.pick(Action::Tool(Tool::Text))?;
     film.glide(p(frame.center().x - width / 2., THANKS_TOP), 12, none)?;

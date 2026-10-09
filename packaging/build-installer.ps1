@@ -41,6 +41,16 @@ if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE." }
 
 $setup = Join-Path $PSScriptRoot "out/Shotoshot-Setup-$version.exe"
 if (-not (Test-Path $setup)) { throw "Expected output not found: $setup" }
+# The license and the pointer to the source code travel with the binary: read what ISCC
+# really packed (OutputManifestFile) and refuse a setup that lacks one of them.
+$packed = Import-Csv (Join-Path $PSScriptRoot "out/Shotoshot-Setup-$version.manifest.txt") -Delimiter "`t" |
+    ForEach-Object { [System.IO.Path]::GetFullPath($_.SourceFilename) }
+foreach ($required in @((Join-Path $root 'LICENSE'), (Join-Path $PSScriptRoot 'ABOUT.txt'), (Join-Path $PSScriptRoot 'THIRD-PARTY-NOTICES.txt'))) {
+    if ($packed -notcontains [System.IO.Path]::GetFullPath($required)) {
+        Remove-Item $setup
+        throw "The setup does not carry $required. Nothing was kept in packaging/out."
+    }
+}
 $item = Get-Item $setup
 $hash = (Get-FileHash -Algorithm SHA256 $setup).Hash
 Write-Output "Setup:  $($item.FullName)"

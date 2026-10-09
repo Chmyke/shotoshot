@@ -25,21 +25,59 @@ pub fn wide(path: &Path) -> Vec<u16> {
 pub fn save_png(image: &Image, path: &Path) -> Result<()> {
     save_image(image, path, SaveFormat::Png)
 }
+/// Writes a file under a temporary name beside `requested`, then moves it into place: whole
+/// or not at all. A numbered capture never replaces another, even if another editor saved
+/// after the dialog opened: it takes the next number. Returns where the file went.
+fn publish(
+    requested: &Path,
+    numbered: bool,
+    write: impl FnOnce(&Path) -> Result<()>,
+) -> Result<std::path::PathBuf> {
+    let temporary = requested.with_extension(format!("{}.tmp", std::process::id()));
+    let result = write(&temporary).and_then(|()| {
+        let mut destination = requested.to_path_buf();
+        let flags = if numbered {
+            MOVEFILE_WRITE_THROUGH
+        } else {
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH
+        };
+        loop {
+            match unsafe {
+                MoveFileExW(
+                    PCWSTR(wide(&temporary).as_ptr()),
+                    PCWSTR(wide(&destination).as_ptr()),
+                    flags,
+                )
+            } {
+                Ok(()) => return Ok(destination),
+                Err(error)
+                    if numbered
+                        && (error.code() == ERROR_ALREADY_EXISTS.to_hresult()
+                            || error.code() == ERROR_FILE_EXISTS.to_hresult()) =>
+                {
+                    // Every kind of file shares the sequence and keeps its own extension.
+                    destination = crate::capture_name::next_path(
+                        requested.parent().unwrap_or(Path::new(".")),
+                        SaveFormat::Png,
+                    )
+                    .map_err(|e| Error::new(E_FAIL, e.to_string()))?;
+                    if let Some(extension) = requested.extension() {
+                        destination.set_extension(extension);
+                    }
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    });
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
+}
 /// Writes `image` in `format`; `path` is replaced only by a complete file.
 pub fn save_image(image: &Image, path: &Path, format: SaveFormat) -> Result<()> {
     image.validate()?;
-    let temporary = path.with_extension(format!("{}.tmp", std::process::id()));
-    let outcome = encode(image, &temporary, format).and_then(|()| unsafe {
-        MoveFileExW(
-            PCWSTR(wide(&temporary).as_ptr()),
-            PCWSTR(wide(path).as_ptr()),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    });
-    if outcome.is_err() {
-        let _ = std::fs::remove_file(&temporary);
-    }
-    outcome
+    publish(path, false, |temporary| encode(image, temporary, format)).map(|_| ())
 }
 // Never replace a numbered capture, even if another editor saved after the dialog opened.
 pub fn save_numbered(
@@ -48,37 +86,15 @@ pub fn save_numbered(
     format: SaveFormat,
 ) -> Result<std::path::PathBuf> {
     image.validate()?;
-    let temporary = requested.with_extension(format!("{}.tmp", std::process::id()));
-    let result = (|| {
-        encode(image, &temporary, format)?;
-        let mut destination = requested.to_path_buf();
-        loop {
-            match unsafe {
-                MoveFileExW(
-                    PCWSTR(wide(&temporary).as_ptr()),
-                    PCWSTR(wide(&destination).as_ptr()),
-                    MOVEFILE_WRITE_THROUGH,
-                )
-            } {
-                Ok(()) => return Ok(destination),
-                Err(error)
-                    if error.code() == ERROR_ALREADY_EXISTS.to_hresult()
-                        || error.code() == ERROR_FILE_EXISTS.to_hresult() =>
-                {
-                    destination = crate::capture_name::next_path(
-                        requested.parent().unwrap_or(Path::new(".")),
-                        format,
-                    )
-                    .map_err(|e| Error::new(E_FAIL, e.to_string()))?;
-                }
-                Err(error) => return Err(error),
-            }
-        }
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(&temporary);
-    }
-    result
+    publish(requested, true, |temporary| {
+        encode(image, temporary, format)
+    })
+}
+/// Saves an already encoded file; `numbered` as for `save_numbered`.
+pub fn save_bytes(bytes: &[u8], path: &Path, numbered: bool) -> Result<std::path::PathBuf> {
+    publish(path, numbered, |temporary| {
+        std::fs::write(temporary, bytes).map_err(|e| Error::new(E_FAIL, e.to_string()))
+    })
 }
 
 fn encode(image: &Image, path: &Path, format: SaveFormat) -> Result<()> {
@@ -176,10 +192,37 @@ pub fn load_png(path: &Path) -> Result<Image> {
             GENERIC_READ,
             WICDecodeMetadataCacheOnLoad,
         )?;
+        decoded(&wic, &decoder, None)
+    }
+}
+/// Decodes a PNG of exactly `size` held in memory. Any other container or size is refused
+/// before a pixel is allocated: a document read from a file only ever reaches the PNG codec.
+pub fn decode_png(bytes: &[u8], size: (u32, u32)) -> Result<Image> {
+    unsafe {
+        let wic = factory()?;
+        let stream = wic.CreateStream()?;
+        stream.InitializeFromMemory(bytes)?;
+        let decoder =
+            wic.CreateDecoderFromStream(&stream, std::ptr::null(), WICDecodeMetadataCacheOnLoad)?;
+        if decoder.GetContainerFormat()? != GUID_ContainerFormatPng {
+            return Err(Error::new(E_INVALIDARG, "Not a PNG image"));
+        }
+        decoded(&wic, &decoder, Some(size))
+    }
+}
+fn decoded(
+    wic: &IWICImagingFactory,
+    decoder: &IWICBitmapDecoder,
+    expected: Option<(u32, u32)>,
+) -> Result<Image> {
+    unsafe {
         let frame = decoder.GetFrame(0)?;
         let mut width = 0;
         let mut height = 0;
         frame.GetSize(&mut width, &mut height)?;
+        if expected.is_some_and(|size| size != (width, height)) {
+            return Err(Error::new(E_INVALIDARG, "Unexpected image size"));
+        }
         let converter = wic.CreateFormatConverter()?;
         converter.Initialize(
             &frame,
@@ -292,7 +335,8 @@ fn copy_clipboard_bytes(owner: HWND, format: u32, bytes: &[u8]) -> Result<u32> {
     }
 }
 
-pub(crate) fn png_bytes(image: &Image) -> Result<Vec<u8>> {
+/// The PNG encoding of `image`, in memory.
+pub(crate) fn png_data(image: &Image) -> Result<Vec<u8>> {
     image.validate()?;
     unsafe {
         let stream = windows::Win32::System::Com::StructuredStorage::CreateStreamOnHGlobal(
@@ -302,12 +346,6 @@ pub(crate) fn png_bytes(image: &Image) -> Result<Vec<u8>> {
         encode_stream(image, &factory()?, &stream, SaveFormat::Png)?;
         let mut stat = STATSTG::default();
         stream.Stat(&mut stat, STATFLAG_NONAME)?;
-        if stat.cbSize > 20 * 1024 * 1024 {
-            return Err(Error::new(
-                E_FAIL,
-                "The image exceeds the Google Lens limit of 20 MB.",
-            ));
-        }
         let mut data = vec![0u8; stat.cbSize as usize];
         stream.Seek(0, STREAM_SEEK_SET, None)?;
         let mut read = 0;
@@ -319,4 +357,14 @@ pub(crate) fn png_bytes(image: &Image) -> Result<Vec<u8>> {
         }
         Ok(data)
     }
+}
+pub(crate) fn png_bytes(image: &Image) -> Result<Vec<u8>> {
+    let data = png_data(image)?;
+    if data.len() > 20 * 1024 * 1024 {
+        return Err(Error::new(
+            E_FAIL,
+            "The image exceeds the Google Lens limit of 20 MB.",
+        ));
+    }
+    Ok(data)
 }

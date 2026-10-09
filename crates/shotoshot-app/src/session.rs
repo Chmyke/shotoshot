@@ -1,10 +1,12 @@
 //! ROLE: Capture-session adapter between Windows events, pure editor, and rendering.
 //! OWNER: Resident application; dropped when the session ends.
 mod dimensions;
+mod document;
 mod editing;
 mod fill;
 mod hint;
 mod io;
+pub use io::Saved;
 mod live;
 mod magnifier;
 mod preparation;
@@ -18,7 +20,7 @@ use crate::{
     *,
 };
 use shotoshot_core::*;
-use shotoshot_ui::{Canvas, Capture, CursorKind, Host, keys::KeyOutcome};
+use shotoshot_ui::{Canvas, Capture, CursorKind, Face, Host, keys::KeyOutcome};
 use windows::{
     Win32::{
         Foundation::*,
@@ -34,6 +36,8 @@ pub struct TextInput {
     pub position: Point,
     pub object: Option<u64>,
     pub size: f32,
+    /// Typeface the hidden control and its DirectWrite presentation share.
+    pub face: Face,
     pub color: [u8; 3],
     pub font: HFONT,
     pub drag_anchor: Option<u32>,
@@ -56,6 +60,8 @@ pub struct Native {
 pub struct Session {
     pub capture: Capture,
     pub native: Native,
+    /// The `.shoto` file this session was reopened from; Save rewrites it.
+    pub document: Option<std::path::PathBuf>,
 }
 impl Session {
     pub fn new(image: Image) -> Result<Self> {
@@ -81,6 +87,7 @@ impl Session {
                 back_buffer: None,
                 acceleration: None,
             },
+            document: None,
         })
     }
     /// Builds the hardware renderer on another thread, then posts `ready` to `hwnd`, whose
@@ -324,7 +331,9 @@ impl Host for WinHost<'_> {
         self.native.set_text_size(self.hwnd, size)
     }
     fn measure_text(&mut self, text: &str, size: f64) -> Result<Point> {
-        self.native.renderer.measure_text(text, size as f32)
+        self.native
+            .renderer
+            .measure_annotation_text(text, size as f32)
     }
     fn dimensions_active(&self) -> bool {
         self.native.dimensions.is_some()

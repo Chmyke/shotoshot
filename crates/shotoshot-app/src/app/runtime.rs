@@ -9,12 +9,19 @@ pub fn run() -> Result<()> {
         crate::rename_migration::run();
         return crate::print_screen::restore();
     }
+    if std::env::args().any(|a| a == "--document-diagnostic") {
+        let _com = ComApartment::new()?;
+        return document::probe();
+    }
+    let document = document::requested();
     let diagnostic = std::env::args().any(|a| a == "--diagnostic");
     // The first-frame diagnostic is a real editor, without the user's settings.
     let first_frame = std::env::args().any(|a| a == "--first-frame-diagnostic");
     let prepared_editor = std::env::args().any(|a| a == "--prepared-editor");
-    let editor_process =
-        first_frame || prepared_editor || std::env::args().any(|a| a == "--editor");
+    let editor_process = first_frame
+        || prepared_editor
+        || document.is_some()
+        || std::env::args().any(|a| a == "--editor");
     let _com = ComApartment::new()?;
     // PITFALL: Set process DPI before creating any window or reading screen metrics.
     unsafe {
@@ -72,6 +79,9 @@ pub fn run() -> Result<()> {
                 w!("Local\\Shotoshot.Diagnostics")
             } else if first_frame {
                 w!("Local\\Shotoshot.FirstFrameDiagnostic")
+            } else if document.is_some() {
+                // Never the editor's name: holding it would stop the resident's next editor.
+                w!("Local\\Shotoshot.Document")
             } else if editor_process {
                 w!("Local\\Shotoshot.Editor")
             } else {
@@ -79,7 +89,8 @@ pub fn run() -> Result<()> {
             },
         )?;
         let _mutex = crate::resources::OwnedMutex(mutex);
-        if GetLastError() == ERROR_ALREADY_EXISTS {
+        // Reopened documents do not exclude each other.
+        if GetLastError() == ERROR_ALREADY_EXISTS && document.is_none() {
             if prepared_editor {
                 return Err(Error::new(E_FAIL, "An editor already exists"));
             }
@@ -276,7 +287,10 @@ pub fn run() -> Result<()> {
                 app.prepare_editor(hwnd);
             }
         }
-        if !prepared_editor && (editor_process || std::env::args().any(|a| a == "--capture")) {
+        if let Some(path) = &document {
+            state.borrow_mut().open_document(hwnd, path)?;
+        } else if !prepared_editor && (editor_process || std::env::args().any(|a| a == "--capture"))
+        {
             PostMessageW(Some(hwnd), CAPTURE_MESSAGE, WPARAM(0), LPARAM(0))?;
         }
         let mut msg = MSG::default();

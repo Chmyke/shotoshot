@@ -4,8 +4,11 @@ use std::path::{Path, PathBuf};
 
 /// Posted to the hook with the one-based entry of the type list as WPARAM.
 const UPDATE_CAPTURE_NAME: u32 = WM_APP + 83;
-/// The type list of the Save dialog: one entry per `SaveFormat::ALL`, in that order.
-const SAVE_FILTER: PCWSTR = w!("PNG image\0*.png\0JPEG image\0*.jpg;*.jpeg\0\0");
+/// The type list of the Save dialog: one entry per `SaveFormat::ALL`, in that order, then the
+/// editable document, whose label says what such a file keeps at the moment it is chosen.
+const SAVE_FILTER: PCWSTR = w!(
+    "PNG image\0*.png\0JPEG image\0*.jpg;*.jpeg\0Editable Shotoshot image, keeps the whole screen\0*.shoto\0\0"
+);
 
 fn listed_format(filter_index: u32) -> SaveFormat {
     SaveFormat::ALL
@@ -13,9 +16,48 @@ fn listed_format(filter_index: u32) -> SaveFormat {
         .copied()
         .unwrap_or_default()
 }
+/// One entry of the type list: an image format, or the editable document.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Listed {
+    Image(SaveFormat),
+    Document,
+}
+impl Listed {
+    /// The document comes after every image format.
+    fn entry(filter_index: u32) -> Self {
+        if filter_index as usize == SaveFormat::ALL.len() + 1 {
+            Self::Document
+        } else {
+            Self::Image(listed_format(filter_index))
+        }
+    }
+    /// What the extension of `path` names, when it is one Save writes.
+    fn of(path: &Path) -> Option<Self> {
+        if crate::capture_name::is_document(path) {
+            Some(Self::Document)
+        } else {
+            SaveFormat::of(path).map(Self::Image)
+        }
+    }
+    /// Extension given to a new file.
+    fn extension(self) -> &'static str {
+        match self {
+            Self::Image(format) => format.extension(),
+            Self::Document => crate::capture_name::DOCUMENT,
+        }
+    }
+    /// The next numbered name in `folder`: every entry shares the sequence.
+    fn next_path(self, folder: &Path) -> std::io::Result<PathBuf> {
+        match self {
+            Self::Image(format) => crate::capture_name::next_path(folder, format),
+            Self::Document => Ok(crate::capture_name::next_path(folder, SaveFormat::Png)?
+                .with_extension(crate::capture_name::DOCUMENT)),
+        }
+    }
+}
 /// The file is what its name says; any other name is written as listed.
-fn chosen_format(path: &Path, filter_index: u32) -> SaveFormat {
-    SaveFormat::of(path).unwrap_or_else(|| listed_format(filter_index))
+fn chosen(path: &Path, filter_index: u32) -> Listed {
+    Listed::of(path).unwrap_or_else(|| Listed::entry(filter_index))
 }
 /// The path the dialog left in its null-terminated buffer.
 fn chosen_path(buffer: &[u16]) -> PathBuf {
@@ -44,12 +86,12 @@ unsafe extern "system" fn save_dialog_hook(
         if message != UPDATE_CAPTURE_NAME {
             return 0;
         }
-        let format = listed_format(wparam.0 as u32);
+        let listed = Listed::entry(wparam.0 as u32);
         let Ok(dialog) = GetParent(hwnd) else {
             return 0;
         };
-        // A name typed without an extension takes the listed format's.
-        let extension = crate::wide(Path::new(format.extension()));
+        // A name typed without an extension takes the listed entry's.
+        let extension = crate::wide(Path::new(listed.extension()));
         SendMessageW(
             dialog,
             CDM_SETDEFEXT,
@@ -86,10 +128,10 @@ unsafe extern "system" fn save_dialog_hook(
             && crate::capture_name::number(typed).is_none()
             && !typed.is_dir()
         {
-            // Preserve a name the user has typed themselves: only its image extension
-            // follows the type list.
-            match SaveFormat::of(typed) {
-                Some(current) if current != format => typed.with_extension(format.extension()),
+            // Preserve a name the user has typed themselves: only an extension Save
+            // writes follows the type list.
+            match Listed::of(typed) {
+                Some(current) if current != listed => typed.with_extension(listed.extension()),
                 _ => return 0,
             }
         } else {
@@ -97,7 +139,7 @@ unsafe extern "system" fn save_dialog_hook(
             let folder = PathBuf::from(std::ffi::OsString::from_wide(
                 &folder[..length as usize - 1],
             ));
-            match crate::capture_name::next_path(&folder, format) {
+            match listed.next_path(&folder) {
                 Ok(path) => PathBuf::from(path.file_name().unwrap()),
                 Err(_) => return 0,
             }
@@ -175,7 +217,7 @@ impl Native {
                 None,
                 None,
             )?;
-            let font = match super::text::configure_input(input, size) {
+            let font = match super::text::configure_input(input, size, Face::Annotation) {
                 Ok(font) => font,
                 Err(error) => {
                     let _ = DestroyWindow(input);
@@ -188,6 +230,7 @@ impl Native {
                 position,
                 object: id,
                 size,
+                face: Face::Annotation,
                 color: rgb,
                 font,
                 drag_anchor: None,
@@ -208,7 +251,7 @@ impl Native {
                     let mut buffer = vec![0u16; length + 1];
                     let copied = GetWindowTextW(input.window, &mut buffer) as usize;
                     let text = String::from_utf16_lossy(&buffer[..copied]);
-                    let extent = match self.renderer.measure_text(&text, input.size) {
+                    let extent = match self.renderer.measure_annotation_text(&text, input.size) {
                         Ok(extent) => extent,
                         Err(error) => {
                             MessageBoxW(
@@ -249,10 +292,40 @@ impl Native {
         }
     }
 }
+/// How a save ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Saved {
+    Cancelled,
+    /// A flattened image.
+    Image,
+    /// An editable `.shoto` document.
+    Document,
+}
+
 impl Session {
-    pub fn save(&self, hwnd: HWND, settings: &mut Settings) -> Result<bool> {
+    /// The `.shoto` file of this capture: its flattened image as any viewer shows it, and
+    /// inside it the screens of `background` under the region and the objects, still apart.
+    pub(crate) fn document_bytes(&self, background: &Image) -> Result<Vec<u8>> {
+        let refused = || Error::new(E_FAIL, "This capture cannot be saved as an editable image.");
+        let (scene, frame) = self.capture.document(background).ok_or_else(refused)?;
+        let visible = png_data(&self.flatten(background)?)?;
+        shoto::pack(&visible, &scene, &png_data(&frame)?).ok_or_else(refused)
+    }
+    /// Saves the capture. A reopened document is rewritten in place unless `choose` asks
+    /// where to save; a capture always asks, listing the image format last used.
+    pub fn save(&self, hwnd: HWND, settings: &mut Settings, choose: bool) -> Result<Saved> {
         // Snapshot before the modal dialog, at the Save action.
-        let output = self.capture_output()?;
+        let grabbed = if self.capture.live {
+            Some(self.fresh_desktop()?)
+        } else {
+            None
+        };
+        let background = grabbed.as_ref().unwrap_or(&self.capture.image);
+        if let Some(path) = self.document.as_ref().filter(|_| !choose) {
+            save_bytes(&self.document_bytes(background)?, path, false)?;
+            return Ok(Saved::Document);
+        }
+        let output = self.flatten(background)?;
         unsafe {
             let folder = settings.save_folder()?;
             let folder_wide = crate::wide(&folder);
@@ -289,20 +362,31 @@ impl Session {
                         format!("Could not open the Save dialog ({error})"),
                     ));
                 }
-                return Ok(false);
+                return Ok(Saved::Cancelled);
             }
             let path = chosen_path(&buffer);
-            let format = chosen_format(&path, dialog.nFilterIndex);
-            if crate::capture_name::number(&path).is_some() {
-                save_numbered(&output, &path, format)?;
-            } else {
-                save_image(&output, &path, format)?;
-            }
+            let numbered = crate::capture_name::number(&path).is_some();
+            let saved = match chosen(&path, dialog.nFilterIndex) {
+                Listed::Document => {
+                    save_bytes(&self.document_bytes(background)?, &path, numbered)?;
+                    Saved::Document
+                }
+                Listed::Image(format) => {
+                    if numbered {
+                        save_numbered(&output, &path, format)?;
+                    } else {
+                        save_image(&output, &path, format)?;
+                    }
+                    // Only an image format is remembered: the editable type, which keeps
+                    // the whole screen, is chosen on purpose each time.
+                    settings.save_format = format;
+                    Saved::Image
+                }
+            };
             if let Some(parent) = path.parent() {
                 settings.folder = parent.into();
             }
-            settings.save_format = format;
-            Ok(true)
+            Ok(saved)
         }
     }
 }
@@ -457,6 +541,7 @@ mod save_dialog_tests {
             &root,
             vec![
                 Step::Navigate(old.clone()),
+                Step::List(None, 2),
                 Step::List(None, 1),
                 Step::List(Some("Invoice May.jpg"), 0),
                 Step::List(Some("Invoice May"), 1),
@@ -470,7 +555,8 @@ mod save_dialog_tests {
                 "Shot 002.png",
                 // Renumbered for the folder reached, where a JPEG holds the largest number.
                 "Shot 012.png",
-                // The proposed name follows the type list.
+                // The proposed name follows the type list, to the editable document too.
+                "Shot 012.shoto",
                 "Shot 012.jpg",
                 // A typed name is kept; only its image extension follows.
                 "Invoice May.png",
@@ -482,15 +568,19 @@ mod save_dialog_tests {
         assert_eq!(path.file_name().unwrap(), "Invoice May.jpg");
         assert_eq!(path.parent().unwrap().file_name().unwrap(), "old");
         assert_eq!(listed, 2);
-        assert_eq!(chosen_format(&path, listed), SaveFormat::Jpeg);
+        assert_eq!(chosen(&path, listed), Listed::Image(SaveFormat::Jpeg));
     }
     #[test]
     fn the_name_decides_the_format_and_the_type_list_settles_the_rest() {
-        let chosen = |name: &str, listed| chosen_format(Path::new(name), listed);
-        assert_eq!(chosen("Shot 001.png", 2), SaveFormat::Png);
-        assert_eq!(chosen("photo.JPEG", 1), SaveFormat::Jpeg);
-        assert_eq!(chosen("notes.txt", 2), SaveFormat::Jpeg);
-        assert_eq!(chosen("bare", 1), SaveFormat::Png);
+        let named = |name: &str, listed| chosen(Path::new(name), listed);
+        assert_eq!(named("Shot 001.png", 2), Listed::Image(SaveFormat::Png));
+        assert_eq!(named("photo.JPEG", 1), Listed::Image(SaveFormat::Jpeg));
+        assert_eq!(named("notes.txt", 2), Listed::Image(SaveFormat::Jpeg));
+        assert_eq!(named("bare", 1), Listed::Image(SaveFormat::Png));
+        // The editable document: by its name whatever is listed, or as the last entry.
+        assert_eq!(named("Shot 001.SHOTO", 1), Listed::Document);
+        assert_eq!(named("bare", 3), Listed::Document);
+        assert_eq!(named("Shot 001.png", 3), Listed::Image(SaveFormat::Png));
     }
     #[test]
     fn type_list_entries_follow_the_save_formats() {
@@ -507,7 +597,12 @@ mod save_dialog_tests {
             .split(|unit| *unit == 0)
             .map(String::from_utf16_lossy)
             .collect();
-        assert_eq!(entries.len(), SaveFormat::ALL.len() * 2);
+        // The editable document closes the list.
+        assert_eq!(entries.len(), SaveFormat::ALL.len() * 2 + 2);
+        assert_eq!(entries.last().unwrap(), "*.shoto");
+        let document = SaveFormat::ALL.len() as u32 + 1;
+        assert_eq!(Listed::entry(document), Listed::Document);
+        assert_eq!(Listed::Document.extension(), "shoto");
         for (format, entry) in SaveFormat::ALL.into_iter().zip(entries.chunks(2)) {
             let pattern = format!("*.{}", format.extension());
             assert!(

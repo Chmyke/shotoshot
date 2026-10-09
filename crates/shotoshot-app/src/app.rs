@@ -1,6 +1,7 @@
 //! ROLE: Owns the Windows resident, first-run shortcut setup and capture session.
 //! OWNER: Main thread; window callbacks borrow checked RefCell state.
 //! INVARIANTS: No polling or rendering while idle; presentation input is explicitly opt-in.
+mod document;
 mod editor_events;
 mod editor_process;
 mod events;
@@ -14,7 +15,7 @@ mod runtime;
 mod setup;
 mod tray_menu;
 use crate::{
-    session::{Session, control, modifiers},
+    session::{Saved, Session, control, modifiers},
     settings::{Settings, Store},
     toolbar::Action,
     *,
@@ -37,6 +38,8 @@ const CAPTURE_MESSAGE: u32 = WM_APP + 2;
 const GOOGLE_FINISHED: u32 = WM_APP + 4;
 const RENDERER_READY: u32 = WM_APP + 7;
 const STROKE_WIDTH_TIMER: usize = 0x5357;
+/// Ends a reopened document's process once its confirmation has faded.
+const QUIT_TIMER: usize = 0x5158;
 const STROKE_WIDTH_DELAY_MS: u32 = 250;
 #[cfg(test)]
 mod display_tests;
@@ -413,13 +416,28 @@ impl App {
         } else {
             capture_desktop()?
         };
-        let (left, top, width, height) = (image.left, image.top, image.width, image.height);
+        let (width, height) = (image.width, image.height);
         let prepared = match self.prepared.take() {
             Some(prepared) => prepared,
             None => crate::session::Preparation::cold(width, height, live)?,
         };
         let mut session = prepared.activate(image, live)?;
         session.capture.monitors = session.frame_monitors();
+        if live {
+            unsafe {
+                SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)?;
+                let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+                SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED.0 as isize);
+            }
+        }
+        session.prepare_acceleration(hwnd, RENDERER_READY)?;
+        self.enter(hwnd, session)
+    }
+    /// Gives `session` the user's last colour and stroke width, then shows the window over
+    /// its frame and takes the keyboard.
+    fn enter(&mut self, hwnd: HWND, mut session: Session) -> Result<()> {
+        let image = &session.capture.image;
+        let (left, top, width, height) = (image.left, image.top, image.width, image.height);
         session.capture.custom_color = self.settings.last_custom_color;
         session.capture.editor.style.width = self.settings.capture_stroke_width as f64;
         let mut pointer = POINT::default();
@@ -429,14 +447,6 @@ impl App {
                 y: (pointer.y - top) as f64,
             };
         }
-        if live {
-            unsafe {
-                SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)?;
-                let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-                SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED.0 as isize);
-            }
-        }
-        session.prepare_acceleration(hwnd, RENDERER_READY)?;
         self.session = Some(session);
         unsafe {
             SetWindowLongPtrW(hwnd, GWL_STYLE, WS_POPUP.0 as isize);
@@ -539,7 +549,12 @@ impl App {
         }
         if self.quit_after_capture {
             unsafe {
-                PostQuitMessage(0);
+                // A reopened document confirms by itself: it leaves once that has faded.
+                if self.toast.is_none()
+                    || SetTimer(Some(hwnd), QUIT_TIMER, notice::DURATION_MS, None) == 0
+                {
+                    PostQuitMessage(0);
+                }
             }
         }
     }
@@ -598,8 +613,9 @@ impl App {
                 self.notify(Notice::Copied);
                 self.close_session(hwnd);
             }
-            Action::Save => {
-                if s.save(hwnd, &mut self.settings)? {
+            Action::Save | Action::SaveAs => {
+                let saved = s.save(hwnd, &mut self.settings, action == Action::SaveAs)?;
+                if saved != Saved::Cancelled {
                     if self.persist_preferences
                         && let Err(error) = Settings::save_destination(
                             &self.settings.folder,
@@ -608,7 +624,11 @@ impl App {
                     {
                         message(hwnd, &format!("Could not save settings: {error}"));
                     }
-                    self.notify(Notice::Saved);
+                    self.notify(if saved == Saved::Document {
+                        Notice::SavedEditable
+                    } else {
+                        Notice::Saved
+                    });
                     self.close_session(hwnd);
                 }
             }

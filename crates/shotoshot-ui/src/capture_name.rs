@@ -1,6 +1,7 @@
 //! ROLE: "Shot NNN" numbering shared by every platform's save and instant capture.
 //! INVARIANTS: Every image format shares one sequence and earlier "Capture NNN.png" files
 //! still count, so numbers only grow and a folder never gets two files of one number.
+//! An editable `.shoto` document takes its number from the same sequence.
 use shotoshot_core::settings::SaveFormat;
 use std::path::{Path, PathBuf};
 
@@ -17,8 +18,19 @@ pub fn next_path(folder: &Path, format: SaveFormat) -> std::io::Result<PathBuf> 
     Ok(folder.join(format!("Shot {next:03}.{}", format.extension())))
 }
 
+/// Extension of an editable document.
+pub const DOCUMENT: &str = "shoto";
+
+/// Whether `path` names an editable document rather than an image.
+pub fn is_document(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case(DOCUMENT))
+}
+
 pub fn number(path: &Path) -> Option<u64> {
-    SaveFormat::of(path)?;
+    if !is_document(path) {
+        SaveFormat::of(path)?;
+    }
     let stem = path.file_stem()?.to_str()?.to_ascii_lowercase();
     let digits = ["shot", "capture"]
         .iter()
@@ -70,6 +82,12 @@ mod tests {
             folder.join("Shot 008.png")
         );
         assert_eq!(number(Path::new("Shot 005.jpg")), Some(5));
+        std::fs::write(folder.join("Shot 030.SHOTO"), b"editable").unwrap();
+        assert_eq!(
+            next_path(&folder, SaveFormat::Png).unwrap(),
+            folder.join("Shot 031.png")
+        );
+        assert!(is_document(Path::new("Shot 030.shoto")) && !is_document(Path::new("a.png")));
         assert_eq!(number(Path::new("Shot 020.gif")), None);
         std::fs::remove_dir_all(folder).unwrap();
     }

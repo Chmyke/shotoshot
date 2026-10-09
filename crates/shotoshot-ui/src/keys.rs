@@ -88,6 +88,9 @@ impl Capture {
             };
         }
         if let Some(a) = crate::toolbar::shortcut_action(key, false, m.shift, m.alt) {
+            if a == Action::Live && self.reopened {
+                return KeyOutcome::Handled;
+            }
             return KeyOutcome::Action(a);
         }
         let amount = if m.shift { 10. } else { 1. };

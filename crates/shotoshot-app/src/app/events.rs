@@ -29,6 +29,10 @@ impl App {
             }
             editor_process::EXITED => self.editor_exited(hwnd, w.0 as u32)?,
             WM_TIMER if w.0 == STROKE_WIDTH_TIMER => self.stroke_width_timer(hwnd)?,
+            WM_TIMER if w.0 == QUIT_TIMER => unsafe {
+                let _ = KillTimer(Some(hwnd), QUIT_TIMER);
+                PostQuitMessage(0);
+            },
             instant::FINISHED => self.finish_instant_capture(),
             WM_TIMER if w.0 == instant::RETRY_TIMER => {
                 unsafe {

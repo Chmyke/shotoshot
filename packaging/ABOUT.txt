@@ -1,0 +1,15 @@
+Shotoshot - screen capture and annotation
+https://shotoshot.com
+
+Copyright (C) 2026 Mickaël Mancini
+
+Shotoshot is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License version 3 as published by the Free
+Software Foundation. It is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE. See LICENSE.txt, next to this file, for the
+full text (SPDX: GPL-3.0-only).
+
+Source code: https://github.com/Chmyke/shotoshot
+
+The licenses of the third-party code it includes are in THIRD-PARTY-NOTICES.txt.

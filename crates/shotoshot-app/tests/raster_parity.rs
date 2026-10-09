@@ -339,3 +339,65 @@ fn hover_hints_render_with_shared_style_only_on_the_pointer_monitor() {
         capture.picker = None;
     }
 }
+
+/// Bounds of the pixels darker than mid grey.
+fn ink_bounds(image: &Image) -> [u32; 4] {
+    let (mut left, mut top, mut right, mut bottom) = (u32::MAX, u32::MAX, 0, 0);
+    for y in 0..image.height {
+        for x in 0..image.width {
+            if image.pixels[((y * image.width + x) * 4) as usize] < 128 {
+                (left, top) = (left.min(x), top.min(y));
+                (right, bottom) = (right.max(x), bottom.max(y));
+            }
+        }
+    }
+    [left, top, right, bottom]
+}
+
+#[test]
+fn both_renderers_set_annotation_text_in_the_same_embedded_face() {
+    let _com = ComApartment::new().unwrap();
+    let native = Renderer::new().unwrap();
+    let mut portable = Raster::new();
+    // Two lines: the line height is part of the face.
+    let (text, size) = ("Vérifier ce bouton\nÀ corriger", 32.);
+    let extent = native.measure_annotation_text(text, size).unwrap();
+    let other = portable.measure_annotation_text(text, size as f64);
+    assert!(
+        (extent.x - other.x).abs() < 1.5 && (extent.y - other.y).abs() < 1.5,
+        "Direct2D {extent:?}, portable {other:?}"
+    );
+    // Its line height sets it apart from the interface face it would silently fall back to.
+    let interface = native.measure_text(text, size).unwrap();
+    assert!(
+        (extent.y - interface.y).abs() > 3.,
+        "annotation text fell back"
+    );
+
+    let image = Image::solid(420, 140, [255; 4]);
+    let crop = Rect::new(Point::default(), Point { x: 420., y: 140. }).unwrap();
+    let object = Object {
+        rotation: 0.,
+        fill: None,
+        id: 1,
+        style: Style {
+            color: [0, 0, 0],
+            width: 2.,
+        },
+        shape: Shape::Text {
+            position: Point { x: 24., y: 20. },
+            text: text.into(),
+            size: size as f64,
+            extent,
+        },
+    };
+    let objects = std::slice::from_ref(&object);
+    let direct = ink_bounds(&native.export(&image, None, objects, crop).unwrap());
+    let raster = ink_bounds(&portable.export(&image, None, objects, crop).unwrap());
+    for (a, b) in direct.into_iter().zip(raster) {
+        assert!(
+            a.abs_diff(b) <= 2,
+            "ink bounds {direct:?} against {raster:?}"
+        );
+    }
+}

@@ -18,6 +18,25 @@ impl Ink {
     }
 }
 
+/// The product's two typefaces.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Face {
+    /// Labels, fields and hints of the interface: the system font.
+    Interface,
+    /// Text annotations: the embedded `annotation_font`.
+    Annotation,
+}
+
+/// The typeface of text annotations: embedded, so every platform draws the same glyphs.
+pub mod annotation_font {
+    pub const FAMILY: &str = "Roboto";
+    pub const WEIGHT: u16 = 500;
+    /// Line height relative to the font size, as DirectWrite lays this font out.
+    pub const LINE_HEIGHT: f32 = 1.2;
+    /// Roboto Medium, SIL Open Font License 1.1: `assets/Roboto-OFL.txt`.
+    pub static DATA: &[u8] = include_bytes!("../assets/Roboto-Medium.ttf");
+}
+
 pub trait Canvas {
     type Error;
     /// Size of the drawable area.
@@ -41,12 +60,21 @@ pub trait Canvas {
         width: f64,
     ) -> Result<(), Self::Error>;
     fn line(&mut self, a: Point, b: Point, ink: Ink, width: f64) -> Result<(), Self::Error>;
-    /// Text clipped to `r`, top-left aligned; each newline starts a line one
+    /// Interface text clipped to `r`, top-left aligned; each newline starts a line one
     /// `measure_text("X", size).y` lower.
     fn text(&mut self, text: &str, r: Rect, size: f64, ink: Ink) -> Result<(), Self::Error>;
+    /// Like `text`, in the typeface of text annotations and with its own line height.
+    fn annotation_text(
+        &mut self,
+        text: &str,
+        r: Rect,
+        size: f64,
+        ink: Ink,
+    ) -> Result<(), Self::Error>;
     /// Rotates later drawing by `radians` clockwise around a point; None restores it.
     fn set_rotation(&mut self, rotation: Option<(Point, f64)>) -> Result<(), Self::Error>;
     fn measure_text(&mut self, text: &str, size: f64) -> Result<Point, Self::Error>;
+    fn measure_annotation_text(&mut self, text: &str, size: f64) -> Result<Point, Self::Error>;
     /// Premultiplied BGRA raster scaled into `dst`. The canvas may keep it under `key`
     /// until `version` changes; `pixels` runs only when it has no current copy.
     fn raster(

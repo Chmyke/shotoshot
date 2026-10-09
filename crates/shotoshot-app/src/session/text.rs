@@ -2,7 +2,7 @@
 //! OWNER: Session owns the EDIT window and its font until commit or cancellation.
 //! INVARIANTS: The native control never paints a surface; UTF-16 offsets stay native.
 use super::*;
-use crate::render::vector;
+use crate::render::{annotation_font, vector};
 use windows::Win32::{
     Graphics::{Direct2D::Common::*, DirectWrite::*},
     UI::{
@@ -66,7 +66,7 @@ unsafe extern "system" fn input_proc(
     }
 }
 
-pub(super) fn configure_input(hwnd: HWND, size: f32) -> Result<HFONT> {
+pub(super) fn configure_input(hwnd: HWND, size: f32, face: Face) -> Result<HFONT> {
     unsafe {
         // EDIT can draw synchronously during input, outside WM_PAINT. An empty
         // window region clips those GDI paths too, without disabling native focus.
@@ -82,22 +82,25 @@ pub(super) fn configure_input(hwnd: HWND, size: f32) -> Result<HFONT> {
         if !SetWindowSubclass(hwnd, Some(input_proc), 1, 0).as_bool() {
             return Err(Error::from_thread());
         }
-        let font = CreateFontW(
-            -(size.round() as i32),
-            0,
-            0,
-            0,
-            FW_NORMAL.0 as i32,
-            0,
-            0,
-            0,
-            DEFAULT_CHARSET,
-            OUT_DEFAULT_PRECIS,
-            CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY,
-            0,
-            w!("Segoe UI"),
-        );
+        let font = match face {
+            Face::Annotation => annotation_font::gdi_font(size)?,
+            Face::Interface => CreateFontW(
+                -(size.round() as i32),
+                0,
+                0,
+                0,
+                FW_NORMAL.0 as i32,
+                0,
+                0,
+                0,
+                DEFAULT_CHARSET,
+                OUT_DEFAULT_PRECIS,
+                CLIP_DEFAULT_PRECIS,
+                CLEARTYPE_QUALITY,
+                0,
+                w!("Segoe UI"),
+            ),
+        };
         if font.0.is_null() {
             return Err(Error::from_thread());
         }
@@ -147,25 +150,28 @@ pub(super) fn selection(hwnd: HWND) -> (u32, u32) {
     (start, end)
 }
 
-fn layout(text: &[u16], size: f32) -> Result<IDWriteTextLayout> {
+fn layout(text: &[u16], size: f32, face: Face) -> Result<IDWriteTextLayout> {
     unsafe {
         let factory: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
-        let format = factory.CreateTextFormat(
-            w!("Segoe UI"),
-            None,
-            DWRITE_FONT_WEIGHT_NORMAL,
-            DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL,
-            size,
-            w!("en-US"),
-        )?;
+        let format = match face {
+            Face::Annotation => annotation_font::format(&factory, size)?,
+            Face::Interface => factory.CreateTextFormat(
+                w!("Segoe UI"),
+                None,
+                DWRITE_FONT_WEIGHT_NORMAL,
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                size,
+                w!("en-US"),
+            )?,
+        };
         format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
         factory.CreateTextLayout(text, &format, 1_000_000., 1_000_000.)
     }
 }
 
 pub(super) fn hit(input: &TextInput, point: Point) -> Result<(u32, bool)> {
-    let layout = layout(&value(input.window), input.size)?;
+    let layout = layout(&value(input.window), input.size, input.face)?;
     let mut point = rotate_point(point, text_center(input, &layout)?, -input.rotation);
     point.x += horizontal_scroll(input, &layout)? as f64;
     let (mut trailing, mut inside) = (BOOL(0), BOOL(0));
@@ -263,7 +269,7 @@ impl Native {
         self.draw_inline(input, true)
     }
     pub(super) fn draw_inline(&self, input: &TextInput, caret: bool) -> Result<()> {
-        let layout = layout(&value(input.window), input.size)?;
+        let layout = layout(&value(input.window), input.size, input.face)?;
         let (start, end) = selection(input.window);
         let target = &self.renderer.dc;
         let previous = unsafe {
@@ -484,13 +490,14 @@ mod tests {
                 None,
                 None,
             )?;
-            let font = configure_input(child, 24.)?;
+            let font = configure_input(child, 24., Face::Annotation)?;
             let input = TextInput {
                 rotation: 0.,
                 window: child,
                 position: Point::default(),
                 object: None,
                 size: 24.,
+                face: Face::Annotation,
                 color: [255; 3],
                 font,
                 drag_anchor: None,
@@ -530,7 +537,7 @@ mod tests {
     #[test]
     fn directwrite_caret_tracks_utf16_and_multiline_text() -> Result<()> {
         let text: Vec<u16> = "é😀\r\n第二行".encode_utf16().collect();
-        let layout = layout(&text, 24.)?;
+        let layout = layout(&text, 24., Face::Annotation)?;
         let (mut x, mut y) = (0., 0.);
         let mut metric = DWRITE_HIT_TEST_METRICS::default();
         unsafe {

@@ -14,6 +14,7 @@ use windows::{
 };
 use windows_numerics::{Matrix3x2, Vector2};
 
+pub(crate) mod annotation_font;
 mod scene;
 #[cfg(test)]
 mod scene_tests;
@@ -92,9 +93,10 @@ fn properties() -> D2D1_RENDER_TARGET_PROPERTIES {
     }
 }
 impl Renderer {
-    pub fn measure_text(&self, text: &str, size: f32) -> Result<Point> {
+    /// The typeface of interface text at `size`.
+    fn interface_format(&self, size: f32) -> Result<IDWriteTextFormat> {
         unsafe {
-            let format = self.write.CreateTextFormat(
+            self.write.CreateTextFormat(
                 w!("Segoe UI"),
                 None,
                 DWRITE_FONT_WEIGHT_NORMAL,
@@ -102,11 +104,22 @@ impl Renderer {
                 DWRITE_FONT_STRETCH_NORMAL,
                 size,
                 w!("en-US"),
-            )?;
+            )
+        }
+    }
+    pub fn measure_text(&self, text: &str, size: f32) -> Result<Point> {
+        self.measure(text, &self.interface_format(size)?)
+    }
+    /// Extent of annotation `text` at `size`, exactly as annotations draw it.
+    pub fn measure_annotation_text(&self, text: &str, size: f32) -> Result<Point> {
+        self.measure(text, &annotation_font::format(&self.write, size)?)
+    }
+    fn measure(&self, text: &str, format: &IDWriteTextFormat) -> Result<Point> {
+        unsafe {
             format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
             let layout = self.write.CreateTextLayout(
                 &text.encode_utf16().collect::<Vec<_>>(),
-                &format,
+                format,
                 1_000_000.,
                 1_000_000.,
             )?;
@@ -223,20 +236,33 @@ impl Renderer {
         size: f32,
         ink: ([u8; 3], f32),
     ) -> Result<()> {
+        self.draw_text(target, text, r, &self.interface_format(size)?, ink)
+    }
+    /// Like `text_opacity`, in the typeface of text annotations.
+    pub fn annotation_text(
+        &self,
+        target: &ID2D1RenderTarget,
+        text: &str,
+        r: Rect,
+        size: f32,
+        ink: ([u8; 3], f32),
+    ) -> Result<()> {
+        let format = annotation_font::format(&self.write, size)?;
+        self.draw_text(target, text, r, &format, ink)
+    }
+    fn draw_text(
+        &self,
+        target: &ID2D1RenderTarget,
+        text: &str,
+        r: Rect,
+        format: &IDWriteTextFormat,
+        ink: ([u8; 3], f32),
+    ) -> Result<()> {
         unsafe {
-            let format = self.write.CreateTextFormat(
-                w!("Segoe UI"),
-                None,
-                DWRITE_FONT_WEIGHT_NORMAL,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                size,
-                w!("en-US"),
-            )?;
             let brush = target.CreateSolidColorBrush(&color(ink.0, ink.1), None)?;
             target.DrawText(
                 &text.encode_utf16().collect::<Vec<_>>(),
-                &format,
+                format,
                 &rect(r),
                 &brush,
                 D2D1_DRAW_TEXT_OPTIONS_CLIP,
@@ -284,7 +310,7 @@ impl Renderer {
                         vector(o.local_bounds().center()),
                     );
                     target.SetTransform(&(rotation * previous));
-                    let result = self.text(
+                    let result = self.annotation_text(
                         target,
                         text,
                         Rect {
@@ -292,7 +318,7 @@ impl Renderer {
                             max: *position + *extent + Point { x: 20., y: 20. },
                         },
                         *size as f32,
-                        o.style.color,
+                        (o.style.color, 1.),
                     );
                     target.SetTransform(&previous);
                     result?;
@@ -569,6 +595,11 @@ impl Canvas for D2dCanvas<'_> {
         self.renderer
             .text_opacity(self.target, text, r, size as f32, (ink.rgb, ink.alpha))
     }
+    fn annotation_text(&mut self, text: &str, r: Rect, size: f64, ink: Ink) -> Result<()> {
+        self.underlay = None;
+        self.renderer
+            .annotation_text(self.target, text, r, size as f32, (ink.rgb, ink.alpha))
+    }
     fn set_rotation(&mut self, rotation: Option<(Point, f64)>) -> Result<()> {
         self.underlay = None;
         let matrix = rotation.map_or_else(Matrix3x2::identity, |(center, radians)| {
@@ -579,6 +610,9 @@ impl Canvas for D2dCanvas<'_> {
     }
     fn measure_text(&mut self, text: &str, size: f64) -> Result<Point> {
         self.renderer.measure_text(text, size as f32)
+    }
+    fn measure_annotation_text(&mut self, text: &str, size: f64) -> Result<Point> {
+        self.renderer.measure_annotation_text(text, size as f32)
     }
     fn raster(
         &mut self,

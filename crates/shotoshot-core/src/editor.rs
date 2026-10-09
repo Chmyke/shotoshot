@@ -136,11 +136,25 @@ impl Default for Editor {
     }
 }
 impl Editor {
+    /// An editor reopened on a saved document: `objects` in stacking order, ids up to
+    /// `last_id`. Nothing to undo yet.
+    pub fn restore(objects: Vec<Object>, last_id: u64, background: Option<[u8; 3]>) -> Self {
+        Self {
+            objects,
+            background,
+            next_id: last_id,
+            ..Self::default()
+        }
+    }
     pub fn objects(&self) -> &[Object] {
         &self.objects
     }
     pub fn background(&self) -> Option<[u8; 3]> {
         self.background
+    }
+    /// Highest id given so far; a saved document keeps it so ids are never reused.
+    pub fn last_id(&self) -> u64 {
+        self.next_id
     }
     pub fn is_drawing(&self) -> bool {
         self.gesture.is_some()

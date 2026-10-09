@@ -2,9 +2,12 @@
 //! Linux and macOS, plus the flattened export of a capture.
 //! OWNER: One `Raster` per capture session keeps fonts, glyph cache and cached rasters.
 //! INVARIANTS: Pixmaps are premultiplied RGBA; `Image` stays top-down BGRA at the edges.
-use cosmic_text::{Attrs, Buffer, Color, Family, FontSystem, Metrics, Shaping, SwashCache};
+use cosmic_text::{
+    Attrs, Buffer, Color, Family, FontSystem, Metrics, Shaping, SwashCache, Weight, fontdb,
+};
 use shotoshot_core::{Object, Point, Rect, Shape, paths, stroke_runs};
-use shotoshot_ui::{Canvas, Image, Ink};
+use shotoshot_ui::{Canvas, Face, Image, Ink, annotation_font};
+use std::sync::Arc;
 use tiny_skia::{
     FillRule, FilterQuality, LineCap, LineJoin, Paint, PathBuilder, Pixmap, PixmapPaint, Stroke,
     Transform,
@@ -12,6 +15,23 @@ use tiny_skia::{
 
 /// Line height relative to font size, close to the Windows UI font metrics.
 const LINE_HEIGHT: f32 = 1.33;
+
+/// How this renderer resolves a typeface: the system sans-serif, or the embedded font of
+/// text annotations with the same glyphs as on Windows.
+fn attrs(face: Face) -> Attrs<'static> {
+    match face {
+        Face::Interface => Attrs::new().family(Family::SansSerif),
+        Face::Annotation => Attrs::new()
+            .family(Family::Name(annotation_font::FAMILY))
+            .weight(Weight(annotation_font::WEIGHT)),
+    }
+}
+fn line_height(face: Face) -> f32 {
+    match face {
+        Face::Interface => LINE_HEIGHT,
+        Face::Annotation => annotation_font::LINE_HEIGHT,
+    }
+}
 
 #[derive(Debug)]
 pub struct RasterError(pub &'static str);
@@ -29,25 +49,30 @@ impl Default for Raster {
 }
 impl Raster {
     pub fn new() -> Self {
+        let mut fonts = FontSystem::new();
+        let annotation = fontdb::Source::Binary(Arc::new(annotation_font::DATA));
+        fonts.db_mut().load_font_source(annotation);
         Self {
-            fonts: FontSystem::new(),
+            fonts,
             glyphs: SwashCache::new(),
             rasters: Vec::new(),
         }
     }
-    /// Extent of `text` laid out at `size`, exactly as `Canvas::text` draws it.
+    /// Extent of interface `text` laid out at `size`, exactly as `Canvas::text` draws it.
     pub fn measure_text(&mut self, text: &str, size: f64) -> Point {
+        self.extent(text, size, Face::Interface)
+    }
+    /// Extent of annotation `text` at `size`, exactly as annotations draw it.
+    pub fn measure_annotation_text(&mut self, text: &str, size: f64) -> Point {
+        self.extent(text, size, Face::Annotation)
+    }
+    fn extent(&mut self, text: &str, size: f64, face: Face) -> Point {
         let fonts = &mut self.fonts;
         let size = size as f32;
-        let mut buffer = Buffer::new(fonts, Metrics::new(size, size * LINE_HEIGHT));
+        let mut buffer = Buffer::new(fonts, Metrics::new(size, size * line_height(face)));
         let mut buffer = buffer.borrow_with(fonts);
         buffer.set_size(None, None);
-        buffer.set_text(
-            text,
-            &Attrs::new().family(Family::SansSerif),
-            Shaping::Advanced,
-            None,
-        );
+        buffer.set_text(text, &attrs(face), Shaping::Advanced, None);
         let (mut width, mut height) = (0f32, 0f32);
         for run in buffer.layout_runs() {
             width = width.max(run.line_w);
@@ -230,22 +255,18 @@ impl SkiaCanvas<'_> {
         &mut self,
         text: &str,
         r: Rect,
-        size: f64,
+        (face, size): (Face, f64),
         ink: Ink,
         transform: Transform,
         clip: bool,
     ) {
         let raster = &mut *self.raster;
         let size = size as f32;
-        let mut buffer = Buffer::new(&mut raster.fonts, Metrics::new(size, size * LINE_HEIGHT));
+        let metrics = Metrics::new(size, size * line_height(face));
+        let mut buffer = Buffer::new(&mut raster.fonts, metrics);
         let mut buffer = buffer.borrow_with(&mut raster.fonts);
         buffer.set_size(None, None);
-        buffer.set_text(
-            text,
-            &Attrs::new().family(Family::SansSerif),
-            Shaping::Advanced,
-            None,
-        );
+        buffer.set_text(text, &attrs(face), Shaping::Advanced, None);
         let alpha = (ink.alpha.clamp(0., 1.) * 255.).round() as u8;
         let color = Color::rgba(ink.rgb[0], ink.rgb[1], ink.rgb[2], alpha);
         let (origin, limit) = (r.min, r.max);
@@ -329,7 +350,31 @@ impl Canvas for SkiaCanvas<'_> {
         Ok(())
     }
     fn text(&mut self, text: &str, r: Rect, size: f64, ink: Ink) -> Result<(), RasterError> {
-        self.text_at(text, r, size, ink, Transform::identity(), true);
+        self.text_at(
+            text,
+            r,
+            (Face::Interface, size),
+            ink,
+            Transform::identity(),
+            true,
+        );
+        Ok(())
+    }
+    fn annotation_text(
+        &mut self,
+        text: &str,
+        r: Rect,
+        size: f64,
+        ink: Ink,
+    ) -> Result<(), RasterError> {
+        self.text_at(
+            text,
+            r,
+            (Face::Annotation, size),
+            ink,
+            Transform::identity(),
+            true,
+        );
         Ok(())
     }
     fn set_rotation(&mut self, rotation: Option<(Point, f64)>) -> Result<(), RasterError> {
@@ -344,6 +389,9 @@ impl Canvas for SkiaCanvas<'_> {
     }
     fn measure_text(&mut self, text: &str, size: f64) -> Result<Point, RasterError> {
         Ok(self.raster.measure_text(text, size))
+    }
+    fn measure_annotation_text(&mut self, text: &str, size: f64) -> Result<Point, RasterError> {
+        Ok(self.raster.measure_annotation_text(text, size))
     }
     fn raster(
         &mut self,
@@ -423,7 +471,8 @@ impl Canvas for SkiaCanvas<'_> {
                         min: *position,
                         max: *position + *extent + Point { x: 20., y: 20. },
                     };
-                    self.text_at(text, r, *size, Ink::solid(o.style.color), transform, false);
+                    let ink = Ink::solid(o.style.color);
+                    self.text_at(text, r, (Face::Annotation, *size), ink, transform, false);
                 }
                 Shape::Stroke { highlight, .. } => {
                     // Fill the union once, so translucent highlighter runs do not
@@ -608,7 +657,7 @@ mod tests {
         field.draw(&mut raster.canvas(&mut frame), true).unwrap();
         let width = raster
             .canvas(&mut blank())
-            .measure_text("Shotoshot", 24.)
+            .measure_annotation_text("Shotoshot", 24.)
             .unwrap()
             .x;
         assert!(

@@ -348,7 +348,7 @@ impl TextField {
         let size = self.size();
         let mut measure_error = None;
         let mut measure = |s: &str| {
-            canvas.measure_text(s, size).unwrap_or_else(|e| {
+            canvas.measure_annotation_text(s, size).unwrap_or_else(|e| {
                 measure_error.get_or_insert(e);
                 Point::default()
             })
@@ -399,7 +399,7 @@ impl TextField {
                 min: self.position,
                 max: self.position + Point { x: 1e6, y: 1e6 },
             };
-            canvas.text(&self.text, bounds, size, Ink::solid(self.color))?;
+            canvas.annotation_text(&self.text, bounds, size, Ink::solid(self.color))?;
             for &(x, _, top, selected) in &marks {
                 if !selected {
                     let a = Point { x, y: top };

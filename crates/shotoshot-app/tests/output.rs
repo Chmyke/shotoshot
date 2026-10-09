@@ -96,7 +96,9 @@ fn render_and_png_roundtrip_preserve_pixels_and_crop() {
 fn unicode_text_measurement_matches_layout_and_undo_geometry() {
     let _com = ComApartment::new().unwrap();
     let renderer = Renderer::new().unwrap();
-    let extent = renderer.measure_text("WWWW\n日本語 🎮", 24.).unwrap();
+    let extent = renderer
+        .measure_annotation_text("WWWW\n日本語 🎮", 24.)
+        .unwrap();
     assert!(extent.x > 80.);
     assert!(extent.y > 48.);
     let mut editor = Editor::default();

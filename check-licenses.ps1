@@ -61,4 +61,9 @@ try {
         } elseif (-not (Test-License $license)) { "$package ($license)" }
     }
     if ($refused) { throw "Licenses refused for a $project program (see check-licenses.ps1):`n  $($refused -join "`n  ")" }
+    # Every package ships packaging/ABOUT.txt: it must name this license and where the source code is.
+    $about = [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot 'packaging/ABOUT.txt'))
+    foreach ($expected in $project, 'https://github.com/Chmyke/shotoshot') {
+        if (-not $about.Contains($expected)) { throw "packaging/ABOUT.txt does not mention $expected." }
+    }
 } finally { Pop-Location }

@@ -42,7 +42,7 @@ impl Session {
         self.capture.live = live;
         Ok(())
     }
-    fn fresh_desktop(&self) -> Result<Image> {
+    pub(super) fn fresh_desktop(&self) -> Result<Image> {
         let image = self.native.screen.capture()?;
         if (image.left, image.top, image.width, image.height)
             != (

@@ -45,6 +45,8 @@ pub struct Capture {
     pub paste_count: u32,
     pub text_size: f32,
     pub live: bool,
+    /// Reopened from a saved document: its frame is the capture, never today's desktop.
+    pub reopened: bool,
     pub searching: bool,
     pub image: Image,
     pub editor: Editor,
@@ -80,6 +82,7 @@ impl Capture {
             paste_count: 0,
             text_size: 24.,
             live: false,
+            reopened: false,
             searching: false,
             image,
             editor,
@@ -164,7 +167,10 @@ impl Capture {
             }
             if matches!(b.action, Action::Live) {
                 b.active = self.live;
-                b.label = if self.live {
+                b.enabled = !self.reopened;
+                b.label = if self.reopened {
+                    "Live capture is for new captures"
+                } else if self.live {
                     "Live capture on · F2 to freeze"
                 } else {
                     "Capture frozen · F2 for live capture"

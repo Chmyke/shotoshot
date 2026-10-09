@@ -17,6 +17,8 @@ AppId={{9C13F890-2667-4ED8-AE3B-6C5A0516295C}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
+; Same wording as the version resource of the application itself.
+AppCopyright=Copyright (C) 2026 {#AppPublisher}
 VersionInfoVersion={#AppVersion}
 VersionInfoProductName={#AppName}
 VersionInfoCompany={#AppPublisher}
@@ -38,9 +40,13 @@ Compression=lzma2
 SolidCompression=yes
 OutputDir=out
 OutputBaseFilename=Shotoshot-Setup-{#AppVersion}
+; Lists what was really packed: build-installer.ps1 reads it to refuse an incomplete setup.
+OutputManifestFile=Shotoshot-Setup-{#AppVersion}.manifest.txt
 ; Restart Manager stays as a fallback; the [Code] section closes the app first.
 CloseApplications=yes
 RestartApplications=no
+; The [Registry] section associates .shoto files: Explorer must be told.
+ChangesAssociations=yes
 ; No AppMutex: development builds share the app's mutex names, so it would
 ; report a dev instance as "running" and block install/uninstall.
 
@@ -54,6 +60,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "..\target\release\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
+; GPL: the license and the pointer to the source code travel with the binary.
+Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
+Source: "ABOUT.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 ; The pre-0.2.0 install becomes this one: same AppId, so its uninstall entry is replaced.
 [InstallDelete]
@@ -64,6 +73,18 @@ Type: files; Name: "{autodesktop}\{#OldAppName}.lnk"
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
+
+; A double-click on an editable ".shoto" image reopens it in Shotoshot. Per-user keys, removed
+; with the application. The file is a PNG, so it is declared as an image. Explorer shows the
+; Shotoshot icon, not a thumbnail: Windows only extracts one for extensions registered
+; machine-wide, and nothing of ours is loaded in Explorer.
+[Registry]
+Root: HKCU; Subkey: "Software\Classes\.shoto"; ValueType: string; ValueName: ""; ValueData: "Shotoshot.Document"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\.shoto"; ValueType: string; ValueName: "Content Type"; ValueData: "image/png"
+Root: HKCU; Subkey: "Software\Classes\.shoto"; ValueType: string; ValueName: "PerceivedType"; ValueData: "image"
+Root: HKCU; Subkey: "Software\Classes\Shotoshot.Document"; ValueType: string; ValueName: ""; ValueData: "Shotoshot editable image"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Shotoshot.Document\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#AppExeName},0"
+Root: HKCU; Subkey: "Software\Classes\Shotoshot.Document\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent

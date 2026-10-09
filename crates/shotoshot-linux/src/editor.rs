@@ -57,7 +57,7 @@ impl Host for Native {
         let mut field = TextField::open(capture, p);
         if field.object.is_some() {
             let (raster, size) = (&mut self.raster, field.size as f64);
-            field.pointer_down(p, false, &mut |s| raster.measure_text(s, size));
+            field.pointer_down(p, false, &mut |s| raster.measure_annotation_text(s, size));
             field.pointer_up();
         }
         self.field = Some(field);
@@ -67,7 +67,9 @@ impl Host for Native {
         if let Some(field) = self.field.take()
             && commit
         {
-            let extent = self.raster.measure_text(field.text(), field.size as f64);
+            let extent = self
+                .raster
+                .measure_annotation_text(field.text(), field.size as f64);
             field.commit(capture, extent);
         }
     }
@@ -77,14 +79,14 @@ impl Host for Native {
             return Ok(false);
         };
         let (raster, size) = (&mut self.raster, field.size as f64);
-        Ok(field.pointer_down(p, extend, &mut |s| raster.measure_text(s, size)))
+        Ok(field.pointer_down(p, extend, &mut |s| raster.measure_annotation_text(s, size)))
     }
     fn text_pointer_move(&mut self, p: Point) -> bool {
         let Some(field) = &mut self.field else {
             return false;
         };
         let (raster, size) = (&mut self.raster, field.size as f64);
-        field.pointer_move(p, &mut |s| raster.measure_text(s, size))
+        field.pointer_move(p, &mut |s| raster.measure_annotation_text(s, size))
     }
     fn text_pointer_up(&mut self) -> bool {
         self.field.as_mut().is_some_and(|f| f.pointer_up())
@@ -99,7 +101,7 @@ impl Host for Native {
         Ok(())
     }
     fn measure_text(&mut self, text: &str, size: f64) -> Result<Point, Self::Error> {
-        Ok(self.raster.measure_text(text, size))
+        Ok(self.raster.measure_annotation_text(text, size))
     }
     fn dimensions_active(&self) -> bool {
         self.dimensions.is_some()
@@ -517,7 +519,8 @@ impl Editor {
                 _ => {}
             }
             let (raster, size) = (&mut self.native.raster, field.size as f64);
-            let handled = vk.map(|vk| field.key(vk, m, &mut |s| raster.measure_text(s, size)));
+            let handled =
+                vk.map(|vk| field.key(vk, m, &mut |s| raster.measure_annotation_text(s, size)));
             if let Err(error) = follow_up(handled, text, m.ctrl, &mut |s| field.insert(s)) {
                 self.report(event_loop, error);
             }

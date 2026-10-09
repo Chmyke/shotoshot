@@ -109,6 +109,7 @@ drawn keep theirs. Ctrl+Z undoes the whole stroke.
 | Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z | Undo / redo |
 | Ctrl+C / Ctrl+V | Copy the selected annotations / duplicate them in the session; with no selection, Ctrl+C copies the image |
 | Ctrl+Shift+C / Ctrl+S | Copy the image explicitly / save as PNG or JPEG |
+| Ctrl+Shift+S | Save as: always asks where, also for a reopened editable image |
 | Ctrl+G / F2 | Google Lens / live or frozen |
 | Esc | Cancel the gesture or the text entry in progress, then close the capture |
 
@@ -211,6 +212,23 @@ highest quality with color at full resolution. On an interface capture a JPEG is
 than the PNG; it is there for photos, video frames and sites that refuse PNG. The last format
 used is remembered, `Shot NNN` numbers are shared by both formats, and the instant screenshot
 stays a PNG. Linux saves PNG only.
+
+### Editable images (`.shoto`)
+
+In the Save dialog, the last file type saves an **editable image**. Double-click it later and
+the capture comes back as it was: same screen, same selection, every annotation still an object
+you can move, recolor or delete. **Ctrl+S** then rewrites the file; **Copy**, **Esc** and
+**Ctrl+Shift+S** (save as an image or another file) leave it untouched.
+
+A `.shoto` file is a real PNG: renamed to `.png`, any viewer shows the annotated capture. Inside
+it, Shotoshot keeps the objects and the whole screen the selection was on, without annotations.
+**That screen stays in the file**, including what lies around the selection and under an opaque
+annotation: share the PNG, keep the `.shoto` for yourself. Your other screens are never saved,
+and the copy, PNG, JPEG and Google Lens outputs never carry this data.
+
+A file from a newer Shotoshot, a damaged file or an image larger than the current screens is
+refused with a message; there is no zoom yet. Live capture is not offered on a reopened image.
+Windows only for now.
 
 ## Presenting live, without capturing
 
@@ -336,8 +354,9 @@ delay until the first pixel shown on screen.
 - The capture interface and the starting stroke and text sizes follow the display scale of the
   screen holding the selection (Per-Monitor-V2). This is checked by tests and a 200 % reference
   render, not yet on a real high-density screen; IMEs still need validation on real setups.
-- Objects stay editable **during the session**. No persistent history, detached editor, blur or
-  share by link yet. Pinning captures was ruled out.
+- Objects stay editable during the session, and later in an editable `.shoto` image saved on
+  purpose. No automatic history, detached editor, blur or share by link yet. Pinning captures
+  was ruled out.
 
 ## License and contributing
 

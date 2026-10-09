@@ -7,6 +7,9 @@ const WIDTH: i32 = 360;
 const HEIGHT: i32 = 56;
 const HOLD_TICKS: isize = 60;
 const TOTAL_TICKS: isize = 70;
+const TICK_MS: u32 = 30;
+/// How long a confirmation stays on screen, fade included.
+pub(super) const DURATION_MS: u32 = TOTAL_TICKS as u32 * TICK_MS;
 const INSTANT_STYLE: isize = 1 << 16;
 const INSTANT_ALPHA: u8 = 89;
 const INSTANT_HOLD: isize = 19;
@@ -110,7 +113,7 @@ impl Toast {
                 255
             };
             SetLayeredWindowAttributes(window.0, COLORREF(0), alpha, LWA_ALPHA)?;
-            if SetTimer(Some(window.0), 1, 30, None) == 0 {
+            if SetTimer(Some(window.0), 1, TICK_MS, None) == 0 {
                 return Err(Error::from_thread());
             }
             if visible {
@@ -354,6 +357,7 @@ pub(super) enum Notice {
     Saved = 2,
     Searching = 3,
     Preferences = 4,
+    SavedEditable = 5,
 }
 impl Notice {
     pub fn from_code(code: usize) -> Option<Self> {
@@ -362,6 +366,7 @@ impl Notice {
             2 => Self::Saved,
             3 => Self::Searching,
             4 => Self::Preferences,
+            5 => Self::SavedEditable,
             _ => return None,
         })
     }
@@ -371,6 +376,7 @@ impl Notice {
             Self::Saved => "Image saved.",
             Self::Searching => "Searching Google…",
             Self::Preferences => "Settings saved.",
+            Self::SavedEditable => "Editable image saved, screen included.",
         }
     }
 }
@@ -385,7 +391,10 @@ impl App {
                     WPARAM(GetCurrentProcessId() as usize),
                     LPARAM(notice as isize),
                 );
-            } else if !self.quit_after_capture && self.persist_preferences {
+            } else if (!self.quit_after_capture && self.persist_preferences)
+                || self.session.as_ref().is_some_and(|s| s.document.is_some())
+            {
+                // A reopened document runs alone: no resident owns its process.
                 self.toast = Toast::new(notice.text(), true).ok();
             }
         }

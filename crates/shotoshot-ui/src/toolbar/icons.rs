@@ -90,7 +90,7 @@ pub fn glyph<C: Canvas>(
     };
     match action {
         // Drawn by the capture overlay beside the size badge.
-        Action::CopyColor(_) | Action::FullScreen | Action::Dimensions => {}
+        Action::CopyColor(_) | Action::FullScreen | Action::Dimensions | Action::SaveAs => {}
         Action::Color(_) | Action::CustomColor => {
             let rgb = if let Action::Color(rgb) = action {
                 rgb

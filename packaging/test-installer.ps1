@@ -34,6 +34,8 @@ $oldExe = Join-Path $oldDir 'shotshot.exe'
 $oldStartMenuLink = Join-Path ([Environment]::GetFolderPath('Programs')) 'Shot Shot.lnk'
 $oldDesktopLink = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Shot Shot.lnk'
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$extensionKey = 'HKCU:\Software\Classes\.shoto'
+$documentKey = 'HKCU:\Software\Classes\Shotoshot.Document'
 $sourceHash = (Get-FileHash -Algorithm SHA256 (Join-Path $root 'target/release/shotoshot.exe')).Hash
 $log = Join-Path $env:TEMP "shotoshot-installer-test-$PID.log"
 $uninstallLog = Join-Path $env:TEMP "shotoshot-uninstaller-test-$PID.log"
@@ -108,6 +110,10 @@ try {
         Check ((Get-FileHash -Algorithm SHA256 $installedExe).Hash -eq $sourceHash) "installed exe SHA256 = target/release ($sourceHash)"
     }
     Check (Test-Path (Join-Path $installDir 'THIRD-PARTY-NOTICES.txt')) 'third-party notices installed'
+    foreach ($legal in @(@{ Name = 'LICENSE.txt'; Source = (Join-Path $root 'LICENSE') }, @{ Name = 'ABOUT.txt'; Source = (Join-Path $PSScriptRoot 'ABOUT.txt') })) {
+        $installed = Join-Path $installDir $legal.Name
+        Check ((Test-Path $installed) -and (Get-FileHash $installed).Hash -eq (Get-FileHash $legal.Source).Hash) "$($legal.Name) installed, same as the repository's"
+    }
     $entry = Get-ItemProperty -Path $uninstallKey -ErrorAction SilentlyContinue
     Check ($null -ne $entry) "uninstall entry exists: $uninstallKey"
     if ($entry) {
@@ -119,6 +125,11 @@ try {
         Check ($target -ieq $installedExe) "Start menu shortcut targets the installed exe"
     }
     Check (-not (Test-Path $desktopLink)) 'no desktop shortcut by default'
+    $extension = Get-ItemProperty -Path $extensionKey -ErrorAction SilentlyContinue
+    Check ($extension -and $extension.'(default)' -eq 'Shotoshot.Document' -and $extension.PerceivedType -eq 'image' -and
+        $extension.'Content Type' -eq 'image/png') '.shoto is a Shotoshot document and an image'
+    $command = (Get-ItemProperty -Path "$documentKey\shell\open\command" -ErrorAction SilentlyContinue).'(default)'
+    Check ($command -eq "`"$installedExe`" `"%1`"") ".shoto opens with the installed exe (got $command)"
     Check ((Installed-Processes).Count -eq 0) 'silent install does not launch the app'
 
     # The uninstaller must close a running installed copy and clean its autostart value.
@@ -137,6 +148,7 @@ try {
     $closedByUninstaller = Log-Contains $uninstallLog 'Closing running Shotoshot processes'
     Check ($closedByUninstaller -and (Installed-Processes).Count -eq 0) 'running app was closed by the uninstaller'
     Check (-not (Test-Path $startMenuLink)) 'Start menu shortcut removed'
+    Check (-not (Test-Path $extensionKey) -and -not (Test-Path $documentKey)) '.shoto association removed'
     if ($runWasSet) {
         Check ($null -eq (Run-Value)) 'autostart value pointing to the installation removed'
         $runWasSet = $false

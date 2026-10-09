@@ -54,6 +54,7 @@ impl Preparation {
                 back_buffer,
                 acceleration: None,
             },
+            document: None,
         })
     }
 }

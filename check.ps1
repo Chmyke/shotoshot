@@ -47,7 +47,7 @@ try {
         cargo build --workspace --release --locked
         if ($LASTEXITCODE -ne 0) { exit 1 }
         Get-ChildItem (Join-Path $PSScriptRoot 'target') -Filter 'shotoshot-*.png' | Remove-Item
-        foreach ($argument in @('--render-demo', '--diagnostic', '--warm-diagnostic', '--presentation-diagnostic')) {
+        foreach ($argument in @('--render-demo', '--diagnostic', '--warm-diagnostic', '--presentation-diagnostic', '--document-diagnostic')) {
             $probe = Start-Process -FilePath (Join-Path $PSScriptRoot 'target/release/shotoshot.exe') -ArgumentList $argument -WindowStyle Hidden -PassThru
             $null = $probe.Handle
             if (-not $probe.WaitForExit(20000)) { $probe.Kill(); throw "Timed out: $argument" }

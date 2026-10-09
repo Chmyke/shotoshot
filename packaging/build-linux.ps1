@@ -62,6 +62,11 @@ function Get-Notices([string]$triple) {
             [void]$text.AppendLine([System.IO.File]::ReadAllText($f.FullName, $utf8).Trim())
         }
     }
+    # The embedded font of text annotations is not a crate.
+    [void]$text.AppendLine()
+    [void]$text.AppendLine('--- Roboto Medium, embedded font of text annotations (OFL-1.1) ---')
+    $license = Join-Path $root 'crates/shotoshot-ui/assets/Roboto-OFL.txt'
+    [void]$text.AppendLine([System.IO.File]::ReadAllText($license, $utf8).Trim())
     $text.ToString()
 }
 
@@ -76,6 +81,8 @@ try {
         New-Item -ItemType Directory -Force (Join-Path $stage 'icons') | Out-Null
         Copy-Item (Join-Path $root "target/$($arch.Triple)/release/shotoshot") $stage
         Copy-Item (Join-Path $PSScriptRoot 'linux/*') $stage
+        Copy-Item (Join-Path $root 'LICENSE') (Join-Path $stage 'LICENSE.txt')
+        Copy-Item (Join-Path $PSScriptRoot 'ABOUT.txt') $stage
         foreach ($size in 32, 48, 256) {
             Copy-Item (Join-Path $root "crates/shotoshot-app/assets/shotoshot-$size.png") (Join-Path $stage 'icons')
         }
@@ -83,6 +90,15 @@ try {
         $archive = Join-Path $out "$name.tar.gz"
         tar -czf $archive -C (Split-Path $stage) $name
         if ($LASTEXITCODE -ne 0) { throw "Archive failed for $($arch.Name)." }
+        # The license and the pointer to the source code travel with the binary: read the
+        # archive back and refuse one that lacks one of them.
+        $listed = tar -tzf $archive
+        foreach ($required in 'LICENSE.txt', 'ABOUT.txt', 'THIRD-PARTY-NOTICES.txt') {
+            if ($listed -notcontains "$name/$required") {
+                Remove-Item $archive
+                throw "The $($arch.Name) archive does not carry $required. Nothing was kept in packaging/out."
+            }
+        }
         Write-Output ("{0}  {1} ({2} bytes)" -f (Get-FileHash $archive -Algorithm SHA256).Hash, (Split-Path $archive -Leaf), (Get-Item $archive).Length)
     }
 } finally { Pop-Location }

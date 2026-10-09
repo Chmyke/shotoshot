@@ -78,6 +78,9 @@ impl Canvas for Recorder {
         let [a, b, c, d] = rect(r);
         self.push("text", &[a, b, c, d, size], format!("{ink:?}"))
     }
+    fn annotation_text(&mut self, text: &str, r: Rect, size: f64, ink: Ink) -> Result<(), ()> {
+        self.text(text, r, size, ink)
+    }
     fn set_rotation(&mut self, rotation: Option<(Point, f64)>) -> Result<(), ()> {
         match rotation {
             Some((p, angle)) => self.push("rotation", &[p.x, p.y], format!("{angle}")),
@@ -90,6 +93,9 @@ impl Canvas for Recorder {
             x: size * 4.,
             y: size * 1.25,
         })
+    }
+    fn measure_annotation_text(&mut self, text: &str, size: f64) -> Result<Point, ()> {
+        self.measure_text(text, size)
     }
     fn raster(
         &mut self,

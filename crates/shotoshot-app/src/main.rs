@@ -13,6 +13,8 @@ fn main() {
                     | "--warm-diagnostic"
                     | "--presentation-diagnostic"
                     | "--google-diagnostic"
+                    | "--document-diagnostic"
+                    | "--document-probe"
                     | "--restore-print-screen"
             )
         }) {

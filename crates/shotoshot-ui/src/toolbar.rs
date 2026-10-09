@@ -21,6 +21,8 @@ pub enum Action {
     Dimensions,
     Copy,
     Save,
+    /// Ctrl+Shift+S: always asks where to save, even for a reopened document. No button.
+    SaveAs,
     Close,
 }
 #[derive(Clone)]
@@ -165,6 +167,9 @@ pub fn shortcut_action(key: u32, ctrl: bool, shift: bool, alt: bool) -> Option<A
     }
     if key == 90 && ctrl && shift {
         return Some(Action::Redo);
+    }
+    if key == 83 && ctrl && shift {
+        return Some(Action::SaveAs);
     }
     SHORTCUTS
         .iter()
@@ -607,6 +612,7 @@ mod tests {
         assert_eq!(plain(83), Some(Action::CustomColor));
         assert_eq!(plain(79), None, "O no longer selects a tool");
         assert_eq!(shortcut_action(83, true, false, false), Some(Action::Save));
+        assert_eq!(shortcut_action(83, true, true, false), Some(Action::SaveAs));
     }
     #[test]
     fn fill_is_g_beside_the_eyedropper_and_ctrl_g_still_searches() {
