@@ -1,5 +1,7 @@
 //! ROLE: Portable painting of the capture overlay: shade, region frame, selection,
 //! toolbar, stroke-size ring and the initial hint. Native widgets paint themselves.
+//! INVARIANTS: Interface sizes are 96-DPI logical pixels times `Capture::ui_scale`;
+//! only the capture and its annotations are in raw pixels (`scale_tests`).
 use crate::{Canvas, Capture, Ink, region_handles, toolbar};
 use shotoshot_core::{Point, Rect, Tool};
 
@@ -24,12 +26,16 @@ impl Capture {
             },
         }
     }
-    /// Dims everything outside the region, or the whole frame before a selection.
-    pub fn draw_shade<C: Canvas>(&self, canvas: &mut C) -> Result<(), C::Error> {
+    /// All that lies under the annotations: the shade outside the region (the whole
+    /// frame before a selection) and, inside it, the solid background when there is one.
+    pub fn draw_underlay<C: Canvas>(&self, canvas: &mut C) -> Result<(), C::Error> {
         let screen = self.screen();
         let Some(r) = self.region else {
             return canvas.fill_rect(screen, SHADE);
         };
+        if let Some(background) = self.editor.background() {
+            canvas.fill_rect(r, Ink::solid(background))?;
+        }
         for outside in [
             Rect {
                 min: screen.min,
@@ -73,33 +79,37 @@ impl Capture {
         let Some(r) = self.region else {
             return Ok(());
         };
-        canvas.stroke_rect(r, ACCENT, 1.)?;
+        let s = self.ui_scale();
+        canvas.stroke_rect(r, ACCENT, s)?;
         for p in region_handles(r) {
-            canvas.fill_rect(square(p, 4.), Ink::solid([250, 250, 250]))?;
-            canvas.stroke_rect(square(p, 4.), DARK, 1.5)?;
+            canvas.fill_rect(square(p, 4. * s), Ink::solid([250, 250, 250]))?;
+            canvas.stroke_rect(square(p, 4. * s), DARK, 1.5 * s)?;
         }
         if show_selection && let Some(frame) = self.editor.selection_frame() {
             if frame.angle == 0. {
-                canvas.stroke_rect(frame.bounds.expanded(3.), ACCENT, 1.)?;
+                canvas.stroke_rect(frame.bounds.expanded(3. * s), ACCENT, s)?;
             } else {
                 // A single turned object keeps a frame turned with it.
-                let outline = frame.outline(3.);
+                let outline = frame.outline(3. * s);
                 for (i, a) in outline.iter().enumerate() {
-                    canvas.line(*a, outline[(i + 1) % 4], ACCENT, 1.)?;
+                    canvas.line(*a, outline[(i + 1) % 4], ACCENT, s)?;
                 }
             }
             for p in frame.corners() {
-                canvas.fill_rect(square(p, 4.), ACCENT)?;
+                canvas.fill_rect(square(p, 4. * s), ACCENT)?;
             }
             if let Some(handle) = self.rotation_handle() {
-                canvas.line(frame.top(), handle, ACCENT, 1.)?;
-                let radius = Point { x: 6., y: 6. };
+                canvas.line(frame.top(), handle, ACCENT, s)?;
+                let radius = Point {
+                    x: 6. * s,
+                    y: 6. * s,
+                };
                 canvas.fill_ellipse(handle, radius, DARK)?;
-                canvas.stroke_ellipse(handle, radius, ACCENT, 2.)?;
+                canvas.stroke_ellipse(handle, radius, ACCENT, 2. * s)?;
             }
         }
         if let Some(m) = self.editor.marquee() {
-            canvas.stroke_rect(m, ACCENT, 1.)?;
+            canvas.stroke_rect(m, ACCENT, s)?;
         }
         Ok(())
     }
@@ -116,6 +126,7 @@ impl Capture {
             current_color,
             self.pointer,
             self.eyedropper,
+            self.ui_scale(),
         )
     }
     /// Paint hints last so badges and panels cannot cover them after edge clamping.
@@ -141,7 +152,8 @@ impl Capture {
             .chain(self.dimensions_button())
             .find(|b| b.action == action && b.bounds == bounds)
         {
-            toolbar::draw_hint(canvas, &button, self.screen_at(self.pointer), opacity)?;
+            let screen = self.screen_at(self.pointer);
+            toolbar::draw_hint(canvas, &button, screen, opacity, self.ui_scale())?;
         }
         Ok(())
     }
@@ -153,34 +165,45 @@ impl Capture {
             } else {
                 1.
             };
+        let s = self.ui_scale();
         let center = self.pointer;
         let radius = Point {
             x: width / 2.,
             y: width / 2.,
         };
-        canvas.stroke_ellipse(center, radius, Ink::solid([25, 25, 25]), 3.)?;
-        canvas.stroke_ellipse(center, radius, Ink::solid([250, 250, 250]), 1.)?;
+        canvas.stroke_ellipse(center, radius, Ink::solid([25, 25, 25]), 3. * s)?;
+        canvas.stroke_ellipse(center, radius, Ink::solid([250, 250, 250]), s)?;
         if !self.width_preview {
             return Ok(());
         }
+        let size = Point {
+            x: 72. * s,
+            y: 24. * s,
+        };
         let min = Point {
-            x: (center.x + width / 2. + 10.)
-                .min(self.image.width as f64 - 72.)
+            x: (center.x + width / 2. + 10. * s)
+                .min(self.image.width as f64 - size.x)
                 .max(0.),
-            y: (center.y + 10.).min(self.image.height as f64 - 24.).max(0.),
+            y: (center.y + 10. * s)
+                .min(self.image.height as f64 - size.y)
+                .max(0.),
         };
         let bounds = Rect {
             min,
-            max: min + Point { x: 72., y: 24. },
+            max: min + size,
         };
-        canvas.fill_round_rect(bounds, 4., Ink::solid([25, 25, 25]))?;
+        canvas.fill_round_rect(bounds, 4. * s, Ink::solid([25, 25, 25]))?;
         canvas.text(
             &format!("{width:.0} px"),
             Rect {
-                min: min + Point { x: 7., y: 3. },
+                min: min
+                    + Point {
+                        x: 7. * s,
+                        y: 3. * s,
+                    },
                 max: bounds.max,
             },
-            12.,
+            12. * s,
             Ink::solid([250, 250, 250]),
         )
     }
@@ -196,8 +219,9 @@ impl Capture {
         if !self.awaiting_region() || self.pointer.x < 0. || self.pointer.y < 0. {
             return Ok(());
         }
+        let s = self.ui_scale();
         let title = "Select an area";
-        let extent = canvas.measure_text(title, 13.)?;
+        let extent = canvas.measure_text(title, 13. * s)?;
         let screen = self.screen();
         let screen = Rect {
             min: Point {
@@ -213,27 +237,29 @@ impl Capture {
             self.pointer,
             screen,
             Point {
-                x: extent.x + 20.,
-                y: 48.,
+                x: extent.x + 20. * s,
+                y: 48. * s,
             },
+            s,
         );
-        canvas.fill_round_rect(bounds, 5., Ink::with_alpha([25, 25, 28], 0.94))?;
+        let at = |x: f64, y: f64| bounds.min + Point { x: x * s, y: y * s };
+        canvas.fill_round_rect(bounds, 5. * s, Ink::with_alpha([25, 25, 28], 0.94))?;
         canvas.text(
             title,
             Rect {
-                min: bounds.min + Point { x: 10., y: 6. },
+                min: at(10., 6.),
                 max: bounds.max,
             },
-            13.,
+            13. * s,
             Ink::solid([245, 245, 245]),
         )?;
         canvas.text(
             "Esc to cancel",
             Rect {
-                min: bounds.min + Point { x: 10., y: 26. },
+                min: at(10., 26.),
                 max: bounds.max,
             },
-            11.,
+            11. * s,
             Ink::solid([180, 183, 188]),
         )
     }
@@ -248,24 +274,25 @@ impl Capture {
         let (Some(bounds), Some(region)) = (self.dimensions_bounds(), self.region) else {
             return Ok(());
         };
+        let s = self.ui_scale();
         let hover = bounds.contains(self.pointer) && !self.selecting;
         let background = if hover {
             Ink::solid([48, 57, 70])
         } else {
             DARK
         };
-        canvas.fill_round_rect(bounds, 4., background)?;
+        canvas.fill_round_rect(bounds, 4. * s, background)?;
         let (label, x) = if editing {
-            ("×".to_owned(), bounds.size().x / 2. - 4.)
+            ("×".to_owned(), bounds.size().x / 2. - 4. * s)
         } else {
             let size = region.size();
-            (format!("{} × {}", size.x as i32, size.y as i32), 8.)
+            (format!("{} × {}", size.x as i32, size.y as i32), 8. * s)
         };
         let label_area = Rect {
-            min: bounds.min + Point { x, y: 4. },
+            min: bounds.min + Point { x, y: 4. * s },
             max: bounds.max,
         };
-        canvas.text(&label, label_area, 13., Ink::solid([240, 240, 240]))?;
+        canvas.text(&label, label_area, 13. * s, Ink::solid([240, 240, 240]))?;
         if let Some(button) = self.screen_button_bounds() {
             self.draw_screen_button(canvas, button, button.contains(self.pointer))?;
         }
@@ -275,14 +302,22 @@ impl Capture {
         let area = toolbar::tooltip_bounds(
             bounds,
             self.screen_at(self.pointer),
-            Point { x: 460., y: 48. },
+            Point {
+                x: 460. * s,
+                y: 48. * s,
+            },
+            s,
         );
         canvas.fill_rect(area, background)?;
         let text_area = Rect {
-            min: area.min + Point { x: 6., y: 4. },
+            min: area.min
+                + Point {
+                    x: 6. * s,
+                    y: 4. * s,
+                },
             max: area.max,
         };
-        canvas.text(message, text_area, 12., Ink::solid([255, 160, 150]))
+        canvas.text(message, text_area, 12. * s, Ink::solid([255, 160, 150]))
     }
     /// Four diagonal arrows: outward to fill the screen, inward once it is filled.
     fn draw_screen_button<C: Canvas>(
@@ -299,10 +334,11 @@ impl Capture {
         } else {
             DARK
         };
-        canvas.fill_round_rect(bounds, 4., background)?;
+        let s = self.ui_scale();
+        canvas.fill_round_rect(bounds, 4. * s, background)?;
         let ink = Ink::solid([240, 240, 240]);
         let center = bounds.center();
-        for (x, y) in [(-1., -1.), (1., -1.), (1., 1.), (-1., 1.)] {
+        for (x, y) in [(-s, -s), (s, -s), (s, s), (-s, s)] {
             let near = center
                 + Point {
                     x: x * 3.,
@@ -318,10 +354,10 @@ impl Capture {
             } else {
                 (near, far, 1.)
             };
-            canvas.line(tail, tip, ink, 1.6)?;
+            canvas.line(tail, tip, ink, 1.6 * s)?;
             let head = 4. * sign;
-            canvas.line(tip, tip - Point { x: x * head, y: 0. }, ink, 1.6)?;
-            canvas.line(tip, tip - Point { x: 0., y: y * head }, ink, 1.6)?;
+            canvas.line(tip, tip - Point { x: x * head, y: 0. }, ink, 1.6 * s)?;
+            canvas.line(tip, tip - Point { x: 0., y: y * head }, ink, 1.6 * s)?;
         }
         Ok(())
     }
@@ -329,26 +365,37 @@ impl Capture {
 const NOTICE_SIZE: f64 = 13.;
 const NOTICE_PADDING: Point = Point { x: 12., y: 8. };
 
-/// Size of the box `draw_notice` paints for `message`.
-pub fn notice_size<C: Canvas>(canvas: &mut C, message: &str) -> Result<Point, C::Error> {
-    Ok(canvas.measure_text(message, NOTICE_SIZE)? + NOTICE_PADDING * 2.)
+/// Size of the box `draw_notice` paints for `message` at interface `scale`.
+pub fn notice_size<C: Canvas>(
+    canvas: &mut C,
+    message: &str,
+    scale: f64,
+) -> Result<Point, C::Error> {
+    Ok(canvas.measure_text(message, NOTICE_SIZE * scale)? + NOTICE_PADDING * (2. * scale))
 }
 /// An error message box filling `bounds` (see `notice_size`), for failures shown on
 /// platforms without a native message window.
-pub fn draw_notice<C: Canvas>(canvas: &mut C, bounds: Rect, message: &str) -> Result<(), C::Error> {
-    canvas.fill_round_rect(bounds, 5., Ink::with_alpha([25, 25, 28], 0.94))?;
+pub fn draw_notice<C: Canvas>(
+    canvas: &mut C,
+    bounds: Rect,
+    message: &str,
+    scale: f64,
+) -> Result<(), C::Error> {
+    canvas.fill_round_rect(bounds, 5. * scale, Ink::with_alpha([25, 25, 28], 0.94))?;
     let text = Rect {
-        min: bounds.min + NOTICE_PADDING,
+        min: bounds.min + NOTICE_PADDING * scale,
         max: bounds.max,
     };
-    canvas.text(message, text, NOTICE_SIZE, Ink::solid([255, 160, 150]))
+    let size = NOTICE_SIZE * scale;
+    canvas.text(message, text, size, Ink::solid([255, 160, 150]))
 }
-/// `size` centred horizontally near the top of `screen`, kept inside it.
-pub fn top_center(screen: Rect, size: Point) -> Rect {
-    let width = size.x.min(screen.size().x - 8.).max(0.);
+/// `size` centred horizontally near the top of `screen`, kept inside it; margins are in
+/// logical pixels at `scale`.
+pub fn top_center(screen: Rect, size: Point, scale: f64) -> Rect {
+    let width = size.x.min(screen.size().x - 8. * scale).max(0.);
     let min = Point {
         x: screen.center().x - width / 2.,
-        y: screen.min.y + 24.,
+        y: screen.min.y + 24. * scale,
     };
     Rect {
         min,
@@ -359,14 +406,17 @@ pub fn top_center(screen: Rect, size: Point) -> Rect {
             },
     }
 }
-pub fn place_hint(pointer: Point, screen: Rect, size: Point) -> Rect {
+/// A box of `size` beside the pointer, kept on `screen`; distances are in logical pixels at
+/// `scale`.
+pub fn place_hint(pointer: Point, screen: Rect, size: Point, scale: f64) -> Rect {
+    let (away, edge) = (20. * scale, 4. * scale);
     let place = |p: f64, min: f64, max: f64, size: f64| {
-        let preferred = if p + 20. + size <= max - 4. {
-            p + 20.
+        let preferred = if p + away + size <= max - edge {
+            p + away
         } else {
-            p - 20. - size
+            p - away - size
         };
-        preferred.clamp(min + 4., (max - size - 4.).max(min + 4.))
+        preferred.clamp(min + edge, (max - size - edge).max(min + edge))
     };
     let min = Point {
         x: place(pointer.x, screen.min.x, screen.max.x, size.x),

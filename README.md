@@ -100,6 +100,7 @@ drawn keep theirs. Ctrl+Z undoes the whole stroke.
 | P / H | Pencil / highlighter; Shift draws a straight line in 45° steps |
 | T | Text; click an existing text with this tool to edit it |
 | I | Eyedropper: pick a color and copy its hex code |
+| G | Bucket: one click fills the rectangle or circle under it, or else the whole capture; Alt+click clears |
 | F | Whole screen / back to the previous selection |
 | S / 1–6 | Color wheel / six quick colors |
 | Wheel | Stroke width; text size while typing it, with it selected or with the Text tool |
@@ -123,6 +124,24 @@ click samples that pixel of the captured image and copies its code (`#RRGGBB`) t
 Esc cancels. The last color sampled or confirmed in the wheel is remembered and becomes the
 wheel's starting color, including after a restart. The six swatches do not replace this custom
 color.
+
+### Bucket and slate
+
+The **bucket (G)**, beside the eyedropper, fills with the current color in one click, then hands
+back the tool you were using. Inside a rectangle or a circle it fills that shape, under its
+outline; anywhere else in the frame it fills the whole capture, under every drawing. To use
+Shotoshot as a slate, capture anything, press `6`, `G`, click, then `5`: a dark background to
+draw on in white.
+
+The bucket waits while you choose its color (swatches, wheel, eyedropper); any other action or Esc
+puts it down. Clicking a fill again with another color recolors it, with the same color removes
+it, and Alt+click removes it whatever the color. Each click is one undo step.
+
+A fill belongs to its shape: it moves, turns, is copied and deleted with it, and a filled shape is
+grabbed by its interior. The background belongs to the capture: it cannot be selected and follows
+the frame when you resize it. Fills are opaque, so a filled rectangle also hides what lies under
+it in the saved image. Shapes drawn with the pencil are not fillable, and the eyedropper still
+reads the captured screen under a background.
 
 ### Exact size and whole screen
 
@@ -306,8 +325,9 @@ delay until the first pixel shown on screen.
 - Preferences: `%LOCALAPPDATA%/Shotoshot/settings.txt`, versioned format. An unreadable file is
   reported and preserved; renaming it starts again with fresh settings.
 - SDR capture through GDI; HDR fidelity is not guaranteed. Protected content may stay black.
-- Per-Monitor-V2 DPI awareness is declared; mixed DPI scales and IMEs still need validation on
-  such real setups.
+- The capture interface and the starting stroke and text sizes follow the display scale of the
+  screen holding the selection (Per-Monitor-V2). This is checked by tests and a 200 % reference
+  render, not yet on a real high-density screen; IMEs still need validation on real setups.
 - Objects stay editable **during the session**. No persistent history, detached editor, blur or
   share by link yet. Pinning captures was ruled out.
 

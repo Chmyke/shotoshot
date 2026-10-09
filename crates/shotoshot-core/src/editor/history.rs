@@ -20,8 +20,25 @@ impl Editor {
         self.undo.push(Change {
             before: removed,
             after: added,
+            background: None,
         });
         self.redo.clear();
+    }
+    /// One reversible step of its own; an unchanged background adds none.
+    pub(super) fn set_background(&mut self, background: Option<[u8; 3]>) {
+        if background == self.background {
+            return;
+        }
+        self.undo.push(Change {
+            before: Vec::new(),
+            after: Vec::new(),
+            background: Some(Repaint {
+                before: self.background,
+                after: background,
+            }),
+        });
+        self.redo.clear();
+        self.background = background;
     }
     pub(super) fn apply(&mut self, remove: &[Object], add: &[Object]) {
         self.objects
@@ -41,6 +58,9 @@ impl Editor {
         self.cancel();
         if let Some(c) = self.undo.pop() {
             self.apply(&c.after, &c.before);
+            if let Some(repaint) = c.background {
+                self.background = repaint.before;
+            }
             self.redo.push(c);
         }
     }
@@ -48,6 +68,9 @@ impl Editor {
         self.cancel();
         if let Some(c) = self.redo.pop() {
             self.apply(&c.before, &c.after);
+            if let Some(repaint) = c.background {
+                self.background = repaint.after;
+            }
             self.undo.push(c);
         }
     }
@@ -143,6 +166,7 @@ impl Editor {
         self.next_id += 1;
         self.objects.push(Object {
             rotation: 0.,
+            fill: None,
             id: self.next_id,
             shape: Shape::Text {
                 position,

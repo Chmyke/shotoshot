@@ -2,6 +2,7 @@
 //! OWNER: Resident application; dropped when the session ends.
 mod dimensions;
 mod editing;
+mod fill;
 mod hint;
 mod io;
 mod live;
@@ -43,6 +44,8 @@ pub struct Native {
     pub renderer: Renderer,
     pub text: Option<TextInput>,
     dimensions: Option<dimensions::DimensionsInput>,
+    // What live capture and the live eyedropper read; a test swaps in a painted one.
+    pub(crate) screen: crate::image::Screen,
     live_surface: Option<crate::image::LiveSurface>,
     live_sample: Option<crate::image::DesktopSample>,
     // Where the software renderer draws a frozen capture; see `paint_window`.
@@ -72,6 +75,7 @@ impl Session {
                 renderer,
                 text: None,
                 dimensions: None,
+                screen: crate::image::Screen::Desktop,
                 live_surface: None,
                 live_sample: None,
                 back_buffer: None,
@@ -237,13 +241,18 @@ impl Session {
     }
 
     pub fn export(&self) -> Result<Image> {
+        self.flatten(&self.capture.image)
+    }
+    /// The region of `image` under the capture's background and annotations.
+    fn flatten(&self, image: &Image) -> Result<Image> {
         let region = self
             .capture
             .region
             .ok_or_else(|| Error::new(E_INVALIDARG, "Select a capture region first"))?;
+        let editor = &self.capture.editor;
         self.native
             .renderer
-            .export(&self.capture.image, self.capture.editor.objects(), region)
+            .export(image, editor.background(), editor.objects(), region)
     }
 }
 impl Native {

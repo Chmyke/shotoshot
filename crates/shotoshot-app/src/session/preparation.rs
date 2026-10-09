@@ -48,6 +48,7 @@ impl Preparation {
                 renderer: self.renderer,
                 text: None,
                 dimensions: None,
+                screen: crate::image::Screen::Desktop,
                 live_surface,
                 live_sample: None,
                 back_buffer,

@@ -52,7 +52,43 @@ fn scene() -> Vec<Object> {
         6.,
         &[p(120., 380.), p(260., 385.), p(430., 370.)],
     );
+    // Fills lie under their own outline and under whatever was drawn afterwards.
+    e.style.color = [250, 192, 66];
+    e.fill_at(p(120., 90.), false);
+    e.style.color = [28, 31, 40];
+    e.fill_at(p(380., 90.), false);
+    assert!(e.objects()[..2].iter().all(|o| o.fill.is_some()));
     e.objects().to_vec()
+}
+
+#[test]
+fn both_renderers_fill_shapes_and_the_capture_with_the_exact_colour() {
+    let _com = ComApartment::new().unwrap();
+    const SLATE: [u8; 3] = [28, 31, 40];
+    let image = Image::solid(480, 420, [245, 242, 238, 255]);
+    let crop = Rect::new(Point { x: 20., y: 10. }, Point { x: 470., y: 410. }).unwrap();
+    let objects = scene();
+    for output in [
+        Renderer::new()
+            .unwrap()
+            .export(&image, Some(SLATE), &objects, crop)
+            .unwrap(),
+        Raster::new()
+            .export(&image, Some(SLATE), &objects, crop)
+            .unwrap(),
+    ] {
+        assert_eq!((output.width, output.height), (450, 400));
+        let rgb = |x: usize, y: usize| {
+            let i = ((y - 10) * 450 + x - 20) * 4;
+            [output.pixels[i + 2], output.pixels[i + 1], output.pixels[i]]
+        };
+        assert_eq!(rgb(120, 90), [250, 192, 66], "filled rectangle");
+        assert_eq!(rgb(380, 90), SLATE, "filled circle");
+        assert_eq!(rgb(30, 89), [237, 79, 92], "outline over the fill");
+        for (x, y) in [(20, 10), (469, 409), (440, 200), (265, 25)] {
+            assert_eq!(rgb(x, y), SLATE, "background at {x},{y}");
+        }
+    }
 }
 
 #[test]
@@ -63,6 +99,7 @@ fn both_renderers_keep_fractional_arrow_joins_solid_and_tails_round() {
     let objects = [Object {
         id: 1,
         rotation: 0.,
+        fill: None,
         style: Style {
             color: [255, 0, 0],
             width: 10.,
@@ -78,9 +115,9 @@ fn both_renderers_keep_fractional_arrow_joins_solid_and_tails_round() {
     for output in [
         Renderer::new()
             .unwrap()
-            .export(&image, &objects, crop)
+            .export(&image, None, &objects, crop)
             .unwrap(),
-        Raster::new().export(&image, &objects, crop).unwrap(),
+        Raster::new().export(&image, None, &objects, crop).unwrap(),
     ] {
         for (x, y) in [(182, 80), (183, 80), (17, 80), (190, 74)] {
             let offset = (y * 240 + x) * 4;
@@ -95,36 +132,48 @@ fn portable_renderer_matches_direct2d_annotations() {
     let image = Image::solid(480, 420, [245, 242, 238, 255]);
     let crop = Rect::new(Point::default(), Point { x: 480., y: 420. }).unwrap();
     let objects = scene();
-    let native = Renderer::new()
-        .unwrap()
-        .export(&image, &objects, crop)
+    for (background, name) in [(None, "parity"), (Some([28, 31, 40]), "parity-slate")] {
+        let native = Renderer::new()
+            .unwrap()
+            .export(&image, background, &objects, crop)
+            .unwrap();
+        let portable = Raster::new()
+            .export(&image, background, &objects, crop)
+            .unwrap();
+        let target = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
+        save_png(
+            &native,
+            &target.join(format!("shotoshot-{name}-direct2d.png")),
+        )
         .unwrap();
-    let portable = Raster::new().export(&image, &objects, crop).unwrap();
-    let target = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
-    save_png(&native, &target.join("shotoshot-parity-direct2d.png")).unwrap();
-    save_png(&portable, &target.join("shotoshot-parity-portable.png")).unwrap();
-    let pixels = native.pixels.len() / 4;
-    let (mut far, mut total) = (0usize, 0u64);
-    for (a, b) in native
-        .pixels
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .zip(portable.pixels.as_chunks::<4>().0)
-    {
-        let d = (0..3).map(|i| a[i].abs_diff(b[i])).max().unwrap();
-        total += d as u64;
-        // Anti-aliasing differs by a few levels on edges; a far pixel is a shape mismatch.
-        if d > 96 {
-            far += 1;
+        save_png(
+            &portable,
+            &target.join(format!("shotoshot-{name}-portable.png")),
+        )
+        .unwrap();
+        let pixels = native.pixels.len() / 4;
+        let (mut far, mut total) = (0usize, 0u64);
+        for (a, b) in native
+            .pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(portable.pixels.as_chunks::<4>().0)
+        {
+            let d = (0..3).map(|i| a[i].abs_diff(b[i])).max().unwrap();
+            total += d as u64;
+            // Anti-aliasing differs by a few levels on edges; a far pixel is a shape mismatch.
+            if d > 96 {
+                far += 1;
+            }
         }
+        let mean = total as f64 / pixels as f64;
+        assert!(mean < 1.5, "{name}: mean channel difference {mean:.2}");
+        assert!(
+            (far as f64 / pixels as f64) < 0.003,
+            "{name}: {far} of {pixels} pixels differ strongly"
+        );
     }
-    let mean = total as f64 / pixels as f64;
-    assert!(mean < 1.5, "mean channel difference {mean:.2}");
-    assert!(
-        (far as f64 / pixels as f64) < 0.003,
-        "{far} of {pixels} pixels differ strongly"
-    );
 }
 
 #[test]
@@ -150,7 +199,7 @@ fn portable_renderer_paints_the_whole_capture_overlay() {
     let mut frame = shotoshot_raster::pixmap_from_bgra(&capture.image).unwrap();
     {
         let mut canvas = raster.canvas(&mut frame);
-        capture.draw_shade(&mut canvas).unwrap();
+        capture.draw_underlay(&mut canvas).unwrap();
         canvas.annotations(capture.editor.objects(), None).unwrap();
         capture.draw_frame(&mut canvas, true).unwrap();
         let color = capture.editor.style.color;
@@ -193,15 +242,18 @@ fn hover_hints_render_with_shared_style_only_on_the_pointer_monitor() {
     capture.selecting = false;
     capture.region = Rect::new(Point { x: 40., y: 100. }, Point { x: 490., y: 450. });
     capture.monitors = (0..3)
-        .map(|i| Rect {
-            min: Point {
-                x: i as f64 * 400.,
-                y: 0.,
-            },
-            max: Point {
-                x: (i + 1) as f64 * 400.,
-                y: 600.,
-            },
+        .map(|i| {
+            Rect {
+                min: Point {
+                    x: i as f64 * 400.,
+                    y: 0.,
+                },
+                max: Point {
+                    x: (i + 1) as f64 * 400.,
+                    y: 600.,
+                },
+            }
+            .into()
         })
         .collect();
     let badge = capture.dimensions_bounds().unwrap();
@@ -230,6 +282,7 @@ fn hover_hints_render_with_shared_style_only_on_the_pointer_monitor() {
         let monitor = capture
             .monitors
             .iter()
+            .map(|m| m.bounds)
             .find(|m| m.contains(pointer))
             .unwrap();
         for (time, editing, picking) in [
@@ -239,7 +292,7 @@ fn hover_hints_render_with_shared_style_only_on_the_pointer_monitor() {
             (shown, false, true),
         ] {
             capture.picker = picking.then(|| {
-                shotoshot_ui::color_picker::ColorPicker::new([255, 0, 0], pointer, 1200, 600)
+                shotoshot_ui::color_picker::ColorPicker::new([255, 0, 0], pointer, 1200, 600, 1.)
             });
             let mut frame = shotoshot_raster::pixmap_from_bgra(&capture.image).unwrap();
             capture

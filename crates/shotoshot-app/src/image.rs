@@ -53,72 +53,135 @@ impl Drop for CaptureSurface {
     }
 }
 
-/// A valid live canvas has dimensions and storage, but reads no screen pixels.
-pub(crate) fn blank_desktop() -> Result<Image> {
-    unsafe {
-        let (width, height) = (
-            GetSystemMetrics(SM_CXVIRTUALSCREEN),
-            GetSystemMetrics(SM_CYVIRTUALSCREEN),
-        );
+/// Where a capture reads the desktop from. The application only knows the real one; a test
+/// paints its own, so its verdict never depends on what the screen shows or on who uses it.
+pub(crate) enum Screen {
+    Desktop,
+    #[cfg(test)]
+    Painted {
+        surface: LiveSurface,
+        left: i32,
+        top: i32,
+    },
+}
+impl Screen {
+    /// Left, top, width and height in virtual-desktop coordinates.
+    fn bounds(&self) -> (i32, i32, i32, i32) {
+        match self {
+            Self::Desktop => unsafe {
+                (
+                    GetSystemMetrics(SM_XVIRTUALSCREEN),
+                    GetSystemMetrics(SM_YVIRTUALSCREEN),
+                    GetSystemMetrics(SM_CXVIRTUALSCREEN),
+                    GetSystemMetrics(SM_CYVIRTUALSCREEN),
+                )
+            },
+            #[cfg(test)]
+            Self::Painted { surface, left, top } => {
+                (*left, *top, surface.width as i32, surface.height as i32)
+            }
+        }
+    }
+    /// The context pixels are copied from, addressed in virtual-desktop coordinates.
+    /// `desktop` is the screen context the caller already holds.
+    fn source(&self, desktop: HDC) -> HDC {
+        match self {
+            Self::Desktop => desktop,
+            #[cfg(test)]
+            Self::Painted { surface, .. } => surface.dc(),
+        }
+    }
+    /// A valid live canvas has dimensions and storage, but reads no screen pixels.
+    pub fn blank(&self) -> Result<Image> {
+        let (left, top, width, height) = self.bounds();
         if width <= 0 || height <= 0 {
             return Err(Error::from_thread());
         }
         let mut image = Image::solid(width as u32, height as u32, [0, 0, 0, 255]);
-        image.left = GetSystemMetrics(SM_XVIRTUALSCREEN);
-        image.top = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        image.left = left;
+        image.top = top;
         Ok(image)
+    }
+    pub fn capture(&self) -> Result<Image> {
+        // PITFALL: A top-down DIB preserves physical virtual-desktop coordinates, including negatives.
+        unsafe {
+            let mut image = self.blank()?;
+            let (width, height) = (image.width as i32, image.height as i32);
+            let screen = GetDC(None);
+            if screen.is_invalid() {
+                return Err(Error::from_thread());
+            }
+            let mut surface = CaptureSurface {
+                screen,
+                memory: CreateCompatibleDC(Some(screen)),
+                bitmap: HBITMAP::default(),
+                previous: HGDIOBJ::default(),
+            };
+            if surface.memory.is_invalid() {
+                return Err(Error::from_thread());
+            }
+            let mut bits = std::ptr::null_mut();
+            surface.bitmap = CreateDIBSection(
+                Some(screen),
+                &image.info(),
+                DIB_RGB_COLORS,
+                &mut bits,
+                None,
+                0,
+            )?;
+            surface.previous = SelectObject(surface.memory, surface.bitmap.into());
+            BitBlt(
+                surface.memory,
+                0,
+                0,
+                width,
+                height,
+                Some(self.source(screen)),
+                image.left,
+                image.top,
+                SRCCOPY | CAPTUREBLT,
+            )?;
+            GdiFlush().ok()?;
+            std::ptr::copy_nonoverlapping(
+                bits.cast::<u8>(),
+                image.pixels.as_mut_ptr(),
+                image.pixels.len(),
+            );
+            for pixel in image.pixels.as_chunks_mut::<4>().0 {
+                pixel[3] = 255;
+            }
+            Ok(image)
+        }
     }
 }
-pub fn capture_desktop() -> Result<Image> {
-    // PITFALL: A top-down DIB preserves physical virtual-desktop coordinates, including negatives.
-    unsafe {
-        let mut image = blank_desktop()?;
-        let (width, height) = (image.width as i32, image.height as i32);
-        let screen = GetDC(None);
-        if screen.is_invalid() {
-            return Err(Error::from_thread());
+#[cfg(test)]
+impl Screen {
+    /// A black desktop of this size whose top-left corner sits at `left`, `top`.
+    pub fn painted(left: i32, top: i32, width: u32, height: u32) -> Result<Self> {
+        let surface = LiveSurface::new(width, height)?;
+        unsafe {
+            SetWindowOrgEx(surface.dc(), left, top, None).ok()?;
         }
-        let mut surface = CaptureSurface {
-            screen,
-            memory: CreateCompatibleDC(Some(screen)),
-            bitmap: HBITMAP::default(),
-            previous: HGDIOBJ::default(),
-        };
-        if surface.memory.is_invalid() {
-            return Err(Error::from_thread());
-        }
-        let mut bits = std::ptr::null_mut();
-        surface.bitmap = CreateDIBSection(
-            Some(screen),
-            &image.info(),
-            DIB_RGB_COLORS,
-            &mut bits,
-            None,
-            0,
-        )?;
-        surface.previous = SelectObject(surface.memory, surface.bitmap.into());
-        BitBlt(
-            surface.memory,
-            0,
-            0,
-            width,
-            height,
-            Some(screen),
-            image.left,
-            image.top,
-            SRCCOPY | CAPTUREBLT,
-        )?;
-        GdiFlush().ok()?;
-        std::ptr::copy_nonoverlapping(
-            bits.cast::<u8>(),
-            image.pixels.as_mut_ptr(),
-            image.pixels.len(),
-        );
-        for pixel in image.pixels.as_chunks_mut::<4>().0 {
-            pixel[3] = 255;
-        }
-        Ok(image)
+        Ok(Self::Painted { surface, left, top })
     }
+    /// Fills an area given in virtual-desktop coordinates, as a window shown there would.
+    pub fn fill(&self, area: windows::Win32::Foundation::RECT, rgb: u32) {
+        let Self::Painted { surface, .. } = self else {
+            panic!("a test never paints the real desktop");
+        };
+        unsafe {
+            let brush = CreateSolidBrush(windows::Win32::Foundation::COLORREF(rgb));
+            FillRect(surface.dc(), &area, brush);
+            let _ = DeleteObject(brush.into());
+            GdiFlush().unwrap();
+        }
+    }
+}
+pub(crate) fn blank_desktop() -> Result<Image> {
+    Screen::Desktop.blank()
+}
+pub fn capture_desktop() -> Result<Image> {
+    Screen::Desktop.capture()
 }
 
 /// Reused local DIB for the live eyedropper. The portable image keeps its desktop size;
@@ -129,19 +192,20 @@ impl DesktopSample {
         let cells = shotoshot_ui::MAGNIFIER_CELLS as u32;
         Ok(Self(LiveSurface::new(cells, cells)?))
     }
-    pub fn refresh(&self, image: &mut Image, pointer: shotoshot_core::Point) -> Result<()> {
+    pub fn refresh(
+        &self,
+        screen: &Screen,
+        image: &mut Image,
+        pointer: shotoshot_core::Point,
+    ) -> Result<()> {
         unsafe {
             if (
                 image.left,
                 image.top,
                 image.width as i32,
                 image.height as i32,
-            ) != (
-                GetSystemMetrics(SM_XVIRTUALSCREEN),
-                GetSystemMetrics(SM_YVIRTUALSCREEN),
-                GetSystemMetrics(SM_CXVIRTUALSCREEN),
-                GetSystemMetrics(SM_CYVIRTUALSCREEN),
-            ) {
+            ) != screen.bounds()
+            {
                 return Err(Error::new(
                     windows::Win32::Foundation::E_FAIL,
                     "Display configuration changed. Start a new capture.",
@@ -155,7 +219,7 @@ impl DesktopSample {
                 0,
                 width,
                 height,
-                Some(self.0.surface.screen),
+                Some(screen.source(self.0.surface.screen)),
                 rect.left,
                 rect.top,
                 SRCCOPY | CAPTUREBLT,

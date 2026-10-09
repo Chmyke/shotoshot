@@ -49,6 +49,7 @@ pub(super) fn draw<C: Canvas>(
     b: &Button,
     current: [u8; 3],
     selected: bool,
+    scale: f64,
 ) -> Result<(), C::Error> {
     let foreground = if !b.enabled {
         [100, 100, 100]
@@ -60,8 +61,12 @@ pub(super) fn draw<C: Canvas>(
     glyph(
         canvas,
         b.action,
-        b.bounds.min + Point { x: 5., y: 5. },
-        1.,
+        b.bounds.min
+            + Point {
+                x: 5. * scale,
+                y: 5. * scale,
+            },
+        scale,
         foreground,
         current,
     )
@@ -139,6 +144,7 @@ pub fn glyph<C: Canvas>(
         Action::Tool(Tool::Arrow) => {
             let arrow = shotoshot_core::Object {
                 rotation: 0.,
+                fill: None,
                 id: 0,
                 style: shotoshot_core::Style {
                     color: foreground,
@@ -189,6 +195,15 @@ pub fn glyph<C: Canvas>(
             ])?;
             g.line((10., 3.), (17., 10.))?;
             let (center, radius) = (g.p(16., 4.), g.r(3., 3.));
+            g.canvas.fill_ellipse(center, radius, g.ink)?;
+        }
+        Action::Fill => {
+            // Tilted bucket, half full, with its handle and the drop it pours.
+            g.path(&[(2., 11.), (9., 4.), (16., 11.), (9., 18.), (2., 11.)])?;
+            g.line((2., 11.), (16., 11.))?;
+            g.line((5.5, 14.5), (12.5, 14.5))?;
+            g.line((9., 4.), (6., 1.))?;
+            let (center, radius) = (g.p(17.5, 16.5), g.r(1.7, 2.3));
             g.canvas.fill_ellipse(center, radius, g.ink)?;
         }
         Action::Thinner => g.line((4., 10.), (16., 10.))?,

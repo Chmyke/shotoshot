@@ -121,17 +121,26 @@ fn draw_native_cursor(hdc: HDC, name: PCWSTR, pointer: Point) -> Result<()> {
         let icon = HICON(cursor.0);
         let mut info = ICONINFO::default();
         GetIconInfo(icon, &mut info)?;
-        let result = DrawIconEx(
-            hdc,
-            pointer.x.round() as i32 - info.xHotspot as i32,
-            pointer.y.round() as i32 - info.yHotspot as i32,
-            icon,
-            0,
-            0,
-            0,
-            None,
-            DI_NORMAL,
-        );
+        // PITFALL: a system cursor is shared by every process. While other capture windows use it,
+        // drawing it fails now and then with no error code, and succeeds when asked again (the
+        // cross, once in about forty films beside a parallel test run, 2026-10-09).
+        let mut result = Ok(());
+        for _ in 0..3 {
+            result = DrawIconEx(
+                hdc,
+                pointer.x.round() as i32 - info.xHotspot as i32,
+                pointer.y.round() as i32 - info.yHotspot as i32,
+                icon,
+                0,
+                0,
+                0,
+                None,
+                DI_NORMAL,
+            );
+            if result.is_ok() {
+                break;
+            }
+        }
         if !info.hbmMask.is_invalid() {
             let _ = DeleteObject(info.hbmMask.into());
         }
@@ -571,11 +580,14 @@ const ARROW_SLOPE_DEGREES: f64 = 30.;
 /// Visible lengths outside the heart: the tail before it goes in, the head once it is out.
 const ARROW_TAIL: f64 = 84.;
 const ARROW_HEAD: f64 = 78.;
+/// Length of shaft seen inside the heart before the arrow crosses the outline on its way out.
+const ARROW_INSIDE: f64 = 32.;
 
 /// A self-contained thank-you film painted by the real editor, native cursors included: a thick
 /// pen heart enlarged from its corner, pierced by an arrow, then signed under its axis.
-/// INVARIANTS: the arrow is a line that stops on the outline and an arrow that leaves from the
-/// far side, on one axis, so the empty stretch between them reads as the shaft inside the heart.
+/// INVARIANTS: the arrow is a line that stops on the outline, where it goes in, and an arrow that
+/// starts a little way inside the far side and crosses the outline on its way out, on one axis.
+/// The empty stretch between them reads as the shaft hidden in the heart.
 fn support_heart_film(folder: &Path) -> Result<()> {
     std::fs::create_dir_all(folder).map_err(|e| fail(&e.to_string()))?;
     // Image pixels are stored as BGRA. This renders the site's #161b22 panel colour.
@@ -658,6 +670,9 @@ fn support_heart_film(folder: &Path) -> Result<()> {
         return Err(fail("the arrow must enter and leave the heart once"));
     }
     let (entry, exit) = (from + (to - from) * entry, from + (to - from) * exit);
+    if (exit - entry).length() < 3. * ARROW_INSIDE {
+        return Err(fail("the arrow hides no stretch inside the heart"));
+    }
     // Thinner than the heart: three notches down the width ladder.
     film.pick(Action::Tool(Tool::Line))?;
     for _ in 0..3 {
@@ -670,7 +685,7 @@ fn support_heart_film(folder: &Path) -> Result<()> {
     film.up(none);
     film.hold(5)?;
     film.pick(Action::Tool(Tool::Arrow))?;
-    film.glide(exit, 12, none)?;
+    film.glide(exit - unit * ARROW_INSIDE, 12, none)?;
     film.down(none)?;
     film.glide(exit + unit * ARROW_HEAD, 12, none)?;
     film.up(none);

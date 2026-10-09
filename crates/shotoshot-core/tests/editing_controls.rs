@@ -476,3 +476,24 @@ fn turned_selection_frame_follows_the_object_and_resizes_from_its_turned_corner(
     assert!((resized.bounds.size() - p(150., 60.)).length() < 1e-6);
     assert!((resized.angle - angle).abs() < 1e-9);
 }
+#[test]
+fn handles_and_pick_tolerance_follow_the_interface_scale() {
+    // 14 px diagonally outside the bottom-right corner: a miss at 100 %.
+    let press = p(134., 94.);
+    let mut e = rectangle();
+    e.begin(press, Modifiers::default());
+    e.update(p(170., 110.));
+    e.finish();
+    assert_eq!(e.objects()[0].bounds(), rectangle().objects()[0].bounds());
+
+    // On a 250 % screen the handle is drawn 2.5 times larger, and so is its grab zone.
+    let mut e = rectangle();
+    e.ui_scale = 2.5;
+    assert_eq!(e.rotation_handle(), Some(p(70., 40. - 28. * 2.5)));
+    e.begin(press, Modifiers::default());
+    e.update(p(170., 110.));
+    e.finish();
+    let resized = e.objects()[0].bounds();
+    assert!((resized.min - p(20., 40.)).length() < 1e-8);
+    assert!(resized.max.x > 150. && resized.max.y > 90.);
+}

@@ -1,39 +1,49 @@
-//! Monitor geometry for the portable capture: the pointer's monitor for the hint,
-//! and every monitor for the full-screen button.
+//! Monitor geometry for the portable capture: the pointer's monitor for the hint, and
+//! every monitor with its display scale for the full-screen button and the interface size.
 use super::*;
+use shotoshot_ui::Monitor;
+use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 
 impl Session {
-    /// Every monitor's bounds, in frame coordinates.
-    pub fn frame_monitors(&self) -> Vec<Rect> {
+    /// Every monitor's bounds, in frame coordinates, with its interface scale.
+    pub fn frame_monitors(&self) -> Vec<Monitor> {
         unsafe extern "system" fn collect(
-            _: HMONITOR,
+            monitor: HMONITOR,
             _: HDC,
             bounds: *mut RECT,
             list: LPARAM,
         ) -> BOOL {
-            unsafe { (*(list.0 as *mut Vec<RECT>)).push(*bounds) };
+            // A failed query keeps 96 DPI: the interface at its 100 % size.
+            let (mut dpi, mut vertical) = (96, 96);
+            unsafe {
+                let _ = GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi, &mut vertical);
+                (*(list.0 as *mut Vec<(RECT, u32)>)).push((*bounds, dpi));
+            }
             TRUE
         }
-        let mut list = Vec::<RECT>::new();
+        let mut list = Vec::<(RECT, u32)>::new();
         unsafe {
             let _ = EnumDisplayMonitors(
                 None,
                 None,
                 Some(collect),
-                LPARAM(&mut list as *mut Vec<RECT> as isize),
+                LPARAM(&mut list as *mut Vec<(RECT, u32)> as isize),
             );
         }
         let image = &self.capture.image;
         list.iter()
-            .map(|r| Rect {
-                min: Point {
-                    x: (r.left - image.left) as f64,
-                    y: (r.top - image.top) as f64,
+            .map(|(r, dpi)| Monitor {
+                bounds: Rect {
+                    min: Point {
+                        x: (r.left - image.left) as f64,
+                        y: (r.top - image.top) as f64,
+                    },
+                    max: Point {
+                        x: (r.right - image.left) as f64,
+                        y: (r.bottom - image.top) as f64,
+                    },
                 },
-                max: Point {
-                    x: (r.right - image.left) as f64,
-                    y: (r.bottom - image.top) as f64,
-                },
+                scale: *dpi as f64 / 96.,
             })
             .collect()
     }
@@ -85,7 +95,7 @@ mod tests {
             max: Point { x: 3840., y: 1180. },
         };
         for pointer in [screen.min, screen.max, Point { x: 2000., y: 1100. }] {
-            let bounds = shotoshot_ui::place_hint(pointer, screen, Point { x: 170., y: 48. });
+            let bounds = shotoshot_ui::place_hint(pointer, screen, Point { x: 170., y: 48. }, 1.);
             assert!(screen.contains(bounds.min) && screen.contains(bounds.max));
             assert!(!bounds.contains(pointer));
         }

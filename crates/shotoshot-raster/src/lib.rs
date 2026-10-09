@@ -66,10 +66,12 @@ impl Raster {
             transform: Transform::identity(),
         }
     }
-    /// The capture flattened with its annotations, cropped to `crop`.
+    /// The capture flattened with its annotations, cropped to `crop`. A `background`
+    /// replaces the captured pixels.
     pub fn export(
         &mut self,
         image: &Image,
+        background: Option<[u8; 3]>,
         objects: &[Object],
         crop: Rect,
     ) -> Result<Image, RasterError> {
@@ -81,7 +83,15 @@ impl Raster {
         if right <= left || bottom <= top {
             return Err(RasterError("Empty capture region"));
         }
-        let mut target = pixmap_from_bgra(image)?;
+        let mut target = match background {
+            Some([r, g, b]) => {
+                let mut solid = Pixmap::new(image.width, image.height)
+                    .ok_or(RasterError("Pixmap too large"))?;
+                solid.fill(tiny_skia::Color::from_rgba8(r, g, b, 255));
+                solid
+            }
+            None => pixmap_from_bgra(image)?,
+        };
         self.canvas(&mut target).annotations(objects, None)?;
         let full = image_from_pixmap(&target, image.left, image.top);
         let (width, height) = (right - left, bottom - top);
@@ -439,6 +449,10 @@ impl Canvas for SkiaCanvas<'_> {
                             continue;
                         }
                         let closed = path.len() > 2 && path.first() == path.last();
+                        if let Some(fill) = o.fill.filter(|_| !arrow) {
+                            let interior = polyline(&path, true);
+                            self.fill_path(interior, Ink::solid(fill), Transform::identity());
+                        }
                         if arrow && closed {
                             self.fill_path(polyline(&path, true), ink, Transform::identity());
                         } else {
@@ -479,6 +493,111 @@ mod tests {
             .count()
     }
 
+    const SLATE: [u8; 3] = [28, 31, 40];
+    const GREEN: [u8; 3] = [64, 199, 128];
+    const BLUE: [u8; 3] = [80, 153, 244];
+    const PAPER: [u8; 3] = [255, 255, 255];
+    fn at(x: f64, y: f64) -> Point {
+        Point { x, y }
+    }
+    fn rgb(image: &Image, x: usize, y: usize) -> [u8; 3] {
+        let i = (y * image.width as usize + x) * 4;
+        [image.pixels[i + 2], image.pixels[i + 1], image.pixels[i]]
+    }
+    /// A filled rectangle, a filled circle and a hollow rectangle, outlined in red.
+    fn filled_scene() -> shotoshot_core::Editor {
+        use shotoshot_core::{Modifiers, Tool};
+        let mut e = shotoshot_core::Editor::default();
+        for (tool, from, to) in [
+            (Tool::Rectangle, at(40., 40.), at(140., 120.)),
+            (Tool::Ellipse, at(260., 80.), at(310., 80.)),
+            (Tool::Rectangle, at(330., 40.), at(390., 120.)),
+        ] {
+            e.tool = tool;
+            e.begin(from, Modifiers::default());
+            e.update(to);
+            e.finish();
+        }
+        e.style.color = SLATE;
+        e.fill_at(at(90., 80.), false);
+        e.style.color = GREEN;
+        e.fill_at(at(260., 80.), false);
+        e
+    }
+
+    #[test]
+    fn export_fills_closed_shapes_under_their_outline() {
+        let e = filled_scene();
+        let image = Image::solid(400, 200, [255; 4]);
+        let crop = Rect::new(at(0., 0.), at(400., 200.)).unwrap();
+        let out = Raster::new()
+            .export(&image, e.background(), e.objects(), crop)
+            .unwrap();
+        assert_eq!(rgb(&out, 90, 80), SLATE);
+        assert_eq!(rgb(&out, 260, 80), GREEN);
+        assert_eq!(
+            rgb(&out, 214, 34),
+            PAPER,
+            "a circle is not filled to its box"
+        );
+        assert_eq!(rgb(&out, 360, 80), PAPER, "a hollow shape stays hollow");
+        assert_eq!(
+            rgb(&out, 40, 80),
+            [237, 79, 92],
+            "the outline lies over the fill"
+        );
+    }
+    #[test]
+    fn export_puts_the_background_under_everything_inside_the_crop() {
+        let mut e = filled_scene();
+        e.style.color = BLUE;
+        e.fill_at(at(5., 5.), false);
+        assert_eq!(e.background(), Some(BLUE));
+        let image = Image::solid(400, 200, [255; 4]);
+        let crop = Rect::new(at(200., 0.), at(400., 200.)).unwrap();
+        let out = Raster::new()
+            .export(&image, e.background(), e.objects(), crop)
+            .unwrap();
+        assert_eq!((out.width, out.height), (200, 200));
+        for (x, y) in [(0, 0), (199, 199), (14, 34), (160, 80)] {
+            assert_eq!(rgb(&out, x, y), BLUE, "{x},{y}");
+        }
+        assert_eq!(rgb(&out, 60, 80), GREEN);
+    }
+    #[test]
+    fn the_background_covers_the_region_on_screen_and_only_dims_around_it() {
+        let mut capture = Capture::new(Image::solid(400, 200, [255; 4]));
+        capture.selecting = false;
+        capture.region = Rect::new(at(100., 50.), at(300., 150.));
+        let mut raster = Raster::new();
+        let mut frame = |capture: &Capture| {
+            let mut frame = blank();
+            capture
+                .draw_underlay(&mut raster.canvas(&mut frame))
+                .unwrap();
+            image_from_pixmap(&frame, 0, 0)
+        };
+        let plain = frame(&capture);
+        let dimmed = rgb(&plain, 20, 20);
+        assert_eq!(rgb(&plain, 200, 100), PAPER);
+        assert!(dimmed[0] > 100 && dimmed[0] < 160, "{dimmed:?}");
+
+        capture.editor.style.color = SLATE;
+        capture.editor.fill_at(at(200., 100.), false);
+        let slate = frame(&capture);
+        for (x, y) in [(200, 100), (100, 50), (299, 149)] {
+            assert_eq!(rgb(&slate, x, y), SLATE, "{x},{y}");
+        }
+        for (x, y) in [(99, 100), (300, 100), (200, 49), (200, 150), (20, 20)] {
+            assert_eq!(rgb(&slate, x, y), dimmed, "{x},{y}");
+        }
+
+        // The slate belongs to the capture: it follows the region.
+        capture.region = Rect::new(at(150., 50.), at(350., 150.));
+        let moved = frame(&capture);
+        assert_eq!(rgb(&moved, 120, 100), dimmed);
+        assert_eq!(rgb(&moved, 340, 100), SLATE);
+    }
     #[test]
     fn text_field_draws_text_selection_and_caret() {
         let capture = Capture::new(Image::solid(400, 200, [255; 4]));
@@ -533,7 +652,7 @@ mod tests {
         capture.region = Rect::new(Point { x: 20., y: 70. }, Point { x: 450., y: 250. });
         let mut raster = Raster::new();
         let mut fields = shotoshot_ui::DimensionFields::open(&capture).unwrap();
-        let size = shotoshot_ui::DimensionFields::FONT_SIZE;
+        let size = fields.font_size();
         fields.insert("1000+200+30+4-1-1-1", &mut |s| raster.measure_text(s, size));
         let mut frame = pixmap_from_bgra(&capture.image).unwrap();
         fields.draw(&mut raster.canvas(&mut frame)).unwrap();
@@ -557,16 +676,16 @@ mod tests {
         let mut frame = blank();
         let mut canvas = raster.canvas(&mut frame);
         let message = "Could not save the capture";
-        let size = shotoshot_ui::notice_size(&mut canvas, message).unwrap();
+        let size = shotoshot_ui::notice_size(&mut canvas, message, 1.).unwrap();
         let text = canvas.measure_text(message, 13.).unwrap();
         assert!(size.x > text.x + 20. && size.y > text.y + 12.);
         let screen = Rect {
             min: Point::default(),
             max: Point { x: 400., y: 200. },
         };
-        let bounds = shotoshot_ui::top_center(screen, size);
+        let bounds = shotoshot_ui::top_center(screen, size, 1.);
         assert!((bounds.center().x - 200.).abs() < 1. && bounds.min.y == 24.);
-        shotoshot_ui::draw_notice(&mut canvas, bounds, message).unwrap();
+        shotoshot_ui::draw_notice(&mut canvas, bounds, message, 1.).unwrap();
         let (x, y) = (bounds.min.x as u32, bounds.min.y as u32);
         assert!(inked(&frame, x..x + size.x as u32, y..y + size.y as u32) > 500);
         assert_eq!(inked(&frame, 0..400, 0..20), 0, "nothing above the box");

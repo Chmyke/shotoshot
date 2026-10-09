@@ -10,6 +10,7 @@ fn live_shapes_have_soft_corners_and_independently_sized_arrowheads() {
     layer.object(
         &Object {
             rotation: 0.,
+            fill: None,
             id: 0,
             style: Style {
                 width: 8.,
@@ -31,6 +32,7 @@ fn live_shapes_have_soft_corners_and_independently_sized_arrowheads() {
     );
     let arrow = Object {
         rotation: 0.,
+        fill: None,
         id: 0,
         style: Style {
             width: 5.,
@@ -80,6 +82,7 @@ fn fading_arrow_has_no_double_opacity_at_the_head_join() {
     for end in [Point { x: 220., y: 80. }, Point { x: 180., y: 130. }] {
         let arrow = Object {
             rotation: 0.,
+            fill: None,
             id: 0,
             style: Style {
                 width: 10.,
@@ -171,7 +174,8 @@ fn physical_keys_render_press_release_and_pause_without_an_idle_timer() {
         ..Default::default()
     });
     assert!(!p.devices.active(69, true, p.now()));
-    p.clock = Instant::now() - std::time::Duration::from_secs(2);
+    // Two seconds later, however long a loaded machine took to get here.
+    p.clock -= std::time::Duration::from_secs(2);
     p.tick().unwrap();
     p.paint(hwnd).unwrap();
     assert!(!p.timer);
@@ -192,6 +196,7 @@ fn native_layer_releases_input_without_removing_visible_annotation() {
     layer.object(
         &shotoshot_core::Object {
             rotation: 0.,
+            fill: None,
             id: 1,
             shape: shotoshot_core::Shape::Rectangle(shotoshot_core::Rect {
                 min: Point { x: 20., y: 20. },
@@ -297,7 +302,8 @@ fn native_gesture_release_cancel_expire_and_stop_return_to_idle() {
                 "cancelling must keep the earlier annotation"
             );
             assert!(!p.canvas.as_ref().unwrap().intercepts());
-            p.clock = Instant::now() - std::time::Duration::from_secs(4);
+            // Four seconds later, however long a loaded machine took to draw the shape.
+            p.clock -= std::time::Duration::from_secs(4);
             p.tick().unwrap();
             assert!(p.scene.shapes.is_empty());
             assert!(

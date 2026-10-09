@@ -50,6 +50,9 @@ pub struct Object {
     pub id: u64,
     pub shape: Shape,
     pub style: Style,
+    /// Opaque interior of a closed shape, drawn under its outline; ignored elsewhere.
+    /// Not part of `Style`: the brush in hand never fills what it draws.
+    pub fill: Option<[u8; 3]>,
 }
 impl Object {
     /// How far each rendered end reaches past its point: a round cap, none for a filled head.
@@ -220,7 +223,26 @@ impl Object {
             }
         }
     }
+    /// Inside a closed shape, outline included; open shapes and text contain nothing.
+    pub fn contains(&self, p: Point) -> bool {
+        let r = self.local_bounds();
+        let half = self.style.width * 0.5;
+        let radius = r.size() * 0.5 + Point { x: half, y: half };
+        let d = self.world_to_local(p) - r.center();
+        if r.size().x < 0.001 || r.size().y < 0.001 || !d.finite() {
+            return false;
+        }
+        match self.shape {
+            Shape::Rectangle(_) => d.x.abs() <= radius.x && d.y.abs() <= radius.y,
+            Shape::Ellipse(_) => (d.x / radius.x).hypot(d.y / radius.y) <= 1.,
+            _ => false,
+        }
+    }
     pub fn hit(&self, p: Point, tolerance: f64, objects: &[Object]) -> bool {
+        // A filled interior is solid to the eye, so it is grabbed like the outline.
+        if self.fill.is_some() && self.contains(p) {
+            return true;
+        }
         match &self.shape {
             Shape::Rectangle(r) => {
                 let c = r.corners().map(|p| self.local_to_world(p));

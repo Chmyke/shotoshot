@@ -19,6 +19,7 @@ fn stroke(id: u64) -> Object {
     Object {
         id,
         rotation: 0.,
+        fill: None,
         style: Style {
             color: [222, 55, 88],
             width: 5.,
@@ -91,6 +92,7 @@ fn checkpoints_match_the_warmed_direct_render_on_both_backends() {
         objects.push(Object {
             id: 3,
             rotation: 2.3,
+            fill: None,
             style: Style {
                 color: [220, 15, 60],
                 width: 3.,
@@ -246,6 +248,7 @@ fn rotated_text_and_offscreen_strokes_keep_their_complete_pixels() {
     let mut text = Object {
         id: 2,
         rotation: 2.3,
+        fill: None,
         style: Style {
             color: [22, 71, 126],
             width: 3.,
@@ -278,9 +281,12 @@ fn rotated_text_and_offscreen_strokes_keep_their_complete_pixels() {
         max: p(220., 160.),
     };
     assert_eq!(
-        renderer.export(&source, &objects, crop).unwrap().pixels,
+        renderer
+            .export(&source, None, &objects, crop)
+            .unwrap()
+            .pixels,
         self::renderer()
-            .export(&source, &objects, crop)
+            .export(&source, None, &objects, crop)
             .unwrap()
             .pixels,
         "preview checkpoints cannot leak across export targets or crops"
@@ -296,6 +302,7 @@ fn cached_arrow_prefix_updates_when_its_later_attachment_target_moves() {
         Object {
             id: 1,
             rotation: 0.,
+            fill: None,
             style: Style::default(),
             shape: Shape::Arrow {
                 start: p(10., 90.),
@@ -311,6 +318,7 @@ fn cached_arrow_prefix_updates_when_its_later_attachment_target_moves() {
         Object {
             id: 2,
             rotation: 0.,
+            fill: None,
             style: Style::default(),
             shape: Shape::Rectangle(Rect {
                 min: p(110., 50.),
@@ -335,6 +343,7 @@ fn short_thick_arrow_head_fits_inside_the_checkpoint() {
     let objects = [Object {
         id: 1,
         rotation: 0.,
+        fill: None,
         style: Style {
             color: [220, 15, 60],
             width: 30.,
@@ -362,6 +371,7 @@ fn rotated_rectangle_miter_corners_fit_inside_the_checkpoint() {
     let objects = [Object {
         id: 1,
         rotation: std::f64::consts::FRAC_PI_4,
+        fill: None,
         style: Style {
             color: [220, 15, 60],
             width: 40.,
@@ -389,6 +399,7 @@ fn flattened_ellipse_miter_tips_fit_inside_the_checkpoint() {
     let objects = [Object {
         id: 1,
         rotation: 0.,
+        fill: None,
         style: Style {
             color: [220, 15, 60],
             width: 40.,

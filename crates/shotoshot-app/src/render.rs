@@ -330,11 +330,12 @@ impl Renderer {
                         };
                         let geometry = self.factory.CreatePathGeometry()?;
                         let sink = geometry.Open()?;
-                        let filled_head =
-                            matches!(o.shape, Shape::Arrow { .. }) && path.first() == path.last();
+                        let arrow = matches!(o.shape, Shape::Arrow { .. });
+                        let filled_head = arrow && path.first() == path.last();
+                        let fill = o.fill.filter(|_| !arrow);
                         sink.BeginFigure(
                             vector(*first),
-                            if filled_head {
+                            if filled_head || fill.is_some() {
                                 D2D1_FIGURE_BEGIN_FILLED
                             } else {
                                 D2D1_FIGURE_BEGIN_HOLLOW
@@ -349,6 +350,10 @@ impl Renderer {
                             D2D1_FIGURE_END_OPEN
                         });
                         sink.Close()?;
+                        if let Some(fill) = fill {
+                            let interior = target.CreateSolidColorBrush(&color(fill, 1.), None)?;
+                            target.FillGeometry(&geometry, &interior, None);
+                        }
                         if filled_head {
                             target.FillGeometry(&geometry, &brush, None);
                         } else {
@@ -391,7 +396,15 @@ impl Renderer {
     pub fn end(&self) -> Result<()> {
         unsafe { self.dc.EndDraw(None, None) }
     }
-    pub fn export(&self, image: &Image, objects: &[Object], crop: Rect) -> Result<Image> {
+    /// The capture flattened with its annotations, cropped to `crop`. A `background`
+    /// replaces the captured pixels.
+    pub fn export(
+        &self,
+        image: &Image,
+        background: Option<[u8; 3]>,
+        objects: &[Object],
+        crop: Rect,
+    ) -> Result<Image> {
         unsafe {
             let left = crop.min.x.floor().clamp(0., image.width as f64) as u32;
             let top = crop.min.y.floor().clamp(0., image.height as f64) as u32;
@@ -416,16 +429,24 @@ impl Renderer {
             let target = self
                 .factory
                 .CreateWicBitmapRenderTarget(&bitmap, &properties())?;
-            let source = self.bitmap(&target, image)?;
+            let source = match background {
+                Some(_) => None,
+                None => Some(self.bitmap(&target, image)?),
+            };
             target.BeginDraw();
             target.SetTransform(&Matrix3x2::translation(-(left as f32), -(top as f32)));
-            target.DrawBitmap(
-                &source,
-                None,
-                1.,
-                D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
-                None,
-            );
+            if let Some(background) = background {
+                target.Clear(Some(&color(background, 1.)));
+            }
+            if let Some(source) = &source {
+                target.DrawBitmap(
+                    source,
+                    None,
+                    1.,
+                    D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
+                    None,
+                );
+            }
             let result = self.annotations(&target, objects);
             let end = target.EndDraw(None, None);
             result?;
@@ -646,7 +667,7 @@ mod arrow_tests {
     fn native_render_updates_hue_and_recovers_a_replaced_renderer() {
         let _com = crate::ComApartment::new().unwrap();
         let mut renderer = Renderer::new().unwrap();
-        let mut picker = ColorPicker::new([255, 0, 0], Point::default(), 320, 350);
+        let mut picker = ColorPicker::new([255, 0, 0], Point::default(), 320, 350, 1.);
         let render = |renderer: &Renderer, picker: &ColorPicker| {
             crate::paint_image(320, 350, |hdc| {
                 renderer.begin(hdc, 320, 350)?;
@@ -679,6 +700,7 @@ mod arrow_tests {
         let image = Image::solid(240, 100, [255; 4]);
         let object = Object {
             rotation: 0.,
+            fill: None,
             id: 1,
             style: shotoshot_core::Style {
                 width: 10.,
@@ -695,6 +717,7 @@ mod arrow_tests {
         let output = renderer
             .export(
                 &image,
+                None,
                 &[object],
                 Rect {
                     min: Point::default(),

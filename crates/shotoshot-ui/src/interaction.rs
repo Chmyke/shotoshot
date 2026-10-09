@@ -14,6 +14,7 @@ impl Capture {
     ) -> Result<Option<Action>, H::Error> {
         let p = self.clamp(p);
         self.pointer = p;
+        self.adopt_scale();
         self.width_preview = false;
         if host.dimension_pointer_down(self, p)? {
             return Ok(None);
@@ -77,6 +78,7 @@ impl Capture {
             host.finish_text(self, true);
         }
         if self.editor.tool == Tool::Select
+            && !self.bucket
             && self
                 .rotation_handle()
                 .is_some_and(|h| (h - p).length() <= 9.)
@@ -102,6 +104,14 @@ impl Capture {
             host.capture_pointer();
             return Ok(None);
         }
+        if self.bucket {
+            // One click, one fill: the tool in hand works again on the next press.
+            if self.region.is_some_and(|r| r.contains(p)) {
+                self.bucket = false;
+                self.editor.fill_at(p, modifiers.alt);
+            }
+            return Ok(None);
+        }
         // The crop limits export, not manipulation of existing annotations.
         if self.editor.tool != Tool::Select && !self.region.is_some_and(|r| r.contains(p)) {
             return Ok(None);
@@ -117,6 +127,7 @@ impl Capture {
     pub fn pointer_move<H: Host>(&mut self, host: &mut H, p: Point, modifiers: Modifiers) {
         let p = self.clamp(p);
         self.pointer = p;
+        self.adopt_scale();
         if host.dimensions_active() {
             host.dimension_pointer_move(p);
             return;
@@ -176,6 +187,8 @@ impl Capture {
             } else {
                 self.region = None;
             }
+            // The finished region may sit on a screen of another scale.
+            self.adopt_scale();
         } else {
             self.editor.finish();
         }
@@ -183,17 +196,27 @@ impl Capture {
     }
     /// Toolbar and shortcut actions that only change the capture itself.
     pub fn action<H: Host>(&mut self, host: &mut H, a: Action) {
+        self.adopt_scale();
         if !matches!(a, Action::Thinner | Action::Thicker) {
             self.editor.cancel();
         }
         self.eyedropper = false;
+        // The bucket waits while its colour is chosen; any other action puts it down.
+        let armed = std::mem::take(&mut self.bucket);
+        self.bucket = armed
+            && matches!(
+                a,
+                Action::Color(_) | Action::CopyColor(_) | Action::CustomColor | Action::Eyedropper
+            );
         match a {
+            Action::Fill => self.bucket = !armed,
             Action::CustomColor => {
                 self.picker = Some(ColorPicker::new(
                     self.custom_color,
                     self.pointer,
                     self.image.width,
                     self.image.height,
+                    self.ui_scale(),
                 ));
             }
             Action::Eyedropper => {
@@ -235,6 +258,10 @@ impl Capture {
             self.eyedropper = false;
             return true;
         }
+        if self.bucket {
+            self.bucket = false;
+            return true;
+        }
         if self.region_origin.take().is_some() {
             self.region_resize = None;
             self.region = self.region_before;
@@ -250,9 +277,10 @@ impl Capture {
     /// Wheel: text size while typing or for selected texts, else the stroke width. Each
     /// whole notch of travel moves one rung along the size ladder (see `wheel`).
     pub fn wheel<H: Host>(&mut self, host: &mut H, delta: i16) -> Result<(), H::Error> {
-        if self.picker.is_some() || host.dimensions_active() || self.eyedropper {
+        if self.picker.is_some() || host.dimensions_active() || self.eyedropper || self.bucket {
             return Ok(());
         }
+        self.adopt_scale();
         let notches = self.wheel_travel.take(delta);
         if notches == 0 {
             return Ok(());
@@ -314,10 +342,67 @@ impl Capture {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Image, test_host::FakeHost};
+    use crate::{Image, Monitor, test_host::FakeHost};
 
     fn p(x: f64, y: f64) -> Point {
         Point { x, y }
+    }
+    /// A region selected on a single 1800 x 1300 screen at `scale`.
+    fn selected_at(scale: f64) -> (Capture, FakeHost) {
+        let mut c = Capture::new(Image::solid(1800, 1300, [0, 0, 0, 255]));
+        c.monitors = vec![Monitor {
+            bounds: Rect::new(p(0., 0.), p(1800., 1300.)).unwrap(),
+            scale,
+        }];
+        let mut host = FakeHost::default();
+        let m = Modifiers::default();
+        c.pointer_down(&mut host, p(100., 100.), m).unwrap();
+        c.pointer_up(&mut host, p(600., 400.), m);
+        (c, host)
+    }
+    #[test]
+    fn default_stroke_and_text_follow_the_screen_scale_and_settings_keep_the_100_percent_width() {
+        for (scale, width, text) in [
+            (1., 3., 24.),
+            (1.25, 4., 30.),
+            (1.5, 5., 36.),
+            (2., 6., 48.),
+            (2.5, 8., 60.),
+        ] {
+            let (c, _) = selected_at(scale);
+            assert_eq!(c.editor.style.width, width, "stroke at {scale}");
+            assert_eq!(c.text_size, text, "text at {scale}");
+            assert_eq!(c.stroke_width_setting(), 3, "remembered at {scale}");
+            assert_eq!(c.editor.ui_scale, scale);
+        }
+    }
+    #[test]
+    fn a_chosen_width_keeps_its_proportion_when_the_region_changes_screen() {
+        let (mut c, mut host) = selected_at(2.);
+        c.monitors.push(Monitor {
+            bounds: Rect::new(p(1800., 0.), p(3600., 1300.)).unwrap(),
+            scale: 1.,
+        });
+        c.image = Image::solid(3600, 1300, [0, 0, 0, 255]);
+        c.action(&mut host, Action::Thicker);
+        c.action(&mut host, Action::Thicker);
+        assert_eq!((c.editor.style.width, c.stroke_width_setting()), (8., 4));
+        c.region = Rect::new(p(2000., 100.), p(2500., 400.));
+        c.pointer_move(&mut host, p(2200., 200.), Modifiers::default());
+        assert_eq!((c.editor.style.width, c.text_size), (4., 24.));
+        c.region = Rect::new(p(100., 100.), p(600., 400.));
+        c.pointer_move(&mut host, p(300., 200.), Modifiers::default());
+        assert_eq!((c.editor.style.width, c.text_size), (8., 48.));
+        assert_eq!(c.stroke_width_setting(), 4);
+    }
+    #[test]
+    fn the_picker_opens_at_the_interface_scale() {
+        for scale in [1., 2.] {
+            let (mut c, mut host) = selected_at(scale);
+            c.action(&mut host, Action::CustomColor);
+            let size = c.picker.as_ref().unwrap().bounds().size();
+            assert_eq!((size.x, size.y), (260. * scale, 316. * scale));
+        }
     }
     fn selected() -> (Capture, FakeHost) {
         let mut c = Capture::new(Image::solid(900, 600, [0, 0, 0, 255]));
@@ -344,6 +429,183 @@ mod tests {
             assert_eq!(head[1], p(220., 200.));
             assert!((head[1].x - head[0].x - object.style.width * 3.84).abs() < 1e-8);
         }
+    }
+
+    const BLACK: [u8; 3] = crate::toolbar::COLORS[5];
+    const WHITE: [u8; 3] = crate::toolbar::COLORS[4];
+    fn click(c: &mut Capture, host: &mut FakeHost, at: Point, m: Modifiers) -> Option<Action> {
+        let action = c.pointer_down(host, at, m).unwrap();
+        c.pointer_up(host, at, m);
+        action
+    }
+    fn drag(c: &mut Capture, host: &mut FakeHost, from: Point, to: Point) {
+        c.pointer_down(host, from, Modifiers::default()).unwrap();
+        c.pointer_up(host, to, Modifiers::default());
+    }
+
+    #[test]
+    fn bucket_fills_the_capture_with_one_click_then_gives_the_tool_back() {
+        let (mut c, mut host) = selected();
+        c.action(&mut host, Action::Tool(Tool::Pen));
+        c.action(&mut host, Action::Color(BLACK));
+        c.action(&mut host, Action::Fill);
+        assert!(c.bucket);
+        assert_eq!(
+            click(&mut c, &mut host, p(200., 200.), Modifiers::default()),
+            None
+        );
+        assert_eq!(c.editor.background(), Some(BLACK));
+        assert!(!c.bucket && c.editor.tool == Tool::Pen);
+        assert!(c.editor.objects().is_empty() && !host.captured);
+
+        // The slate case: the next press draws in white, it does not repaint the slate.
+        c.action(&mut host, Action::Color(WHITE));
+        drag(&mut c, &mut host, p(200., 200.), p(260., 200.));
+        assert_eq!(c.editor.background(), Some(BLACK));
+        assert_eq!(c.editor.objects().len(), 1);
+    }
+    #[test]
+    fn bucket_fills_the_shape_under_the_pointer_and_leaves_the_capture_alone() {
+        let (mut c, mut host) = selected();
+        c.action(&mut host, Action::Tool(Tool::Rectangle));
+        drag(&mut c, &mut host, p(200., 150.), p(400., 300.));
+        c.action(&mut host, Action::Color(BLACK));
+        c.action(&mut host, Action::Fill);
+        click(&mut c, &mut host, p(300., 200.), Modifiers::default());
+        assert_eq!(c.editor.objects()[0].fill, Some(BLACK));
+        assert_eq!(c.editor.objects().len(), 1, "the click drew nothing");
+        assert_eq!(c.editor.background(), None);
+    }
+    #[test]
+    fn bucket_waits_while_its_colour_is_chosen() {
+        let (mut c, mut host) = selected();
+        c.action(&mut host, Action::Fill);
+        let swatch = c
+            .buttons()
+            .into_iter()
+            .find(|b| b.action == Action::Color(BLACK))
+            .unwrap();
+        let pressed = click(
+            &mut c,
+            &mut host,
+            swatch.bounds.center(),
+            Modifiers::default(),
+        );
+        assert_eq!(pressed, Some(Action::Color(BLACK)), "pressed, not filled");
+        assert_eq!(c.editor.background(), None);
+        for choosing in [
+            Action::Color(BLACK),
+            Action::CopyColor(BLACK),
+            Action::Eyedropper,
+            Action::CustomColor,
+        ] {
+            c.action(&mut host, choosing);
+            assert!(c.bucket, "{choosing:?}");
+        }
+    }
+    #[test]
+    fn any_other_action_puts_the_bucket_down() {
+        let (mut c, mut host) = selected();
+        for other in [
+            Action::Fill,
+            Action::Tool(Tool::Arrow),
+            Action::Undo,
+            Action::FullScreen,
+        ] {
+            c.action(&mut host, Action::Fill);
+            assert!(c.bucket);
+            c.action(&mut host, other);
+            assert!(!c.bucket, "{other:?}");
+        }
+    }
+    #[test]
+    fn bucket_stays_armed_after_a_click_outside_the_region() {
+        let (mut c, mut host) = selected();
+        c.action(&mut host, Action::Fill);
+        click(&mut c, &mut host, p(20., 20.), Modifiers::default());
+        assert!(c.bucket);
+        assert_eq!(c.editor.background(), None);
+        assert!(!c.editor.can_undo());
+    }
+    #[test]
+    fn alt_click_with_the_bucket_clears_the_fill() {
+        let (mut c, mut host) = selected();
+        c.action(&mut host, Action::Fill);
+        click(&mut c, &mut host, p(200., 200.), Modifiers::default());
+        assert!(c.editor.background().is_some());
+        c.action(&mut host, Action::Color(BLACK));
+        c.action(&mut host, Action::Fill);
+        let alt = Modifiers {
+            alt: true,
+            ..Modifiers::default()
+        };
+        click(&mut c, &mut host, p(200., 200.), alt);
+        assert_eq!(c.editor.background(), None);
+        assert!(!c.bucket);
+    }
+    #[test]
+    fn region_handles_keep_resizing_under_an_armed_bucket() {
+        let (mut c, mut host) = selected();
+        c.action(&mut host, Action::Fill);
+        assert_eq!(c.cursor(p(600., 400.)), crate::CursorKind::ResizeNwse);
+        drag(&mut c, &mut host, p(600., 400.), p(700., 500.));
+        assert_eq!(c.region, Rect::new(p(100., 100.), p(700., 500.)));
+        assert!(c.bucket);
+        assert_eq!(c.editor.background(), None);
+    }
+    #[test]
+    fn armed_bucket_shows_on_its_button_with_a_cross_and_no_stroke_ring() {
+        let (mut c, mut host) = selected();
+        c.action(&mut host, Action::Tool(Tool::Pen));
+        c.pointer_move(&mut host, p(200., 200.), Modifiers::default());
+        let lit = |c: &Capture| {
+            c.buttons()
+                .into_iter()
+                .find(|b| b.action == Action::Fill)
+                .unwrap()
+                .active
+        };
+        assert!(!lit(&c) && c.width_ring_visible());
+        c.action(&mut host, Action::Tool(Tool::Select));
+        assert_eq!(c.cursor(p(200., 200.)), crate::CursorKind::Arrow);
+        c.action(&mut host, Action::Tool(Tool::Pen));
+        c.action(&mut host, Action::Fill);
+        assert!(lit(&c) && !c.width_ring_visible());
+        c.action(&mut host, Action::Tool(Tool::Select));
+        c.action(&mut host, Action::Fill);
+        assert_eq!(c.cursor(p(200., 200.)), crate::CursorKind::Cross);
+    }
+    #[test]
+    fn bucket_click_on_a_rotation_handle_fills_instead_of_turning() {
+        let (mut c, mut host) = selected();
+        c.action(&mut host, Action::Tool(Tool::Rectangle));
+        drag(&mut c, &mut host, p(200., 150.), p(400., 300.));
+        c.action(&mut host, Action::Tool(Tool::Select));
+        c.editor.select_only(c.editor.objects()[0].id);
+        let handle = c.rotation_handle().unwrap();
+        c.action(&mut host, Action::Fill);
+        c.pointer_down(&mut host, handle, Modifiers::default())
+            .unwrap();
+        c.pointer_up(&mut host, p(500., 300.), Modifiers::default());
+        assert_eq!(c.editor.objects()[0].rotation, 0.);
+        assert!(c.editor.background().is_some());
+    }
+    #[test]
+    fn wheel_is_inert_while_the_bucket_is_armed() {
+        let (mut c, mut host) = selected();
+        let width = c.editor.style.width;
+        c.action(&mut host, Action::Fill);
+        c.wheel(&mut host, 120).unwrap();
+        assert_eq!(c.editor.style.width, width);
+        assert!(c.bucket);
+    }
+    #[test]
+    fn escape_puts_the_bucket_down_first() {
+        let (mut c, mut host) = selected();
+        c.action(&mut host, Action::Fill);
+        assert!(c.cancel_gesture(&mut host));
+        assert!(!c.bucket);
+        assert!(!c.cancel_gesture(&mut host));
     }
 
     #[test]

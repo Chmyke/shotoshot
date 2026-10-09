@@ -5,7 +5,7 @@ impl Session {
         let capture = &self.capture;
         let mut canvas =
             crate::render::D2dCanvas::new(&self.native.renderer, &self.native.renderer.dc)?;
-        capture.draw_shade(&mut canvas)?;
+        capture.draw_underlay(&mut canvas)?;
         if capture.region.is_some() {
             let editing = self.native.text.as_ref().and_then(|t| t.object);
             let result = canvas.annotations(capture.editor.objects(), editing);

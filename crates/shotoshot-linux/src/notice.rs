@@ -51,7 +51,9 @@ struct Notice {
 pub fn show(message: &str, duration: Duration) -> Result<(), Box<dyn Error>> {
     let mut raster = Raster::new();
     let mut scratch = Pixmap::new(1, 1).ok_or("no pixmap")?;
-    let size = notice_size(&mut raster.canvas(&mut scratch), message).map_err(|e| e.0)?;
+    // Sized before any window exists: the monitor scale is not known yet.
+    let scale = 1.;
+    let size = notice_size(&mut raster.canvas(&mut scratch), message, scale).map_err(|e| e.0)?;
     let (width, height) = (size.x.ceil() as u32, size.y.ceil() as u32);
     let mut frame = Pixmap::new(width, height).ok_or("message too large")?;
     // The window is opaque: its corners take the box colour.
@@ -63,7 +65,7 @@ pub fn show(message: &str, duration: Duration) -> Result<(), Box<dyn Error>> {
             y: height as f64,
         },
     };
-    draw_notice(&mut raster.canvas(&mut frame), bounds, message).map_err(|e| e.0)?;
+    draw_notice(&mut raster.canvas(&mut frame), bounds, message, scale).map_err(|e| e.0)?;
     let mut notice = Notice {
         frame,
         deadline: Instant::now() + duration,

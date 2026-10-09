@@ -17,6 +17,7 @@ use windows::{
 };
 
 const CAPTURE_WAIT: Duration = Duration::from_millis(500);
+const PROTECTED_CONTENT: &str = "Windows blocked protected content in this capture";
 
 struct AcquiredFrame<'a>(&'a IDXGIOutputDuplication);
 impl Drop for AcquiredFrame<'_> {
@@ -117,14 +118,28 @@ fn capture_output(
         }
         let _frame = AcquiredFrame(&duplication);
         if info.ProtectedContentMaskedOut.as_bool() {
-            return Err(Error::new(
-                E_FAIL,
-                "Windows blocked protected content in this capture",
-            ));
+            return Err(Error::new(E_FAIL, PROTECTED_CONTENT));
         }
         let source: ID3D11Texture2D = resource
             .ok_or_else(|| Error::from_hresult(E_FAIL))?
             .cast()?;
+        let mut image = read_back(&device, &context, &source, output_desc.Rotation, deadline)?;
+        image.left = output_desc.DesktopCoordinates.left;
+        image.top = output_desc.DesktopCoordinates.top;
+        Ok(image)
+    }
+}
+
+/// Copies a frame out of video memory. Apart from the duplication above, so that it is
+/// checked on a texture of known content: no screen, no monitor, any Direct3D device.
+fn read_back(
+    device: &ID3D11Device,
+    context: &ID3D11DeviceContext,
+    source: &ID3D11Texture2D,
+    rotation: DXGI_MODE_ROTATION,
+    deadline: Instant,
+) -> Result<crate::Image> {
+    unsafe {
         let mut desc = D3D11_TEXTURE2D_DESC::default();
         source.GetDesc(&mut desc);
         if desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM {
@@ -140,7 +155,7 @@ fn capture_output(
         let mut staging = None;
         device.CreateTexture2D(&desc, None, Some(&mut staging))?;
         let staging = staging.ok_or_else(|| Error::from_hresult(E_FAIL))?;
-        context.CopyResource(&staging, &source);
+        context.CopyResource(&staging, source);
         context.Flush();
         let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
         loop {
@@ -162,7 +177,7 @@ fn capture_output(
             }
         }
         let _mapped = MappedTexture {
-            context: &context,
+            context,
             texture: &staging,
         };
         let length = (mapped.RowPitch as usize)
@@ -173,16 +188,13 @@ fn capture_output(
             return Err(Error::from_hresult(E_FAIL));
         }
         let bytes = std::slice::from_raw_parts(mapped.pData.cast::<u8>(), length);
-        let mut image = unpack(
+        unpack(
             bytes,
             desc.Width,
             desc.Height,
             mapped.RowPitch as usize,
-            output_desc.Rotation,
-        )?;
-        image.left = output_desc.DesktopCoordinates.left;
-        image.top = output_desc.DesktopCoordinates.top;
-        Ok(image)
+            rotation,
+        )
     }
 }
 
@@ -250,8 +262,38 @@ fn unpack(
 mod tests {
     use super::*;
 
+    // Three by two pixels, four padding bytes after the first row, alpha left at zero as a
+    // duplicated desktop gives it. The first byte of each pixel numbers it.
+    const SURFACE: [u8; 28] = [
+        1, 10, 20, 0, 2, 11, 21, 0, 3, 12, 22, 0, 99, 99, 99, 99, 4, 13, 23, 0, 5, 14, 24, 0, 6,
+        15, 25, 0,
+    ];
+    fn numbers(image: &crate::Image) -> Vec<u8> {
+        let pixels = image.pixels.as_chunks::<4>().0;
+        assert!(pixels.iter().all(|pixel| pixel[3] == 255));
+        pixels.iter().map(|pixel| pixel[0]).collect()
+    }
+
+    /// A window protected from capture anywhere on the monitor (a password manager, the toast
+    /// of a test run next door) blanks the frame. That says nothing about the duplication:
+    /// wait for it to leave, and fail only if it stays.
+    fn capture_past_protected_content(monitor: HMONITOR) -> crate::Image {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            match capture_monitor(monitor) {
+                Err(error) if error.message() == PROTECTED_CONTENT && Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                outcome => return outcome.expect("native GPU capture"),
+            }
+        }
+    }
+
+    /// The one test that needs a real display, since Windows duplicates nothing else. A plain
+    /// `cargo test` skips it; `check.ps1` runs it on its own.
     #[test]
-    fn native_capture_releases_duplication_and_preserves_monitor_dimensions() {
+    #[ignore = "real desktop: needs a display Windows can duplicate, run alone by check.ps1"]
+    fn real_desktop_capture_releases_duplication_and_preserves_monitor_dimensions() {
         use windows::Win32::{Foundation::POINT, Graphics::Gdi::*};
         // PITFALL: Read desktop pixels only into memory; tests never save or display them.
         unsafe {
@@ -263,7 +305,7 @@ mod tests {
             assert!(GetMonitorInfoW(monitor, &mut info).as_bool());
             for _ in 0..2 {
                 let started = Instant::now();
-                let image = capture_monitor(monitor).expect("native GPU capture");
+                let image = capture_past_protected_content(monitor);
                 eprintln!(
                     "GPU capture: {} ms, {}x{}",
                     started.elapsed().as_millis(),
@@ -295,30 +337,73 @@ mod tests {
     }
 
     #[test]
+    fn a_frame_is_read_back_from_video_memory_without_a_screen() {
+        // WARP is the software Direct3D device shipped with Windows: no GPU, no display.
+        unsafe {
+            let mut device = None;
+            let mut context = None;
+            D3D11CreateDevice(
+                None,
+                D3D_DRIVER_TYPE_WARP,
+                HMODULE::default(),
+                D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                None,
+                D3D11_SDK_VERSION,
+                Some(&mut device),
+                None,
+                Some(&mut context),
+            )
+            .expect("software Direct3D device");
+            let (device, context) = (device.unwrap(), context.unwrap());
+            // Described as Windows describes a duplicated frame.
+            let desc = D3D11_TEXTURE2D_DESC {
+                Width: 3,
+                Height: 2,
+                MipLevels: 1,
+                ArraySize: 1,
+                Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                SampleDesc: DXGI_SAMPLE_DESC {
+                    Count: 1,
+                    Quality: 0,
+                },
+                Usage: D3D11_USAGE_DEFAULT,
+                BindFlags: D3D11_BIND_RENDER_TARGET.0 as u32,
+                ..Default::default()
+            };
+            let content = D3D11_SUBRESOURCE_DATA {
+                pSysMem: SURFACE.as_ptr().cast(),
+                SysMemPitch: 16,
+                SysMemSlicePitch: 0,
+            };
+            let mut frame = None;
+            device
+                .CreateTexture2D(&desc, Some(&content), Some(&mut frame))
+                .expect("frame texture");
+            let frame = frame.unwrap();
+            for (rotation, size, expected) in [
+                (DXGI_MODE_ROTATION_IDENTITY, (3, 2), [1, 2, 3, 4, 5, 6]),
+                (DXGI_MODE_ROTATION_ROTATE90, (2, 3), [4, 1, 5, 2, 6, 3]),
+            ] {
+                let deadline = Instant::now() + CAPTURE_WAIT;
+                let image =
+                    read_back(&device, &context, &frame, rotation, deadline).expect("read back");
+                assert_eq!((image.width, image.height), size);
+                assert_eq!(numbers(&image), expected);
+            }
+        }
+    }
+
+    #[test]
     fn stride_rotation_and_alpha_are_correct() {
-        let bytes = [
-            1, 10, 20, 0, 2, 11, 21, 0, 3, 12, 22, 0, 99, 99, 99, 99, 4, 13, 23, 0, 5, 14, 24, 0,
-            6, 15, 25, 0,
-        ];
         for (rotation, width, height, expected) in [
             (DXGI_MODE_ROTATION_IDENTITY, 3, 2, vec![1, 2, 3, 4, 5, 6]),
             (DXGI_MODE_ROTATION_ROTATE90, 2, 3, vec![4, 1, 5, 2, 6, 3]),
             (DXGI_MODE_ROTATION_ROTATE180, 3, 2, vec![6, 5, 4, 3, 2, 1]),
             (DXGI_MODE_ROTATION_ROTATE270, 2, 3, vec![3, 6, 2, 5, 1, 4]),
         ] {
-            let image = unpack(&bytes, 3, 2, 16, rotation).expect("valid surface");
+            let image = unpack(&SURFACE, 3, 2, 16, rotation).expect("valid surface");
             assert_eq!((image.width, image.height), (width, height));
-            assert_eq!(
-                image
-                    .pixels
-                    .as_chunks::<4>()
-                    .0
-                    .iter()
-                    .map(|p| p[0])
-                    .collect::<Vec<_>>(),
-                expected
-            );
-            assert!(image.pixels.as_chunks::<4>().0.iter().all(|p| p[3] == 255));
+            assert_eq!(numbers(&image), expected);
             image.validate().expect("valid image");
         }
     }

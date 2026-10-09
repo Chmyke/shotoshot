@@ -28,6 +28,9 @@ impl Native {
         }
         capture.editor.cancel();
         self.dimensions = None;
+        // Field geometry is in logical pixels, like the badge that hosts it.
+        let scale = capture.ui_scale();
+        let font_size = (14. * scale) as f32;
         unsafe {
             let make = |value: f64| -> Result<TextInput> {
                 let window = CreateWindowExW(
@@ -44,7 +47,7 @@ impl Native {
                     None,
                     None,
                 )?;
-                let font = match super::text::configure_input(window, 14.) {
+                let font = match super::text::configure_input(window, font_size) {
                     Ok(font) => font,
                     Err(error) => {
                         let _ = DestroyWindow(window);
@@ -56,7 +59,7 @@ impl Native {
                     window,
                     position: Point::default(),
                     object: None,
-                    size: 14.,
+                    size: font_size,
                     color: [240, 240, 240],
                     font,
                     rotation: 0.,
@@ -69,7 +72,7 @@ impl Native {
                 error: None,
             });
             let bounds = capture.dimensions_bounds().expect("capture region");
-            let field_width = ((bounds.size().x - 22.) / 2.).max(1.) as i32;
+            let field_width = ((bounds.size().x - 22. * scale) / 2.).max(1.) as i32;
             let fields = self.dimensions.as_mut().expect("active fields");
             for (index, field) in [&mut fields.width, &mut fields.height]
                 .into_iter()
@@ -77,8 +80,8 @@ impl Native {
             {
                 field.position = bounds.min
                     + Point {
-                        x: 4. + index as f64 * (field_width + 14) as f64,
-                        y: 3.,
+                        x: 4. * scale + index as f64 * (field_width as f64 + 14. * scale),
+                        y: 3. * scale,
                     };
                 SetWindowPos(
                     field.window,
@@ -86,7 +89,7 @@ impl Native {
                     field.position.x as i32,
                     field.position.y as i32,
                     field_width,
-                    20,
+                    (20. * scale) as i32,
                     SWP_NOZORDER | SWP_NOACTIVATE,
                 )?;
             }
@@ -255,14 +258,15 @@ impl Native {
             return Ok(());
         };
         let target = &self.renderer.dc;
-        let field_width = ((bounds.size().x - 22.) / 2.).max(1.);
+        let scale = capture.ui_scale();
+        let field_width = ((bounds.size().x - 22. * scale) / 2.).max(1.);
         for field in [&fields.width, &fields.height] {
             let clip = Rect {
                 min: field.position,
                 max: field.position
                     + Point {
                         x: field_width,
-                        y: 20.,
+                        y: 20. * scale,
                     },
             };
             unsafe { target.PushAxisAlignedClip(&rect(clip), D2D1_ANTIALIAS_MODE_ALIASED) };

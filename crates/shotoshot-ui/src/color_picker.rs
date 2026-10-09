@@ -34,10 +34,17 @@ pub struct ColorPicker {
 }
 
 impl ColorPicker {
-    pub fn new(rgb: [u8; 3], anchor: Point, screen_width: u32, screen_height: u32) -> Self {
+    /// A picker at `anchor`, at interface scale `ui_scale` or smaller to fit the screen.
+    pub fn new(
+        rgb: [u8; 3],
+        anchor: Point,
+        screen_width: u32,
+        screen_height: u32,
+        ui_scale: f64,
+    ) -> Self {
         let scale = (screen_width as f64 / WIDTH)
             .min(screen_height as f64 / HEIGHT)
-            .min(1.);
+            .min(ui_scale);
         let size = Point {
             x: (WIDTH * scale).min(screen_width as f64),
             y: (HEIGHT * scale).min(screen_height as f64),
@@ -137,8 +144,10 @@ impl ColorPicker {
         if self.scale == 0. {
             return Ok(());
         }
-        canvas.fill_round_rect(self.bounds, 10., Ink::solid([32, 32, 32]))?;
-        canvas.stroke_round_rect(self.bounds, 10., Ink::solid([72, 72, 72]), 1.)?;
+        // Outlines keep at least their 100 % size on a picker shrunk to fit a small screen.
+        let line = self.scale.max(1.);
+        canvas.fill_round_rect(self.bounds, 10. * line, Ink::solid([32, 32, 32]))?;
+        canvas.stroke_round_rect(self.bounds, 10. * line, Ink::solid([72, 72, 72]), line)?;
         canvas.raster(
             "picker.wheel",
             0,
@@ -176,7 +185,7 @@ impl ColorPicker {
         }
         let swatch = self.area(18., 258., 30., 26.);
         canvas.fill_rect(swatch, Ink::solid(self.color()))?;
-        canvas.stroke_rect(swatch, Ink::solid([112, 112, 112]), 1.)?;
+        canvas.stroke_rect(swatch, Ink::solid([112, 112, 112]), line)?;
         for (text, area, size, rgb) in [
             (
                 "Custom color",
@@ -298,7 +307,7 @@ mod tests {
 
     #[test]
     fn panel_fits_and_drag_clamps_to_sv_limits() {
-        let mut picker = ColorPicker::new([255, 0, 0], Point { x: 999., y: 999. }, 320, 350);
+        let mut picker = ColorPicker::new([255, 0, 0], Point { x: 999., y: 999. }, 320, 350, 1.);
         let screen = Rect {
             min: Point::default(),
             max: Point { x: 320., y: 350. },
@@ -325,7 +334,7 @@ mod tests {
     #[test]
     fn hue_survives_black_and_white() {
         for initial in [[0, 0, 0], [255, 255, 255]] {
-            let mut picker = ColorPicker::new(initial, Point::default(), 1000, 1000);
+            let mut picker = ColorPicker::new(initial, Point::default(), 1000, 1000, 1.);
             let angle = std::f64::consts::TAU / 3.;
             picker.pointer_down(picker.at(130. + 91. * angle.cos(), 144. + 91. * angle.sin()));
             picker.pointer_up();
@@ -337,7 +346,7 @@ mod tests {
 
     #[test]
     fn tiny_screen_and_nonfinite_pointer_are_safe() {
-        let mut picker = ColorPicker::new([40, 80, 120], Point::default(), 80, 60);
+        let mut picker = ColorPicker::new([40, 80, 120], Point::default(), 80, 60, 1.);
         assert!(picker.bounds().max.x <= 80. && picker.bounds().max.y <= 60.);
         assert!(!picker.pointer_down(Point { x: f64::NAN, y: 0. }));
         assert_eq!(picker.color(), [40, 80, 120]);

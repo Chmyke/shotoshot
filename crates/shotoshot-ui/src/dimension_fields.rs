@@ -28,6 +28,8 @@ struct Slot {
 
 pub struct DimensionFields {
     bounds: Rect,
+    /// Interface scale the fields were opened at.
+    scale: f64,
     width: f64,
     slots: [Slot; 2],
     focus: usize,
@@ -36,24 +38,29 @@ pub struct DimensionFields {
 }
 
 impl DimensionFields {
-    /// Font size of the fields, as on Windows; platforms measure with it.
+    /// Font size of the fields at 100 %, as on Windows.
     pub const FONT_SIZE: f64 = FIELD_SIZE;
+    /// Font size of these fields; platforms measure with it.
+    pub fn font_size(&self) -> f64 {
+        FIELD_SIZE * self.scale
+    }
     /// Width and height fields over the badge, the width one focused and selected.
     pub fn open(capture: &Capture) -> Option<Self> {
         let size = capture.region?.size();
         let bounds = capture.dimensions_bounds()?;
+        let scale = capture.ui_scale();
         // Whole pixels, as the Windows edit boxes are laid out.
-        let width = ((bounds.size().x - 22.) / 2.).max(1.).floor();
+        let width = ((bounds.size().x - 22. * scale) / 2.).max(1.).floor();
         let slot = |index: usize, value: f64| {
-            let left = bounds.min.x + 4. + index as f64 * (width + 14.);
+            let left = bounds.min.x + 4. * scale + index as f64 * (width + 14. * scale);
             let position = Point {
                 x: left,
-                y: bounds.min.y + 3.,
+                y: bounds.min.y + 3. * scale,
             };
             Slot {
                 field: TextField::line(
                     position,
-                    FIELD_SIZE as f32,
+                    (FIELD_SIZE * scale) as f32,
                     FIELD_INK,
                     format!("{value:.0}"),
                 ),
@@ -63,6 +70,7 @@ impl DimensionFields {
         };
         Some(Self {
             bounds,
+            scale,
             width,
             slots: [slot(0, size.x), slot(1, size.y)],
             focus: 0,
@@ -159,7 +167,7 @@ impl DimensionFields {
 
     /// Scrolls field `index` by whole characters so its caret stays visible.
     fn reveal(&mut self, index: usize, measure: &mut impl FnMut(&str) -> Point) {
-        let visible = self.width - 2.;
+        let visible = self.width - 2. * self.scale;
         let slot = &mut self.slots[index];
         let text = slot.field.text();
         let caret = slot.field.caret();
@@ -179,7 +187,9 @@ impl DimensionFields {
 
     /// Both fields, clipped to their boxes; selection and caret in the focused one.
     pub fn draw<C: Canvas>(&self, canvas: &mut C) -> Result<(), C::Error> {
-        let top = self.bounds.min.y + 3.;
+        let s = self.scale;
+        let (size, height) = (self.font_size(), FIELD_HEIGHT * s);
+        let top = self.bounds.min.y + 3. * s;
         for (index, slot) in self.slots.iter().enumerate() {
             let text = slot.field.text();
             let right = slot.left + self.width;
@@ -190,15 +200,12 @@ impl DimensionFields {
                 },
                 max: Point {
                     x: right,
-                    y: top + FIELD_HEIGHT,
+                    y: top + height,
                 },
             };
             let mut x_at = |offset: usize| -> Result<f64, C::Error> {
                 let offset = offset.max(slot.scroll);
-                let x = slot.left
-                    + canvas
-                        .measure_text(&text[slot.scroll..offset], FIELD_SIZE)?
-                        .x;
+                let x = slot.left + canvas.measure_text(&text[slot.scroll..offset], size)?.x;
                 Ok(x.min(right))
             };
             let focused = index == self.focus;
@@ -215,25 +222,25 @@ impl DimensionFields {
                     min: Point { x: from, y: top },
                     max: Point {
                         x: to,
-                        y: top + FIELD_HEIGHT,
+                        y: top + height,
                     },
                 };
                 canvas.fill_rect(selection, SELECTION)?;
             }
             let ink = Ink::solid(slot.field.color);
-            canvas.text(&text[slot.scroll..], area, FIELD_SIZE, ink)?;
+            canvas.text(&text[slot.scroll..], area, size, ink)?;
             if let Some((from, _)) = marks
                 && a == b
             {
                 let caret = Point {
                     x: from,
-                    y: top + 2.,
+                    y: top + 2. * s,
                 };
                 let bottom = Point {
                     x: from,
-                    y: top + FIELD_HEIGHT - 2.,
+                    y: top + height - 2. * s,
                 };
-                canvas.line(caret, bottom, ink, 1.)?;
+                canvas.line(caret, bottom, ink, s)?;
             }
         }
         Ok(())

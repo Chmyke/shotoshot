@@ -43,7 +43,7 @@ impl Session {
         Ok(())
     }
     fn fresh_desktop(&self) -> Result<Image> {
-        let image = capture_desktop()?;
+        let image = self.native.screen.capture()?;
         if (image.left, image.top, image.width, image.height)
             != (
                 self.capture.image.left,
@@ -65,7 +65,7 @@ impl Session {
                 self.native.live_sample = Some(crate::image::DesktopSample::new()?);
             }
             if let Some(sample) = &self.native.live_sample {
-                sample.refresh(&mut self.capture.image, pointer)?;
+                sample.refresh(&self.native.screen, &mut self.capture.image, pointer)?;
             }
         }
         Ok(())
@@ -74,14 +74,7 @@ impl Session {
         if !self.capture.live {
             return self.export();
         }
-        let image = self.fresh_desktop()?;
-        let region = self
-            .capture
-            .region
-            .ok_or_else(|| Error::new(E_INVALIDARG, "Select a capture region first"))?;
-        self.native
-            .renderer
-            .export(&image, self.capture.editor.objects(), region)
+        self.flatten(&self.fresh_desktop()?)
     }
     pub fn paint_window(&mut self, hwnd: HWND, hdc: HDC) -> Result<()> {
         if let Some(surface) = &self.native.live_surface {
@@ -110,7 +103,6 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use windows::Win32::Graphics::Dwm::DwmFlush;
     /// The app calls `accelerate` when the window message arrives; a test polls instead.
     fn wait_for_acceleration(s: &mut Session) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
@@ -220,60 +212,42 @@ mod tests {
     #[test]
     fn live_capture_reads_current_desktop_and_freeze_latches_it() {
         let _com = ComApartment::new().unwrap();
+        // Painted, with its corner left of and above the primary screen as a second monitor
+        // gives: what the real screen shows, and who uses it, cannot change the verdict.
+        let screen = crate::image::Screen::painted(-200, -100, 640, 420).unwrap();
+        let paint = |screen: &crate::image::Screen, rgb: u32| {
+            screen.fill(
+                RECT {
+                    left: 100,
+                    top: 100,
+                    right: 400,
+                    bottom: 320,
+                },
+                rgb,
+            )
+        };
+        paint(&screen, 0x00332211);
+        let image = screen.capture().unwrap();
+        let index =
+            (((120 - image.top) as u32 * image.width + (120 - image.left) as u32) * 4) as usize;
+        assert_eq!(
+            &image.pixels[index..index + 3],
+            &[0x33, 0x22, 0x11],
+            "the capture missed what the desktop shows"
+        );
+        let mut s = Session::new(image).unwrap();
+        s.native.screen = screen;
+        let paint = |s: &Session, rgb: u32| paint(&s.native.screen, rgb);
         unsafe {
-            let background = crate::resources::OwnedWindow(
-                CreateWindowExW(
-                    WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST,
-                    w!("STATIC"),
-                    w!("Shotoshot live test background"),
-                    WS_POPUP | WS_VISIBLE,
-                    100,
-                    100,
-                    300,
-                    220,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-                .unwrap(),
-            );
-            let paint = |rgb: COLORREF| {
-                let dc = GetDC(Some(background.0));
-                let brush = CreateSolidBrush(rgb);
-                FillRect(
-                    dc,
-                    &RECT {
-                        left: 0,
-                        top: 0,
-                        right: 300,
-                        bottom: 220,
-                    },
-                    brush,
-                );
-                let _ = DeleteObject(brush.into());
-                ReleaseDC(Some(background.0), dc);
-                GdiFlush().unwrap();
-                DwmFlush().unwrap();
-            };
-            paint(COLORREF(0x00332211));
-            let image = capture_desktop().unwrap();
-            let index =
-                (((120 - image.top) as u32 * image.width + (120 - image.left) as u32) * 4) as usize;
-            assert_eq!(
-                &image.pixels[index..index + 3],
-                &[0x33, 0x22, 0x11],
-                "the fixture was not visible before the overlay was created"
-            );
-            let mut s = Session::new(image).unwrap();
+            // Never shown: the session only needs a window to exclude, layer and present to.
             let overlay = crate::resources::OwnedWindow(
                 CreateWindowExW(
                     WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
                     w!("STATIC"),
                     w!("Shotoshot live test overlay"),
                     WS_POPUP,
-                    s.capture.image.left,
-                    s.capture.image.top,
+                    -32000,
+                    -32000,
                     s.capture.image.width as i32,
                     s.capture.image.height as i32,
                     None,
@@ -296,9 +270,13 @@ mod tests {
             s.capture.selecting = false;
             s.capture.toolbar_visible = false;
             s.set_live(overlay.0, true).unwrap();
-            let _ = ShowWindow(overlay.0, SW_SHOWNOACTIVATE);
+            let mut affinity = 0;
+            GetWindowDisplayAffinity(overlay.0, &mut affinity).unwrap();
+            assert_eq!(
+                affinity, WDA_EXCLUDEFROMCAPTURE.0,
+                "Windows must be told to keep the overlay out of what live capture reads"
+            );
             s.paint_window(overlay.0, HDC::default()).unwrap();
-            DwmFlush().unwrap();
             let origin = s.capture.region.unwrap().min;
             let alpha = s
                 .native
@@ -312,7 +290,7 @@ mod tests {
             );
             let first = s.capture_output().unwrap();
             assert_eq!(&first.pixels[0..3], &[0x33, 0x22, 0x11]);
-            paint(COLORREF(0x00776655));
+            paint(&s, 0x00776655);
             let second = s.capture_output().unwrap();
             assert_eq!(
                 &second.pixels[0..3],
@@ -329,7 +307,7 @@ mod tests {
                 &[3, 5, 7, 255],
                 "the eyedropper must refresh only its local pixels"
             );
-            paint(COLORREF(0x00443322));
+            paint(&s, 0x00443322);
             let previous_color = s.capture.editor.style.color;
             let clicked = origin + Point { x: 40., y: 20. };
             assert_eq!(
@@ -337,7 +315,7 @@ mod tests {
                 Some(Action::CopyColor([0x22, 0x33, 0x44])),
                 "a click at a new position must read its fresh pixel without a preceding move"
             );
-            paint(COLORREF(0x00776655));
+            paint(&s, 0x00776655);
             s.capture.editor.style.color = previous_color;
             s.capture.eyedropper = false;
             s.capture.editor.tool = Tool::Pen;
@@ -354,7 +332,7 @@ mod tests {
             );
             assert_eq!(&annotated.pixels[0..3], &[0x77, 0x66, 0x55]);
             s.set_live(overlay.0, false).unwrap();
-            paint(COLORREF(0x00bbaa99));
+            paint(&s, 0x00bbaa99);
             assert_eq!(
                 &s.capture_output().unwrap().pixels[0..3],
                 &[0x77, 0x66, 0x55],

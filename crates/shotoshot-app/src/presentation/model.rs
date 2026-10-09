@@ -134,6 +134,7 @@ impl Scene {
             self.draft = Some(Object {
                 // Presentation shapes cannot attach to or select another object.
                 rotation: 0.,
+                fill: None,
                 id: 0,
                 shape,
                 style: Style::default(),
@@ -207,6 +208,7 @@ mod tests {
         TimedShape {
             object: Object {
                 rotation: 0.,
+                fill: None,
                 id: 0,
                 shape: Shape::Rectangle(Rect::default()),
                 style: Style::default(),

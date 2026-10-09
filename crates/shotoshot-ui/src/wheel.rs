@@ -42,6 +42,20 @@ pub fn text_size_after(size: f64, notches: i32) -> f64 {
     walk(&TEXT_SIZES, size, notches)
 }
 
+/// Stroke width re-proportioned by `factor` for a screen of another scale: whole pixels,
+/// within the ladder.
+pub fn stroke_width_scaled(width: f64, factor: f64) -> f64 {
+    (width * factor)
+        .round()
+        .clamp(STROKE_WIDTHS[0], STROKE_WIDTHS[STROKE_WIDTHS.len() - 1])
+}
+/// Text size re-proportioned by `factor`, as `stroke_width_scaled`.
+pub fn text_size_scaled(size: f64, factor: f64) -> f64 {
+    (size * factor)
+        .round()
+        .clamp(TEXT_SIZES[0], TEXT_SIZES[TEXT_SIZES.len() - 1])
+}
+
 /// Moves to the neighbouring rung once per notch. A value between two rungs joins the ladder
 /// in the direction of travel; one outside the ladder is never pushed further out.
 fn walk(ladder: &[f64], mut value: f64, notches: i32) -> f64 {

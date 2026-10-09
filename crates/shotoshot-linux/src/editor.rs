@@ -6,8 +6,9 @@ use crate::{clipboard, keymap, monitors, notice, png_io, settings};
 use shotoshot_core::{Modifiers, Point, settings::Settings};
 use shotoshot_raster::{Raster, pixmap_from_bgra};
 use shotoshot_ui::{
-    Canvas, Capture, CursorKind, DimensionFields, DimensionKey, FieldKey, Host, Image, TextField,
-    capture_name, draw_notice, keys::KeyOutcome, notice_size, toolbar::Action, top_center, wheel,
+    Canvas, Capture, CursorKind, DimensionFields, DimensionKey, FieldKey, Host, Image, Monitor,
+    TextField, capture_name, draw_notice, keys::KeyOutcome, notice_size, toolbar::Action,
+    top_center, wheel,
 };
 use std::{error::Error, num::NonZeroU32, path::PathBuf, rc::Rc, time::Instant};
 use tiny_skia::Pixmap;
@@ -28,8 +29,8 @@ struct Native {
     modifiers: Modifiers,
 }
 impl Native {
-    fn measure_dimension(raster: &mut Raster) -> impl FnMut(&str) -> Point + '_ {
-        |s| raster.measure_text(s, DimensionFields::FONT_SIZE)
+    fn measure_dimension(raster: &mut Raster, size: f64) -> impl FnMut(&str) -> Point + '_ {
+        move |s| raster.measure_text(s, size)
     }
 }
 impl Host for Native {
@@ -121,11 +122,13 @@ impl Host for Native {
         let Some(fields) = &mut self.dimensions else {
             return Ok(false);
         };
-        Ok(fields.pointer_down(p, extend, &mut Self::measure_dimension(&mut self.raster)))
+        let mut measure = Self::measure_dimension(&mut self.raster, fields.font_size());
+        Ok(fields.pointer_down(p, extend, &mut measure))
     }
     fn dimension_pointer_move(&mut self, p: Point) {
         if let Some(fields) = &mut self.dimensions {
-            fields.pointer_move(p, &mut Self::measure_dimension(&mut self.raster));
+            let mut measure = Self::measure_dimension(&mut self.raster, fields.font_size());
+            fields.pointer_move(p, &mut measure);
         }
     }
     fn dimension_pointer_up(&mut self) -> bool {
@@ -270,7 +273,7 @@ impl Editor {
         if !self.persist {
             return;
         }
-        let width = self.capture.editor.style.width as u32;
+        let width = self.capture.stroke_width_setting();
         let width = (width != self.settings.capture_stroke_width).then_some(width);
         let color = self
             .capture
@@ -284,6 +287,20 @@ impl Editor {
         if let Some(window) = &self.window {
             window.request_redraw();
         }
+    }
+    /// The window covers one monitor: its display scale sizes the whole interface.
+    fn set_scale(&mut self, scale: f64) {
+        let image = &self.capture.image;
+        self.capture.monitors = vec![Monitor {
+            bounds: shotoshot_core::Rect {
+                min: Point::default(),
+                max: Point {
+                    x: image.width as f64,
+                    y: image.height as f64,
+                },
+            },
+            scale,
+        }];
     }
     /// Window position to capture position.
     fn to_capture(&self, x: f64, y: f64) -> Point {
@@ -301,7 +318,7 @@ impl Editor {
         let capture = &self.capture;
         let native = &mut self.native;
         let mut canvas = native.raster.canvas(&mut self.frame);
-        capture.draw_shade(&mut canvas).map_err(|e| e.0)?;
+        capture.draw_underlay(&mut canvas).map_err(|e| e.0)?;
         if capture.region.is_some() {
             let editing = native.field.as_ref().and_then(|f| f.object);
             canvas
@@ -362,8 +379,10 @@ impl Editor {
             .draw_selection_hint(&mut canvas, screen)
             .map_err(|e| e.0)?;
         if let Some(message) = &self.notice {
-            let size = notice_size(&mut canvas, message).map_err(|e| e.0)?;
-            draw_notice(&mut canvas, top_center(screen, size), message).map_err(|e| e.0)?;
+            let scale = capture.ui_scale();
+            let size = notice_size(&mut canvas, message, scale).map_err(|e| e.0)?;
+            let bounds = top_center(screen, size, scale);
+            draw_notice(&mut canvas, bounds, message, scale).map_err(|e| e.0)?;
         }
         match (&self.window, &mut self.surface) {
             (Some(window), Some(surface)) => present(&self.frame, window, surface),
@@ -437,11 +456,16 @@ impl Editor {
     }
     fn export(&mut self) -> Result<Image, Box<dyn Error>> {
         let region = self.capture.region.ok_or("select a capture region first")?;
-        let objects = self.capture.editor.objects();
+        let editor = &self.capture.editor;
         Ok(self
             .native
             .raster
-            .export(&self.capture.image, objects, region)
+            .export(
+                &self.capture.image,
+                editor.background(),
+                editor.objects(),
+                region,
+            )
             .map_err(|e| e.0)?)
     }
     /// Saves the cropped capture as the next "Shot NNN.png" in `folder` (Pictures by default).
@@ -458,7 +482,8 @@ impl Editor {
         let m = self.native.modifiers;
         if let Some(fields) = &mut self.native.dimensions {
             let raster = &mut self.native.raster;
-            let mut measure = |s: &str| raster.measure_text(s, DimensionFields::FONT_SIZE);
+            let size = fields.font_size();
+            let mut measure = |s: &str| raster.measure_text(s, size);
             let key = vk.map(|vk| fields.key(vk, m, &mut measure));
             let mut insert = |s: &str| fields.insert(s, &mut measure);
             let result = match &key {
@@ -737,6 +762,7 @@ impl ApplicationHandler for Editor {
                 Err(error) => return self.fail(event_loop, error.0.into()),
             }
         }
+        self.set_scale(window.scale_factor());
         window.set_cursor(CursorIcon::Crosshair);
         self.window = Some(window);
         self.redraw();
@@ -744,6 +770,10 @@ impl ApplicationHandler for Editor {
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                self.set_scale(scale_factor);
+                self.redraw();
+            }
             WindowEvent::RedrawRequested => {
                 if let Err(error) = self.paint() {
                     return self.fail(event_loop, error);

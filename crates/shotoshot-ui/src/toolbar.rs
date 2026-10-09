@@ -10,6 +10,7 @@ pub enum Action {
     CopyColor([u8; 3]),
     CustomColor,
     Eyedropper,
+    Fill,
     Thinner,
     Thicker,
     Undo,
@@ -87,7 +88,7 @@ pub const COLORS: [[u8; 3]; 6] = [
     [28, 31, 40],
 ];
 // One source for toolbar hints and keyboard dispatch. Native text fields handle their own keys.
-const SHORTCUTS: [(&str, Action, u32, bool, bool); 23] = [
+const SHORTCUTS: [(&str, Action, u32, bool, bool); 24] = [
     ("Select · V", Action::Tool(Tool::Select), 86, false, false),
     (
         "Rectangle · R",
@@ -123,6 +124,13 @@ const SHORTCUTS: [(&str, Action, u32, bool, bool); 23] = [
     ("Black · 6", Action::Color(COLORS[5]), 54, false, false),
     ("Custom color · S", Action::CustomColor, 83, false, false),
     ("Eyedropper · I", Action::Eyedropper, 73, false, false),
+    (
+        "Fill a shape or the background · G · Alt+click clears",
+        Action::Fill,
+        71,
+        false,
+        false,
+    ),
     ("Undo · Ctrl+Z", Action::Undo, 90, true, false),
     (
         "Redo · Ctrl+Y / Ctrl+Shift+Z",
@@ -176,10 +184,25 @@ pub fn buttons(region: Rect, width: u32, height: u32) -> Vec<Button> {
                 y: height as f64,
             },
         },
+        1.,
     )
 }
 
-pub(crate) fn buttons_in(region: Rect, screen: Rect) -> Vec<Button> {
+/// Both panels beside `region`, kept on `screen`. The layout is in 96-DPI logical pixels
+/// and scaled once here, so buttons keep their apparent size on every screen.
+pub(crate) fn buttons_in(region: Rect, screen: Rect, scale: f64) -> Vec<Button> {
+    let resized = |r: Rect, factor: f64| Rect {
+        min: r.min * factor,
+        max: r.max * factor,
+    };
+    let mut buttons = layout(resized(region, 1. / scale), resized(screen, 1. / scale));
+    for b in &mut buttons {
+        b.bounds = resized(b.bounds, scale);
+    }
+    buttons
+}
+
+fn layout(region: Rect, screen: Rect) -> Vec<Button> {
     let cell = 32.;
     let entries = SHORTCUTS.map(|(label, action, _, _, _)| (label, action));
     let is_tool = |a: Action| matches!(a, Action::Tool(_));
@@ -315,22 +338,20 @@ pub(crate) fn buttons_in(region: Rect, screen: Rect) -> Vec<Button> {
 fn overlaps(a: Rect, b: Rect) -> bool {
     a.min.x < b.max.x && a.max.x > b.min.x && a.min.y < b.max.y && a.max.y > b.min.y
 }
-pub fn panels(buttons: &[Button]) -> Vec<Rect> {
+/// Panel outlines around `buttons`, laid out at interface `scale`.
+pub fn panels(buttons: &[Button], scale: f64) -> Vec<Rect> {
     [0, 1]
         .into_iter()
         .filter_map(|id| {
             let mut matching = buttons.iter().filter(|b| b.panel == id);
             let first = matching.next()?;
             let all = matching.fold(first.bounds, |r, b| r.union(b.bounds));
-            Some(Rect {
-                min: all.min - Point { x: 5., y: 5. },
-                max: all.max + Point { x: 5., y: 5. },
-            })
+            Some(all.expanded(5. * scale))
         })
         .collect()
 }
-pub fn bounds(buttons: &[Button]) -> Option<Rect> {
-    panels(buttons).into_iter().reduce(|a, b| a.union(b))
+pub fn bounds(buttons: &[Button], scale: f64) -> Option<Rect> {
+    panels(buttons, scale).into_iter().reduce(|a, b| a.union(b))
 }
 pub fn draw<C: Canvas>(
     canvas: &mut C,
@@ -339,10 +360,12 @@ pub fn draw<C: Canvas>(
     current_color: [u8; 3],
     pointer: Point,
     eyedropper: bool,
+    scale: f64,
 ) -> Result<(), C::Error> {
     for id in [0, 1] {
         let group: Vec<_> = buttons.iter().filter(|b| b.panel == id).cloned().collect();
-        draw_panel(canvas, &group, tool, current_color, pointer, eyedropper)?;
+        let pointer = (pointer, eyedropper);
+        draw_panel(canvas, &group, tool, current_color, pointer, scale)?;
     }
     Ok(())
 }
@@ -351,46 +374,55 @@ pub(crate) fn draw_hint<C: Canvas>(
     button: &Button,
     screen: Rect,
     opacity: f32,
+    scale: f64,
 ) -> Result<(), C::Error> {
     let label = button.label;
-    let extent = canvas.measure_text(label, 12.)?;
+    let extent = canvas.measure_text(label, 12. * scale)?;
     let hint = tooltip_bounds(
         button.bounds,
         screen,
         Point {
-            x: extent.x + 18.,
-            y: 25.,
+            x: extent.x + 18. * scale,
+            y: 25. * scale,
         },
+        scale,
     );
-    canvas.fill_round_rect(hint, 4., Ink::with_alpha([32, 32, 32], opacity))?;
+    canvas.fill_round_rect(hint, 4. * scale, Ink::with_alpha([32, 32, 32], opacity))?;
     canvas.text(
         label,
         Rect {
-            min: hint.min + Point { x: 8., y: 4. },
+            min: hint.min
+                + Point {
+                    x: 8. * scale,
+                    y: 4. * scale,
+                },
             max: hint.max,
         },
-        12.,
+        12. * scale,
         Ink::with_alpha([245, 245, 245], opacity),
     )?;
     Ok(())
 }
-pub(crate) fn tooltip_bounds(button: Rect, screen: Rect, size: Point) -> Rect {
+/// A box of `size` under `button` (above it at the bottom of `screen`), with margins in
+/// logical pixels at `scale`.
+pub(crate) fn tooltip_bounds(button: Rect, screen: Rect, size: Point, scale: f64) -> Rect {
+    let (edge, gap) = (4. * scale, 6. * scale);
     let size = Point {
-        x: size.x.min((screen.size().x - 8.).max(0.)),
-        y: size.y.min((screen.size().y - 8.).max(0.)),
+        x: size.x.min((screen.size().x - 2. * edge).max(0.)),
+        y: size.y.min((screen.size().y - 2. * edge).max(0.)),
     };
     let left = button.center().x.clamp(
-        screen.min.x + 4.,
-        (screen.max.x - size.x - 4.).max(screen.min.x + 4.),
+        screen.min.x + edge,
+        (screen.max.x - size.x - edge).max(screen.min.x + edge),
     );
-    let top = if button.max.y + 6. + size.y <= screen.max.y - 4. {
-        button.max.y + 6.
+    let top = if button.max.y + gap + size.y <= screen.max.y - edge {
+        button.max.y + gap
     } else {
-        button.min.y - size.y - 6.
+        button.min.y - size.y - gap
     }
     .clamp(
-        screen.min.y + 4.,
-        (screen.max.y - size.y - 4.).max(screen.min.y + 4.),
+        screen.min.y + edge,
+        (screen.max.y - size.y - edge).max(screen.min.y + edge),
     );
     let min = Point { x: left, y: top };
     Rect {
@@ -403,14 +435,14 @@ fn draw_panel<C: Canvas>(
     buttons: &[Button],
     tool: Tool,
     current_color: [u8; 3],
-    pointer: Point,
-    eyedropper: bool,
+    (pointer, eyedropper): (Point, bool),
+    scale: f64,
 ) -> Result<(), C::Error> {
-    let Some(panel) = bounds(buttons) else {
+    let Some(panel) = bounds(buttons, scale) else {
         return Ok(());
     };
-    canvas.fill_round_rect(panel, 8., Ink::solid([32, 32, 32]))?;
-    canvas.stroke_round_rect(panel, 8., Ink::solid([78, 78, 78]), 1.)?;
+    canvas.fill_round_rect(panel, 8. * scale, Ink::solid([32, 32, 32]))?;
+    canvas.stroke_round_rect(panel, 8. * scale, Ink::solid([78, 78, 78]), scale)?;
     for b in buttons {
         let selected = b.active
             || matches!(b.action,Action::Tool(t)if t==tool)
@@ -422,8 +454,8 @@ fn draw_panel<C: Canvas>(
         } else {
             [32, 32, 32]
         };
-        canvas.fill_round_rect(b.bounds, 5., Ink::solid(rgb))?;
-        icons::draw(canvas, b, current_color, selected)?;
+        canvas.fill_round_rect(b.bounds, 5. * scale, Ink::solid(rgb))?;
+        icons::draw(canvas, b, current_color, selected, scale)?;
     }
     Ok(())
 }
@@ -500,13 +532,13 @@ mod tests {
             min: Point { x: 100., y: 100. },
             max: Point { x: 130., y: 130. },
         };
-        let normal = tooltip_bounds(button, screen, size);
+        let normal = tooltip_bounds(button, screen, size, 1.);
         assert_eq!(normal.min, Point { x: 115., y: 136. });
         let bottom = Rect {
             min: Point { x: 765., y: 565. },
             max: Point { x: 795., y: 595. },
         };
-        let flipped = tooltip_bounds(bottom, screen, size);
+        let flipped = tooltip_bounds(bottom, screen, size, 1.);
         assert!(flipped.max.y < bottom.min.y && flipped.max.x <= 796.);
     }
     #[test]
@@ -532,7 +564,7 @@ mod tests {
                     max: corner + Point { x: 15., y: 15. },
                 };
                 for width in [170., 460., 2400.] {
-                    let hint = tooltip_bounds(button, monitor, Point { x: width, y: 25. });
+                    let hint = tooltip_bounds(button, monitor, Point { x: width, y: 25. }, 1.);
                     assert!(hint.min.x >= monitor.min.x + 4. && hint.max.x <= monitor.max.x - 4.);
                     assert!(hint.min.y >= monitor.min.y + 4. && hint.max.y <= monitor.max.y - 4.);
                 }
@@ -577,6 +609,29 @@ mod tests {
         assert_eq!(shortcut_action(83, true, false, false), Some(Action::Save));
     }
     #[test]
+    fn fill_is_g_beside_the_eyedropper_and_ctrl_g_still_searches() {
+        assert_eq!(shortcut_action(71, false, false, false), Some(Action::Fill));
+        assert_eq!(
+            shortcut_action(71, true, false, false),
+            Some(Action::GoogleSearch)
+        );
+        let region = Rect::new(Point { x: 100., y: 100. }, Point { x: 600., y: 500. }).unwrap();
+        let all = buttons(region, 1920, 1080);
+        let row: Vec<_> = all.iter().filter(|b| b.panel == 1).collect();
+        let eyedropper = row
+            .iter()
+            .position(|b| b.action == Action::Eyedropper)
+            .unwrap();
+        let fill = row[eyedropper + 1];
+        assert_eq!(fill.action, Action::Fill);
+        assert_eq!(fill.bounds.min.y, row[eyedropper].bounds.min.y);
+        assert!(fill.label.contains("Alt+click"));
+        assert!(
+            all.iter().all(|b| b.panel == 1 || b.action != Action::Fill),
+            "not among the drawing tools"
+        );
+    }
+    #[test]
     fn live_shape_shortcuts_are_alt_plus_the_editor_letter() {
         const ALT: u32 = 1;
         let live = shotoshot_core::settings::PresentationSettings::default().shape_shortcuts;
@@ -619,8 +674,8 @@ mod tests {
                 .unwrap(),
             ] {
                 let buttons = buttons(r, w, h);
-                assert_eq!(buttons.len(), 23);
-                let panels = panels(&buttons);
+                assert_eq!(buttons.len(), 24);
+                let panels = panels(&buttons, 1.);
                 let screen = Rect {
                     min: Point::default(),
                     max: Point {
@@ -636,7 +691,7 @@ mod tests {
             }
         }
         let r = Rect::new(Point { x: 100., y: 100. }, Point { x: 600., y: 500. }).unwrap();
-        let panels = panels(&buttons(r, 1000, 800));
+        let panels = panels(&buttons(r, 1000, 800), 1.);
         assert!(panels[0].min.x > r.max.x);
         assert!(panels[1].min.y > r.max.y);
         assert_eq!(panels[0].max.y, r.max.y);

@@ -37,6 +37,13 @@ try {
     cargo test --workspace --locked
     if ($LASTEXITCODE -ne 0) { exit 1 }
     if (-not $Fast) {
+        # The tests above never read the screen. The ones that need a real display are named
+        # real_desktop_* and run here, one at a time; finding none is a failure, not a pass.
+        $probes = cargo test -p shotoshot-app --lib --locked -- --ignored --test-threads=1 real_desktop_
+        if ($LASTEXITCODE -ne 0 -or -not ($probes -match '^test result: ok\. [1-9]')) {
+            $probes
+            throw 'Real-desktop tests failed, or none ran.'
+        }
         cargo build --workspace --release --locked
         if ($LASTEXITCODE -ne 0) { exit 1 }
         Get-ChildItem (Join-Path $PSScriptRoot 'target') -Filter 'shotoshot-*.png' | Remove-Item

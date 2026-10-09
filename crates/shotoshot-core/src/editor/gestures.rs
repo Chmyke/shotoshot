@@ -32,6 +32,7 @@ impl Editor {
             }
             self.objects.push(Object {
                 rotation: 0.,
+                fill: None,
                 id: self.next_id,
                 shape,
                 style: self.style,
@@ -48,9 +49,11 @@ impl Editor {
         });
     }
     pub(super) fn selection_gesture(&mut self, p: Point, m: Modifiers) -> GestureKind {
+        // Grab zones follow the handles, which are drawn larger on denser screens.
+        let (grip, reach) = (9. * self.ui_scale, 7. * self.ui_scale);
         if self
             .rotation_handle()
-            .is_some_and(|h| (p - h).length() < 9.)
+            .is_some_and(|h| (p - h).length() < grip)
             && let Some(frame) = self.selection_frame()
         {
             return GestureKind::Rotate {
@@ -61,10 +64,10 @@ impl Editor {
             && let Some(index) = self.objects.iter().position(|o| o.id == self.selected[0])
             && let Some((a, b)) = arrow_points(&self.objects[index], &self.objects)
         {
-            if (p - a).length() < 9. {
+            if (p - a).length() < grip {
                 return GestureKind::Endpoint { index, start: true };
             }
-            if (p - b).length() < 9. {
+            if (p - b).length() < grip {
                 return GestureKind::Endpoint {
                     index,
                     start: false,
@@ -74,7 +77,7 @@ impl Editor {
         if let (Some(frame), Some(bounds)) = (self.selection_frame(), self.selection_bounds()) {
             let corners = frame.corners();
             for (i, c) in corners.iter().enumerate() {
-                if (p - *c).length() < 9. {
+                if (p - *c).length() < grip {
                     return GestureKind::Resize {
                         opposite: corners[(i + 2) % 4],
                         corner: *c,
@@ -87,7 +90,7 @@ impl Editor {
             .objects
             .iter()
             .rev()
-            .find(|o| o.hit(p, 7., &self.objects))
+            .find(|o| o.hit(p, reach, &self.objects))
             .map(|o| o.id)
         {
             if m.shift && self.selected.contains(&id) {

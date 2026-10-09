@@ -171,17 +171,40 @@ fn stop_presentation_is_handled_even_while_a_menu_borrows_the_app() {
 #[test]
 fn entering_the_live_eyedropper_samples_without_mouse_movement() {
     let _com = ComApartment::new().unwrap();
+    // A painted desktop: the real screen is neither drawn on nor read.
+    let screen = crate::image::Screen::painted(-200, -100, 640, 420).unwrap();
+    screen.fill(
+        RECT {
+            left: 100,
+            top: 100,
+            right: 300,
+            bottom: 260,
+        },
+        0x005b3511,
+    );
+    let image = screen.blank().unwrap();
+    let point = Point {
+        x: 120. - image.left as f64,
+        y: 120. - image.top as f64,
+    };
+    let mut session = crate::session::Preparation::cold(image.width, image.height, true)
+        .unwrap()
+        .activate(image, true)
+        .unwrap();
+    session.native.screen = screen;
+    session.capture.pointer = point;
+    assert_eq!(session.capture.sample_color(point), [0, 0, 0]);
     unsafe {
-        let background = crate::resources::OwnedWindow(
+        let owner = crate::resources::OwnedWindow(
             CreateWindowExW(
-                WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST,
+                WS_EX_TOOLWINDOW,
                 w!("STATIC"),
                 w!("Shotoshot sample test"),
-                WS_POPUP | WS_VISIBLE,
-                100,
-                100,
-                200,
-                160,
+                WS_POPUP,
+                -32000,
+                -32000,
+                1,
+                1,
                 None,
                 None,
                 None,
@@ -189,33 +212,6 @@ fn entering_the_live_eyedropper_samples_without_mouse_movement() {
             )
             .unwrap(),
         );
-        let dc = GetDC(Some(background.0));
-        let brush = CreateSolidBrush(COLORREF(0x005b3511));
-        FillRect(
-            dc,
-            &RECT {
-                left: 0,
-                top: 0,
-                right: 200,
-                bottom: 160,
-            },
-            brush,
-        );
-        let _ = DeleteObject(brush.into());
-        ReleaseDC(Some(background.0), dc);
-        GdiFlush().unwrap();
-        windows::Win32::Graphics::Dwm::DwmFlush().unwrap();
-        let image = crate::image::blank_desktop().unwrap();
-        let point = Point {
-            x: 120. - image.left as f64,
-            y: 120. - image.top as f64,
-        };
-        let mut session = crate::session::Preparation::cold(image.width, image.height, true)
-            .unwrap()
-            .activate(image, true)
-            .unwrap();
-        session.capture.pointer = point;
-        assert_eq!(session.capture.sample_color(point), [0, 0, 0]);
         let mut app = App {
             settings: Settings::default(),
             session: Some(session),
@@ -235,7 +231,7 @@ fn entering_the_live_eyedropper_samples_without_mouse_movement() {
             first_frame: None,
             presentation: None,
         };
-        app.action(background.0, Action::Eyedropper).unwrap();
+        app.action(owner.0, Action::Eyedropper).unwrap();
         assert_eq!(
             app.session.as_ref().unwrap().capture.sample_color(point),
             [0x11, 0x35, 0x5b],

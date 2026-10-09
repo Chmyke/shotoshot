@@ -1,6 +1,7 @@
 //! ROLE: Owns the editable document and reversible gesture transactions.
 //! OWNER: One capture session; no operating system resources.
 //! INVARIANTS: A gesture commits once; image pixels never enter undo history.
+mod fill;
 mod gestures;
 mod history;
 use crate::*;
@@ -33,6 +34,14 @@ impl Modifiers {
 struct Change {
     before: Vec<Object>,
     after: Vec<Object>,
+    /// Set when the step changed the capture background.
+    background: Option<Repaint>,
+}
+/// The capture background on both sides of one undo step.
+#[derive(Clone, Copy)]
+struct Repaint {
+    before: Option<[u8; 3]>,
+    after: Option<[u8; 3]>,
 }
 struct Gesture {
     origin: Point,
@@ -86,29 +95,52 @@ impl Frame {
             y: self.bounds.min.y,
         })
     }
-    /// Rotation handle, 28 px beyond the top edge along the frame's own up direction.
-    pub fn handle(self) -> Point {
+    /// Rotation handle, 28 px (at `scale` 1) beyond the top edge along the frame's own up
+    /// direction.
+    pub fn handle(self, scale: f64) -> Point {
         self.turn(Point {
             x: self.bounds.center().x,
-            y: self.bounds.min.y - 28.,
+            y: self.bounds.min.y - 28. * scale,
         })
     }
 }
 
-#[derive(Default)]
 pub struct Editor {
     pub tool: Tool,
     pub style: Style,
     pub selected: Vec<u64>,
+    /// Size factor of handles and pick tolerances: 1 at 96 DPI, 2.5 on a 250 % screen.
+    pub ui_scale: f64,
     objects: Vec<Object>,
+    /// Solid colour replacing the captured pixels of the region, under every object.
+    background: Option<[u8; 3]>,
     undo: Vec<Change>,
     redo: Vec<Change>,
     gesture: Option<Gesture>,
     next_id: u64,
 }
+impl Default for Editor {
+    fn default() -> Self {
+        Self {
+            tool: Tool::default(),
+            style: Style::default(),
+            selected: Vec::new(),
+            ui_scale: 1.,
+            objects: Vec::new(),
+            background: None,
+            undo: Vec::new(),
+            redo: Vec::new(),
+            gesture: None,
+            next_id: 0,
+        }
+    }
+}
 impl Editor {
     pub fn objects(&self) -> &[Object] {
         &self.objects
+    }
+    pub fn background(&self) -> Option<[u8; 3]> {
+        self.background
     }
     pub fn is_drawing(&self) -> bool {
         self.gesture.is_some()
@@ -139,7 +171,7 @@ impl Editor {
             .map(|bounds| Frame { bounds, angle: 0. })
     }
     pub fn rotation_handle(&self) -> Option<Point> {
-        self.selection_frame().map(Frame::handle)
+        self.selection_frame().map(|f| f.handle(self.ui_scale))
     }
     pub fn begin_rotation(&mut self, p: Point) -> bool {
         if !p.finite() {

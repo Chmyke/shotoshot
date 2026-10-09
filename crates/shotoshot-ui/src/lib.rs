@@ -14,12 +14,14 @@ mod magnifier;
 pub use magnifier::CELLS as MAGNIFIER_CELLS;
 mod overlay;
 #[cfg(test)]
+mod scale_tests;
+#[cfg(test)]
 mod test_host;
 mod text_field;
 pub mod toolbar;
 pub mod wheel;
 pub use canvas::{Canvas, Ink};
-pub use capture::{Capture, CursorKind, region_handles};
+pub use capture::{Capture, CursorKind, Monitor, region_handles};
 pub use dimension_fields::{DimensionFields, DimensionKey};
 pub use host::Host;
 pub use image::Image;

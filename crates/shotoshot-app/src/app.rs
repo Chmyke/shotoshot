@@ -457,7 +457,7 @@ impl App {
     }
     fn persist_stroke_width(&mut self, hwnd: HWND) -> Result<()> {
         if let Some(s) = &self.session {
-            let width = s.capture.editor.style.width as u32;
+            let width = s.capture.stroke_width_setting();
             if self.settings.capture_stroke_width != width {
                 self.settings.capture_stroke_width = width;
                 self.pending_stroke_width = Some((

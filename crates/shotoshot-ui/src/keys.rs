@@ -122,6 +122,20 @@ mod tests {
         }
     }
     #[test]
+    fn g_arms_the_bucket_and_keys_keep_working_while_it_waits() {
+        let mut c = capture();
+        let mut host = FakeHost::default();
+        let none = Modifiers::default();
+        assert_eq!(c.key(&mut host, 71, none), KeyOutcome::Action(Action::Fill));
+        c.action(&mut host, Action::Fill);
+        // Unlike the eyedropper, the bucket leaves the keyboard free: 6 picks its colour.
+        let black = Action::Color(crate::toolbar::COLORS[5]);
+        assert_eq!(c.key(&mut host, 54, none), KeyOutcome::Action(black));
+        assert_eq!(c.key(&mut host, KEY_ESCAPE, none), KeyOutcome::Handled);
+        assert!(!c.bucket);
+        assert_eq!(c.key(&mut host, KEY_ESCAPE, none), KeyOutcome::Close);
+    }
+    #[test]
     fn escape_closes_only_when_nothing_is_pending() {
         let mut c = capture();
         let mut host = FakeHost::default();
