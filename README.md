@@ -100,7 +100,7 @@ drawn keep theirs. Ctrl+Z undoes the whole stroke.
 | P / H | Pencil / highlighter; Shift draws a straight line in 45° steps |
 | T | Text; click an existing text with this tool to edit it |
 | I | Eyedropper: pick a color and copy its hex code |
-| G | Bucket: each click fills the rectangle or circle under it, or else the whole capture; Alt+click clears |
+| G | Bucket: each click recolors the stroke or outline under it, fills the rectangle or circle, or else the whole capture; Alt+click clears a fill |
 | F | Whole screen / back to the previous selection |
 | S / 1–6 | Color wheel / six quick colors |
 | Wheel | Stroke width; text size while typing it, with it selected or with the Text tool |
@@ -129,10 +129,11 @@ color.
 ### Bucket and slate
 
 The **bucket (G)**, beside the eyedropper, fills with the current color at every click and stays
-in hand, zone after zone, until you pick a tool or press `G` or Esc. Inside a rectangle or a
-circle it fills that shape, under its outline; anywhere else in the frame it fills the whole
-capture, under every drawing. To use Shotoshot as a slate, capture anything, press `6`, `G`,
-click, then `P` and `5`: a dark background to draw on in white.
+in hand, zone after zone, until you pick a tool or press `G` or Esc. It colors what you click:
+on a line, an arrow, a pen stroke, a text or the outline of a shape, it recolors that drawing;
+inside a rectangle or a circle it fills that shape, under its outline; anywhere else in the frame
+it fills the whole capture, under every drawing. To use Shotoshot as a slate, capture anything,
+press `6`, `G`, click, then `P` and `5`: a dark background to draw on in white.
 
 The bucket waits while you choose its color (swatches, wheel, eyedropper); any other action or Esc
 puts it down. Clicking a fill again with another color recolors it, with the same color removes

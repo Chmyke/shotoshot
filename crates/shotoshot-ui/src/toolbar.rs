@@ -127,7 +127,7 @@ const SHORTCUTS: [(&str, Action, u32, bool, bool); 24] = [
     ("Custom color · S", Action::CustomColor, 83, false, false),
     ("Eyedropper · I", Action::Eyedropper, 73, false, false),
     (
-        "Fill a shape or the background · G · Alt+click clears",
+        "Color a stroke, a shape or the background · G · Alt+click clears",
         Action::Fill,
         71,
         false,

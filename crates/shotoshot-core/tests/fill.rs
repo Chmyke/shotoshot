@@ -27,6 +27,11 @@ fn fill_of(editor: &Editor, id: u64) -> Option<[u8; 3]> {
     editor.objects().iter().find(|o| o.id == id).unwrap().fill
 }
 
+fn colour_of(editor: &Editor, id: u64) -> [u8; 3] {
+    let object = editor.objects().iter().find(|o| o.id == id).unwrap();
+    object.style.color
+}
+
 #[test]
 fn bucket_inside_a_rectangle_fills_that_rectangle_only() {
     let (mut editor, id) = with_rectangle();
@@ -116,12 +121,169 @@ fn pen_loops_arrows_and_text_are_not_fillable() {
     editor.finish();
     draw(&mut editor, Tool::Arrow, p(200., 50.), p(300., 50.));
     editor.add_text(p(200., 200.), "label".into());
-    for inside in [p(50., 50.), p(250., 50.), p(210., 210.)] {
-        editor.fill_at(inside, false);
+    // Inside the loop and beside the arrow, the click reaches the capture behind them.
+    for beside in [p(50., 50.), p(250., 70.)] {
+        editor.fill_at(beside, false);
         assert!(editor.background().is_some());
         assert!(editor.objects().iter().all(|o| o.fill.is_none()));
         editor.undo();
     }
+}
+
+#[test]
+fn bucket_on_drawn_ink_recolours_it_and_fills_nothing() {
+    let mut editor = Editor::default();
+    editor.style.color = RED;
+    editor.tool = Tool::Pen;
+    editor.begin(p(10., 10.), Modifiers::default());
+    for point in [p(100., 10.), p(100., 100.), p(10., 100.), p(10., 10.)] {
+        editor.update(point);
+    }
+    editor.finish();
+    let pen = editor.objects()[0].id;
+    let line = draw(&mut editor, Tool::Line, p(200., 30.), p(300., 30.));
+    let arrow = draw(&mut editor, Tool::Arrow, p(200., 60.), p(300., 60.));
+    let marker = draw(&mut editor, Tool::Highlight, p(200., 90.), p(300., 90.));
+    editor.add_text(p(200., 200.), "label".into());
+    let text = editor.objects().last().unwrap().id;
+
+    editor.style.color = BLACK;
+    for (id, on) in [
+        (pen, p(100., 50.)),
+        (line, p(250., 30.)),
+        (arrow, p(250., 60.)),
+        (marker, p(250., 90.)),
+        (text, p(210., 210.)),
+    ] {
+        assert_eq!(colour_of(&editor, id), RED);
+        editor.fill_at(on, false);
+        assert_eq!(colour_of(&editor, id), BLACK, "{on:?}");
+        assert_eq!(editor.background(), None, "{on:?}");
+        assert!(editor.objects().iter().all(|o| o.fill.is_none()));
+        editor.undo();
+        assert_eq!(colour_of(&editor, id), RED, "one click, one undo step");
+        editor.redo();
+    }
+}
+
+#[test]
+fn bucket_on_an_outline_recolours_it_and_inside_still_fills() {
+    let (mut editor, rectangle) = with_rectangle();
+    // Circles grow from their centre: this one spans (400, 100) to (600, 300).
+    let circle = draw(&mut editor, Tool::Ellipse, p(500., 200.), p(600., 200.));
+    editor.style.color = BLACK;
+    for (id, edge, inside) in [
+        (rectangle, p(100., 150.), p(200., 150.)),
+        (circle, p(400., 200.), p(500., 200.)),
+    ] {
+        editor.fill_at(edge, false);
+        assert_eq!(colour_of(&editor, id), BLACK);
+        assert_eq!(fill_of(&editor, id), None, "the outline, not the inside");
+        editor.undo();
+        editor.fill_at(inside, false);
+        assert_eq!(colour_of(&editor, id), RED, "the inside, not the outline");
+        assert_eq!(fill_of(&editor, id), Some(BLACK));
+    }
+    assert_eq!(editor.background(), None);
+}
+
+#[test]
+fn bucket_reaches_three_pixels_around_the_ink_and_no_further() {
+    let mut editor = Editor::default();
+    editor.style.color = RED;
+    // 3 px wide: its ink ends 1.5 px from the centre line.
+    let line = draw(&mut editor, Tool::Line, p(200., 50.), p(300., 50.));
+    editor.style.color = BLACK;
+    editor.fill_at(p(250., 55.), false);
+    assert_eq!(colour_of(&editor, line), RED);
+    assert_eq!(editor.background(), Some(BLACK), "5 px away is the capture");
+    editor.undo();
+    editor.fill_at(p(250., 54.), false);
+    assert_eq!(colour_of(&editor, line), BLACK);
+    assert_eq!(editor.background(), None);
+
+    // The reach follows the screen scale, like every pick tolerance.
+    editor.undo();
+    editor.ui_scale = 2.;
+    editor.fill_at(p(250., 57.), false);
+    assert_eq!(colour_of(&editor, line), BLACK);
+}
+
+#[test]
+fn bucket_reach_starts_at_the_drawn_edge_of_a_thick_outline() {
+    let mut editor = Editor::default();
+    editor.style = Style {
+        color: RED,
+        width: 20.,
+    };
+    let id = draw(&mut editor, Tool::Rectangle, p(100., 100.), p(300., 200.));
+    editor.style.color = BLACK;
+    // The outline is drawn 10 px either side of x = 100.
+    editor.fill_at(p(86., 150.), false);
+    assert_eq!(colour_of(&editor, id), RED);
+    assert_eq!(editor.background(), Some(BLACK), "14 px out is the capture");
+    editor.undo();
+    editor.fill_at(p(88., 150.), false);
+    assert_eq!(colour_of(&editor, id), BLACK, "2 px off the drawn edge");
+    editor.undo();
+    editor.fill_at(p(114., 150.), false);
+    assert_eq!(colour_of(&editor, id), RED);
+    assert_eq!(fill_of(&editor, id), Some(BLACK), "14 px in is the inside");
+}
+
+#[test]
+fn bucket_recolours_the_topmost_ink_where_two_strokes_cross() {
+    let mut editor = Editor::default();
+    editor.style.color = RED;
+    let below = draw(&mut editor, Tool::Line, p(100., 150.), p(300., 150.));
+    let above = draw(&mut editor, Tool::Line, p(200., 50.), p(200., 250.));
+    editor.style.color = BLACK;
+    editor.fill_at(p(200., 150.), false);
+    assert_eq!(colour_of(&editor, above), BLACK);
+    assert_eq!(colour_of(&editor, below), RED);
+}
+
+#[test]
+fn the_same_colour_on_ink_changes_nothing_and_adds_no_history_step() {
+    let mut editor = Editor::default();
+    draw(&mut editor, Tool::Line, p(200., 50.), p(300., 50.));
+    editor.fill_at(p(250., 50.), false);
+    assert_eq!(editor.background(), None);
+    editor.undo();
+    assert!(editor.objects().is_empty(), "the only step was the line");
+}
+
+#[test]
+fn ink_seen_through_a_hollow_shape_is_recoloured_and_ink_under_a_fill_is_not() {
+    let mut editor = Editor::default();
+    editor.style.color = RED;
+    let line = draw(&mut editor, Tool::Line, p(120., 150.), p(280., 150.));
+    let frame = draw(&mut editor, Tool::Rectangle, p(100., 100.), p(300., 200.));
+    editor.style.color = BLACK;
+    editor.fill_at(p(200., 150.), false);
+    assert_eq!(colour_of(&editor, line), BLACK);
+    assert_eq!(fill_of(&editor, frame), None);
+
+    editor.fill_at(p(200., 120.), false);
+    assert_eq!(fill_of(&editor, frame), Some(BLACK));
+    editor.style.color = RED;
+    editor.fill_at(p(200., 150.), false);
+    assert_eq!(
+        fill_of(&editor, frame),
+        Some(RED),
+        "the fill hides the line"
+    );
+    assert_eq!(colour_of(&editor, line), BLACK);
+}
+
+#[test]
+fn clearing_on_an_outline_removes_the_fill_and_leaves_the_outline_alone() {
+    let (mut editor, id) = with_rectangle();
+    editor.style.color = BLACK;
+    editor.fill_at(p(200., 150.), false);
+    editor.fill_at(p(100., 150.), true);
+    assert_eq!(fill_of(&editor, id), None);
+    assert_eq!(colour_of(&editor, id), RED);
 }
 
 #[test]

@@ -240,9 +240,11 @@ impl Object {
     }
     pub fn hit(&self, p: Point, tolerance: f64, objects: &[Object]) -> bool {
         // A filled interior is solid to the eye, so it is grabbed like the outline.
-        if self.fill.is_some() && self.contains(p) {
-            return true;
-        }
+        (self.fill.is_some() && self.contains(p)) || self.on_ink(p, tolerance, objects)
+    }
+    /// On what the object draws: its outline, stroke, arrow head or text box. `tolerance`
+    /// widens a rectangle from its centre line and every other shape from its drawn edge.
+    pub fn on_ink(&self, p: Point, tolerance: f64, objects: &[Object]) -> bool {
         match &self.shape {
             Shape::Rectangle(r) => {
                 let c = r.corners().map(|p| self.local_to_world(p));

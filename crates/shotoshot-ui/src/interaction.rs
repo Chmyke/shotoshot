@@ -492,6 +492,19 @@ mod tests {
         assert_eq!(c.editor.background(), None);
     }
     #[test]
+    fn bucket_on_a_drawn_line_recolours_it_and_stays_in_hand() {
+        let (mut c, mut host) = selected();
+        c.action(&mut host, Action::Tool(Tool::Line));
+        drag(&mut c, &mut host, p(200., 200.), p(400., 200.));
+        c.action(&mut host, Action::Fill);
+        c.action(&mut host, Action::Color(BLACK));
+        assert_ne!(c.editor.objects()[0].style.color, BLACK);
+        click(&mut c, &mut host, p(300., 200.), Modifiers::default());
+        assert_eq!(c.editor.objects()[0].style.color, BLACK);
+        assert_eq!(c.editor.background(), None);
+        assert!(c.bucket && c.editor.objects().len() == 1);
+    }
+    #[test]
     fn bucket_waits_while_its_colour_is_chosen() {
         let (mut c, mut host) = selected();
         c.action(&mut host, Action::Fill);
