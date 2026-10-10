@@ -68,17 +68,11 @@ unsafe extern "system" fn input_proc(
 
 pub(super) fn configure_input(hwnd: HWND, size: f32, face: Face) -> Result<HFONT> {
     unsafe {
-        // EDIT can draw synchronously during input, outside WM_PAINT. An empty
-        // window region clips those GDI paths too, without disabling native focus.
-        let region = CreateRectRgn(0, 0, 0, 0);
-        if region.0.is_null() {
-            return Err(Error::from_thread());
-        }
-        if SetWindowRgn(hwnd, Some(region), false) == 0 {
-            let _ = DeleteObject(region.into());
-            return Err(Error::from_thread());
-        }
-        // Windows owns the region after successful SetWindowRgn.
+        // EDIT draws its line itself on every keystroke, outside WM_PAINT: a white band
+        // as wide as the field, which an empty window region does not clip. With redraw
+        // off it draws nothing and keeps focus, text and selection. This also clears
+        // WS_VISIBLE: the capture window already hit-tests the text itself.
+        SendMessageW(hwnd, WM_SETREDRAW, Some(WPARAM(0)), None);
         if !SetWindowSubclass(hwnd, Some(input_proc), 1, 0).as_bool() {
             return Err(Error::from_thread());
         }
@@ -502,9 +496,8 @@ mod tests {
                 font,
                 drag_anchor: None,
             };
-            let probe_region = CreateRectRgn(0, 0, 1, 1);
-            assert_eq!(GetWindowRgn(child, probe_region), NULLREGION);
-            let _ = DeleteObject(probe_region.into());
+            // Quick tripwire only; the pixels are watched by the real_desktop_ tests below.
+            assert_eq!(GetWindowLongW(child, GWL_STYLE) as u32 & WS_VISIBLE.0, 0);
             let _ = SetFocus(Some(child));
             assert_eq!(GetFocus(), child);
             assert_eq!(
@@ -557,6 +550,236 @@ mod tests {
         }
         assert_eq!(metric.textPosition, 5);
         assert!(inside.as_bool());
+        Ok(())
+    }
+
+    const STAGE_CLASS: PCWSTR = w!("Shotoshot.TextStage");
+    unsafe extern "system" fn stage_proc(h: HWND, m: u32, w: WPARAM, l: LPARAM) -> LRESULT {
+        unsafe { DefWindowProcW(h, m, w, l) }
+    }
+    /// A shown, black stand-in for the capture window that never repaints by itself: its
+    /// pixels are what a gesture leaves on screen until the next WM_PAINT.
+    struct Stage {
+        window: HWND,
+        instance: HINSTANCE,
+        size: (i32, i32),
+        painted: Vec<String>,
+    }
+    impl Drop for Stage {
+        fn drop(&mut self) {
+            unsafe {
+                let _ = DestroyWindow(self.window);
+                let _ = UnregisterClassW(STAGE_CLASS, Some(self.instance));
+            }
+        }
+    }
+    impl Stage {
+        fn new(width: i32, height: i32) -> Result<Self> {
+            unsafe {
+                let instance: HINSTANCE =
+                    windows::Win32::System::LibraryLoader::GetModuleHandleW(None)?.into();
+                let class = WNDCLASSW {
+                    lpfnWndProc: Some(stage_proc),
+                    hInstance: instance,
+                    lpszClassName: STAGE_CLASS,
+                    ..Default::default()
+                };
+                assert_ne!(RegisterClassW(&class), 0);
+                let window = CreateWindowExW(
+                    WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
+                    STAGE_CLASS,
+                    w!(""),
+                    WS_POPUP,
+                    40,
+                    40,
+                    width,
+                    height,
+                    None,
+                    None,
+                    Some(instance),
+                    None,
+                )?;
+                let stage = Self {
+                    window,
+                    instance,
+                    size: (width, height),
+                    painted: vec![],
+                };
+                let _ = ShowWindow(window, SW_SHOWNOACTIVATE);
+                // Gestures read the modifier keys: none is held, whatever the user is typing.
+                SetKeyboardState(&[0; 256])?;
+                stage.blacken();
+                assert_eq!(stage.lit()?, None);
+                // A stage that cannot see paint would let every gesture pass.
+                let seen = RECT {
+                    left: 8,
+                    top: 8,
+                    right: 16,
+                    bottom: 12,
+                };
+                stage.fill(seen, WHITE_BRUSH);
+                assert_eq!(stage.lit()?, Some([8, 8, 15, 11]));
+                stage.blacken();
+                Ok(stage)
+            }
+        }
+        fn fill(&self, area: RECT, brush: GET_STOCK_OBJECT_FLAGS) {
+            unsafe {
+                let dc = GetDC(Some(self.window));
+                FillRect(dc, &area, HBRUSH(GetStockObject(brush).0));
+                ReleaseDC(Some(self.window), dc);
+            }
+        }
+        fn blacken(&self) {
+            let all = RECT {
+                left: 0,
+                top: 0,
+                right: self.size.0,
+                bottom: self.size.1,
+            };
+            self.fill(all, BLACK_BRUSH);
+        }
+        /// Left, top, right and bottom of the pixels that are no longer black.
+        fn lit(&self) -> Result<Option<[usize; 4]>> {
+            let (width, height) = self.size;
+            let seen = unsafe {
+                let dc = GetDC(Some(self.window));
+                let seen = crate::paint_image(width as u32, height as u32, |memory| {
+                    BitBlt(memory, 0, 0, width, height, Some(dc), 0, 0, SRCCOPY)
+                });
+                ReleaseDC(Some(self.window), dc);
+                seen?
+            };
+            let mut bounds: Option<[usize; 4]> = None;
+            for (index, pixel) in seen.pixels.as_chunks::<4>().0.iter().enumerate() {
+                if pixel[..3] != [0, 0, 0] {
+                    let (x, y) = (index % width as usize, index / width as usize);
+                    let b = bounds.get_or_insert([x, y, x, y]);
+                    *b = [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)];
+                }
+            }
+            Ok(bounds)
+        }
+        /// Notes what `gesture` put on screen before any WM_PAINT, then clears it.
+        fn after(&mut self, gesture: &str) -> Result<()> {
+            if let Some([left, top, right, bottom]) = self.lit()? {
+                self.painted
+                    .push(format!("{gesture}: x {left}..={right}, y {top}..={bottom}"));
+                self.blacken();
+            }
+            Ok(())
+        }
+        /// Types into `field` the characters the message loop translates from keys.
+        fn type_text(&mut self, field: HWND, text: &str) -> Result<()> {
+            for (unit, typed) in text.encode_utf16().zip(text.chars()) {
+                unsafe { SendMessageW(field, WM_CHAR, Some(WPARAM(unit as usize)), None) };
+                self.after(&format!("typing {typed:?}"))?;
+            }
+            Ok(())
+        }
+        fn assert_nothing_painted(&self) {
+            assert!(
+                self.painted.is_empty(),
+                "the native field painted the screen before the window did:\n{}",
+                self.painted.join("\n")
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "real desktop: shows a window and reads its pixels, run alone by check.ps1"]
+    fn real_desktop_text_field_paints_nothing_while_typing() -> Result<()> {
+        let _com = crate::ComApartment::new()?;
+        let mut stage = Stage::new(640, 200)?;
+        let hwnd = stage.window;
+        let mut session = Session::new(Image::solid(640, 200, [0, 0, 0, 255]))?;
+        session.capture.region = Rect::new(Point::default(), Point { x: 640., y: 200. });
+        session.capture.selecting = false;
+        session.capture.toolbar_visible = false;
+        session.capture.editor.tool = Tool::Text;
+        let origin = Point { x: 40., y: 40. };
+        session.mouse_down(hwnd, origin)?;
+        session.mouse_up(hwnd, origin);
+        let field = session.native.text.as_ref().expect("open text").window;
+        stage.after("opening the field")?;
+        assert_eq!(unsafe { GetFocus() }, field);
+        // Backspace, then Enter for a second line.
+        stage.type_text(field, "ab c\u{8}\rd")?;
+        assert_eq!(String::from_utf16_lossy(&value(field)), "ab \r\nd");
+        session.wheel(hwnd, 120)?;
+        stage.after("the size wheel")?;
+        assert_eq!(session.native.text.as_ref().expect("open text").size, 28.);
+        stage.type_text(field, "e")?;
+        assert_eq!(unsafe { GetFocus() }, field);
+        // The window itself still paints where the field stands.
+        let under = RECT {
+            left: 300,
+            top: 60,
+            right: 400,
+            bottom: 100,
+        };
+        stage.fill(under, WHITE_BRUSH);
+        assert_eq!(stage.lit()?, Some([300, 60, 399, 99]));
+        stage.blacken();
+        // Ctrl+Enter commits; a click in the committed text reopens it at the clicked letter.
+        assert!(session.text_command(hwnd, 13, true));
+        let first_letter = Point { x: 41., y: 45. };
+        session.mouse_down(hwnd, first_letter)?;
+        session.mouse_up(hwnd, first_letter);
+        let field = session.native.text.as_ref().expect("reopened text").window;
+        stage.after("clicking in an existing text")?;
+        assert_eq!(unsafe { GetFocus() }, field);
+        assert_eq!(selection(field), (0, 0));
+        stage.type_text(field, "X")?;
+        assert_eq!(String::from_utf16_lossy(&value(field)), "Xab \r\nde");
+        stage.assert_nothing_painted();
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "real desktop: shows a window and reads its pixels, run alone by check.ps1"]
+    fn real_desktop_dimension_fields_paint_nothing_while_typing() -> Result<()> {
+        let _com = crate::ComApartment::new()?;
+        let mut stage = Stage::new(500, 300)?;
+        let hwnd = stage.window;
+        let mut session = Session::new(Image::solid(500, 300, [0, 0, 0, 255]))?;
+        session.capture.region = Rect::new(Point { x: 20., y: 70. }, Point { x: 450., y: 250. });
+        session.capture.selecting = false;
+        let badge = session.capture.dimensions_bounds().expect("size badge");
+        let on_width = Point {
+            x: badge.min.x + 8.,
+            y: badge.center().y,
+        };
+        session.mouse_down(hwnd, on_width)?;
+        session.mouse_up(hwnd, on_width);
+        let fields = session.native.dimensions.as_ref().expect("open fields");
+        let (width, height) = (fields.width.window, fields.height.window);
+        stage.after("opening the fields")?;
+        assert_eq!(unsafe { GetFocus() }, width);
+        // The width opens selected: typing replaces it.
+        stage.type_text(width, "400")?;
+        assert!(
+            session
+                .native
+                .dimension_command(&mut session.capture, hwnd, 9)
+        );
+        stage.after("Tab to the height")?;
+        assert_eq!(unsafe { GetFocus() }, height);
+        stage.type_text(height, "100+50")?;
+        session.mouse_down(hwnd, on_width)?;
+        session.mouse_up(hwnd, on_width);
+        stage.after("clicking in a field")?;
+        assert_eq!(unsafe { GetFocus() }, width);
+        assert!(
+            session
+                .native
+                .dimension_command(&mut session.capture, hwnd, 13)
+        );
+        assert_eq!(
+            session.capture.region.expect("region").size(),
+            Point { x: 400., y: 150. }
+        );
+        stage.assert_nothing_painted();
         Ok(())
     }
 }
