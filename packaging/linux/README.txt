@@ -7,6 +7,12 @@ Capture:   bind a keyboard shortcut in your desktop settings to
            ~/.local/bin/shotoshot --capture
            Wayland does not let applications own global shortcuts.
 Instant:   ~/.local/bin/shotoshot --instant saves the screen to your Desktop.
+Save:      Ctrl+S saves a PNG to your Pictures folder.
+Editable:  Ctrl+Shift+S saves an editable image (.shoto) there instead. Open it
+           later and the capture comes back with every annotation still an
+           object; Ctrl+S then rewrites the file, Ctrl+Shift+S saves a PNG.
+           It keeps the whole screen as it was, not only the selection: share
+           the PNG, keep the .shoto.
 Tray:      the Shotoshot icon starts at login; click it to capture.
            GNOME needs the AppIndicator extension to show it.
 

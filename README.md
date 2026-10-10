@@ -212,7 +212,7 @@ always written at their best, so there is no quality setting: PNG is lossless, J
 highest quality with color at full resolution. On an interface capture a JPEG is usually larger
 than the PNG; it is there for photos, video frames and sites that refuse PNG. The last format
 used is remembered, `Shot NNN` numbers are shared by both formats, and the instant screenshot
-stays a PNG. Linux saves PNG only.
+stays a PNG. Linux has no Save dialog: **Ctrl+S** writes a PNG into the Pictures folder.
 
 ### Editable images (`.shoto`)
 
@@ -229,7 +229,13 @@ and the copy, PNG, JPEG and Google Lens outputs never carry this data.
 
 A file from a newer Shotoshot, a damaged file or an image larger than the current screens is
 refused with a message; there is no zoom yet. Live capture is not offered on a reopened image.
-Windows only for now.
+
+On Linux, where there is no Save dialog, **Ctrl+Shift+S** saves in the other format: an editable
+image from a capture, a PNG from a reopened image, both into the Pictures folder; **Ctrl+S**
+still rewrites a reopened image. A message confirms each editable save and recalls that the
+screen is in the file. `install.sh` declares the file type, so a double-click opens it in
+Shotoshot; `shotoshot <file>` does the same from a terminal. An image as large as a monitor
+opens full screen on it, a smaller one in a window of its size.
 
 ## Presenting live, without capturing
 

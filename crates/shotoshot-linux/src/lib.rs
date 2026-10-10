@@ -3,6 +3,7 @@
 #![cfg(target_os = "linux")]
 mod clipboard;
 mod editor;
+mod files;
 mod keymap;
 mod monitors;
 mod notice;
@@ -16,11 +17,17 @@ use std::{error::Error, path::PathBuf};
 /// Runs the command line; a failure the user did not ask for (not a cancelled portal
 /// dialog) is also shown in a message window, since a shortcut has no terminal.
 pub fn run() -> Result<(), Box<dyn Error>> {
-    let args: Vec<String> = std::env::args().collect();
+    // A file name need not be UTF-8: only the switches are read as text.
+    let args: Vec<String> = std::env::args_os()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
     let result = dispatch(&args);
-    let unattended = args
-        .iter()
-        .any(|a| a == clipboard::SERVE || a == notice::ARG || a.starts_with("--linux-"));
+    let unattended = args.iter().any(|a| {
+        a == clipboard::SERVE
+            || a == notice::ARG
+            || a == notice::CONFIRMATION
+            || a.starts_with("--linux-")
+    });
     if let Err(error) = &result
         && !unattended
         && !portal::cancelled(error.as_ref())
@@ -34,9 +41,16 @@ fn dispatch(args: &[String]) -> Result<(), Box<dyn Error>> {
     if args.iter().any(|a| a == clipboard::SERVE) {
         return clipboard::serve();
     }
-    if let Some(i) = args.iter().position(|a| a == notice::ARG) {
-        let message = args.get(i + 1).ok_or("--notice needs a message")?;
-        return notice::show(message, notice::DURATION);
+    for (kind, duration) in [
+        (notice::ARG, notice::DURATION),
+        (notice::CONFIRMATION, notice::BRIEF),
+    ] {
+        if let Some(i) = args.iter().position(|a| a == kind) {
+            let message = args
+                .get(i + 1)
+                .ok_or("a message window needs its message")?;
+            return notice::show(message, duration);
+        }
     }
     if let Some(i) = args.iter().position(|a| a == "--linux-diagnostic") {
         let out = args
@@ -54,9 +68,18 @@ fn dispatch(args: &[String]) -> Result<(), Box<dyn Error>> {
     if args.iter().any(|a| a == "--instant") {
         return instant();
     }
+    settings::migrate_former_name();
+    // A first argument that is not a switch is a document: what the desktop passes when a
+    // `.shoto` file is opened. It is edited in this process, resident or not.
+    if let Some(path) = std::env::args_os()
+        .nth(1)
+        .filter(|a| !a.to_string_lossy().starts_with("--"))
+    {
+        let probe = args.iter().any(|a| a == editor::PROBE);
+        return editor::open(std::path::Path::new(&path), probe);
+    }
     // `shotoshot` starts the resident; with one already running, or with `--capture`
     // (the command to bind to a desktop shortcut), it captures now.
-    settings::migrate_former_name();
     if !args.iter().any(|a| a == "--capture") && resident::run()? {
         return Ok(());
     }
@@ -67,12 +90,7 @@ fn dispatch(args: &[String]) -> Result<(), Box<dyn Error>> {
 fn instant() -> Result<(), Box<dyn Error>> {
     let image = capture()?;
     let folder = editor::user_dir("XDG_DESKTOP_DIR", "Desktop");
-    std::fs::create_dir_all(&folder)?;
-    let format = shotoshot_core::settings::SaveFormat::Png;
-    png_io::save(
-        &image,
-        &shotoshot_ui::capture_name::next_path(&folder, format)?,
-    )?;
+    files::save_numbered(&png_io::encode(&image)?, &folder, false)?;
     Ok(())
 }
 
@@ -89,12 +107,17 @@ fn diagnostic(out: &std::path::Path) -> Result<(), Box<dyn Error>> {
     );
     png_io::save(&image, &out.join("capture.png"))?;
     editor::run(image, Some(out.to_path_buf()))?;
-    // The failure message window must open on the real desktop too, from its own process.
-    let status = notice::spawn("Shotoshot diagnostic: message window")?.wait()?;
-    if !status.success() {
-        return Err(format!("message window failed: {status}").into());
+    // Both message windows must open on the real desktop too, from their own process.
+    for (kind, message) in [
+        (notice::ARG, "Shotoshot diagnostic: message window"),
+        (notice::CONFIRMATION, editor::SAVED_EDITABLE),
+    ] {
+        let status = notice::spawn(kind, message)?.wait()?;
+        if !status.success() {
+            return Err(format!("message window {kind} failed: {status}").into());
+        }
     }
-    println!("notice: shown");
+    println!("notice: failure and confirmation shown");
     Ok(())
 }
 

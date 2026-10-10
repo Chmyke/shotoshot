@@ -308,6 +308,30 @@ const KEYS_AT: (i32, i32) = (410, 352);
 const LEFT_DOWN: u16 = 0x1;
 const LEFT_UP: u16 = 0x2;
 const ALT: u16 = 0x38;
+/// Where the site film draws its circle: from the centre of the April bar of the slide (the
+/// site's tools paint it) out to `APRIL_RADIUS`.
+const APRIL: Point = Point { x: 447.5, y: 250. };
+const APRIL_RADIUS: f64 = 49.;
+
+/// Horizontal centre of the run of one colour under `at`: the axis of the bar the point is on.
+fn axis_under(backdrop: &crate::Image, at: Point) -> Option<f64> {
+    let (width, column, row) = (backdrop.width as usize, at.x as usize, at.y as usize);
+    if column >= width || row >= backdrop.height as usize {
+        return None;
+    }
+    let row = &backdrop.pixels[row * width * 4..][..width * 4];
+    let same = |x: &usize| {
+        (0..3).all(|channel| row[x * 4 + channel].abs_diff(row[column * 4 + channel]) <= 8)
+    };
+    let left = (0..column).rev().take_while(same).count();
+    let right = (column + 1..width).take_while(same).count();
+    Some(column as f64 + 0.5 + (right as f64 - left as f64) / 2.)
+}
+
+fn circles_april(backdrop: &crate::Image) -> bool {
+    axis_under(backdrop, APRIL).is_some_and(|axis| (axis - APRIL.x).abs() <= 0.5)
+}
+
 impl LiveFilm<'_> {
     fn pointer(&self) -> Point {
         self.pointer
@@ -451,14 +475,18 @@ impl LiveFilm<'_> {
         )?;
         self.draw(
             (0x2e, 'C', model::LiveTool::Ellipse),
-            p(470., 250.),
-            p(519., 250.),
+            APRIL,
+            p(APRIL.x + APRIL_RADIUS, APRIL.y),
         )
     }
 }
 
 /// Site preview film: Alt+R, Alt+A and Alt+C repeat while the preceding circle fades.
 pub(crate) fn film_over(backdrop: &crate::Image, folder: &std::path::Path) -> Result<()> {
+    if !circles_april(backdrop) {
+        let message = "the circle is off the axis of the April bar";
+        return Err(windows::core::Error::new(E_FAIL, message));
+    }
     let fail = |e: std::io::Error| windows::core::Error::new(E_FAIL, e.to_string());
     std::fs::create_dir_all(folder).map_err(fail)?;
     let (width, height) = (backdrop.width as i32, backdrop.height as i32);
@@ -479,7 +507,7 @@ pub(crate) fn film_over(backdrop: &crate::Image, folder: &std::path::Path) -> Re
         devices: Devices::default(),
         halo_state: halo::HaloState::default(),
         now: 0,
-        pointer: Point { x: 470., y: 250. },
+        pointer: APRIL,
         pointers: Vec::new(),
         recording: false,
     };
@@ -494,4 +522,41 @@ pub(crate) fn film_over(backdrop: &crate::Image, folder: &std::path::Path) -> Re
         .map(|at| format!("{:.1} {:.1}\n", at.x, at.y))
         .collect();
     std::fs::write(folder.join("pointer.txt"), pointers).map_err(fail)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The slide reduced to one bar, `left..right` on every row.
+    fn slide(left: usize, right: usize) -> crate::Image {
+        let mut image = crate::Image::solid(960, 540, [44, 36, 32, 255]);
+        for (i, pixel) in image.pixels.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+            if (left..right).contains(&(i % 960)) {
+                *pixel = [98, 80, 70, 255];
+            }
+        }
+        image
+    }
+
+    #[test]
+    fn axis_under_is_the_centre_of_the_bar_from_any_point_on_it() {
+        let image = slide(413, 482);
+        for x in [413., 447.5, 470., 481.9] {
+            assert_eq!(axis_under(&image, Point { x, y: 250. }), Some(447.5));
+        }
+        assert_eq!(axis_under(&image, Point { x: 960., y: 250. }), None);
+        assert_eq!(axis_under(&image, Point { x: 447.5, y: 540. }), None);
+    }
+
+    #[test]
+    fn site_film_circles_april_and_refuses_a_slide_that_moved_it() {
+        // The site paints eight 69 px bars in 85 px columns from x = 150: April spans 413..482.
+        assert!(circles_april(&slide(413, 482)));
+        let may = slide(498, 567);
+        assert!(!circles_april(&may));
+        let folder = std::env::temp_dir().join("shotoshot-refused-presentation-film");
+        assert!(film_over(&may, &folder).is_err());
+        assert!(!folder.exists());
+    }
 }

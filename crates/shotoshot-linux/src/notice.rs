@@ -1,7 +1,9 @@
-//! ROLE: Message window for failures outside the editor (capture refused, instant capture).
+//! ROLE: Message window for what happens outside the editor: failures (capture refused,
+//! instant capture) and the confirmation of an action that closed it.
 //! Linux desktops may lack a notification service (Raspberry Pi OS has none), so Shotoshot
 //! shows its own, as Windows does.
-//! OWNER: `lib::run` on error. Closes after its delay, a click or a key.
+//! OWNER: `lib::run` on error, the editor after a save. Closes after its delay, a click or
+//! a key.
 use crate::editor::present;
 use shotoshot_core::{Point, Rect};
 use shotoshot_raster::Raster;
@@ -20,22 +22,33 @@ use winit::{
     window::{Window, WindowId},
 };
 
-/// How long a message stays up unless dismissed.
+/// How long a failure stays up unless dismissed.
 pub const DURATION: Duration = Duration::from_secs(6);
+/// How long a confirmation stays up: read at a glance, as on Windows.
+pub const BRIEF: Duration = Duration::from_secs(2);
 /// `shotoshot --notice <message>` shows the window and exits.
 pub const ARG: &str = "--notice";
+/// `shotoshot --confirmation <message>` does the same, briefly.
+pub const CONFIRMATION: &str = "--confirmation";
 
 /// Shows `message` from its own process: winit allows one event loop per process, and
-/// the failing one (editor, capture) may already have used it.
-pub fn spawn(message: &str) -> std::io::Result<std::process::Child> {
+/// the one that speaks (editor, capture) may already have used it. `kind` is `ARG` or
+/// `CONFIRMATION`.
+pub fn spawn(kind: &str, message: &str) -> std::io::Result<std::process::Child> {
     std::process::Command::new(std::env::current_exe()?)
-        .arg(ARG)
+        .arg(kind)
         .arg(message)
         .spawn()
 }
-/// `spawn`, falling back to the terminal when no process can start.
+/// A failure in its window, falling back to the terminal when no process can start.
 pub fn report(message: &str) {
-    if let Err(error) = spawn(message) {
+    if let Err(error) = spawn(ARG, message) {
+        eprintln!("{message} (message window unavailable: {error})");
+    }
+}
+/// A confirmation in its window. The action it confirms is done either way.
+pub fn confirm(message: &str) {
+    if let Err(error) = spawn(CONFIRMATION, message) {
         eprintln!("{message} (message window unavailable: {error})");
     }
 }

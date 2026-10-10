@@ -39,10 +39,19 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Release cross-compilation failed.' }
         $tests += Join-Path $PSScriptRoot "target/$target/release/shotoshot"
     }
-    ssh -o BatchMode=yes $RemoteHost 'rm -rf ~/shotoshot-dev/bin && mkdir -p ~/shotoshot-dev/bin'
+    ssh -o BatchMode=yes $RemoteHost 'rm -rf ~/shotoshot-dev/bin ~/shotoshot-dev/package && mkdir -p ~/shotoshot-dev/bin ~/shotoshot-dev/package/icons'
     if ($LASTEXITCODE -ne 0) { throw "SSH to $RemoteHost failed." }
     scp -q -o BatchMode=yes @tests "${RemoteHost}:shotoshot-dev/bin/"
     if ($LASTEXITCODE -ne 0) { throw 'Copy failed.' }
+    if ($Diagnostic) {
+        # The package as build-linux.ps1 lays it out, for the install check below.
+        $scripts = 'packaging/linux/install.sh', 'packaging/linux/uninstall.sh', 'packaging/test-linux-install.sh'
+        scp -q -o BatchMode=yes @scripts "${RemoteHost}:shotoshot-dev/package/"
+        if ($LASTEXITCODE -ne 0) { throw 'Copy failed.' }
+        $icons = 32, 48, 256 | ForEach-Object { "crates/shotoshot-app/assets/shotoshot-$_.png" }
+        scp -q -o BatchMode=yes @icons "${RemoteHost}:shotoshot-dev/package/icons/"
+        if ($LASTEXITCODE -ne 0) { throw 'Copy failed.' }
+    }
     $run = 'cd ~/shotoshot-dev/bin && chmod +x * && status=0; for t in *; do [ "$t" = shotoshot ] && continue; ' +
         'nice -n 19 "./$t" -q >"$t.log" 2>&1 || { status=1; echo "FAILED: $t"; tail -n 30 "$t.log"; }; done; '
     if ($Diagnostic) {
@@ -53,6 +62,9 @@ try {
             'rm -rf ~/shotoshot-dev/home && mkdir -p ~/shotoshot-dev/home && ' +
             'HOME=~/shotoshot-dev/home nice -n 10 ./shotoshot --instant && ls ~/shotoshot-dev/home/Desktop/*.png >/dev/null ' +
             '&& echo "instant: saved" || { status=1; echo "FAILED: instant"; }; ' +
+            # The install script declares the .shoto file type and the removal takes it back,
+            # in another throwaway home: the script prints its own verdict.
+            'cp shotoshot ../package/ && sh ../package/test-linux-install.sh ~/shotoshot-dev/package ~/shotoshot-dev/install-home || status=1; ' +
             # X11 path on the first X server that allows root captures (rootless XWayland
             # refuses them): checks size and format, not content. Informative only.
             'x11=unavailable; for s in /tmp/.X11-unix/X*; do d=":${s##*X}"; ' +

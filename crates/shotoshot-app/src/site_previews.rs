@@ -570,12 +570,12 @@ fn eyedropper_film(desktop: &Image, folder: &Path) -> Result<()> {
 }
 
 /// Centre of the support film's heart once drawn, before it is enlarged.
-const HEART: Point = Point { x: 210., y: 150. };
+const HEART: Point = Point { x: 230., y: 150. };
 const THANKS: &str = "Thank you.";
 /// Top of the thank-you line: it sits under the heart, on the heart's axis.
 const THANKS_TOP: f64 = 295.;
 /// Cupid's arrow rises to the right through this point of the enlarged heart.
-const ARROW_THROUGH: Point = Point { x: 226., y: 176. };
+const ARROW_THROUGH: Point = Point { x: 246., y: 176. };
 const ARROW_SLOPE_DEGREES: f64 = 30.;
 /// Visible lengths outside the heart: the tail before it goes in, the head once it is out.
 const ARROW_TAIL: f64 = 84.;
@@ -591,7 +591,8 @@ const ARROW_INSIDE: f64 = 32.;
 fn support_heart_film(folder: &Path) -> Result<()> {
     std::fs::create_dir_all(folder).map_err(|e| fail(&e.to_string()))?;
     // Image pixels are stored as BGRA. This renders the site's #161b22 panel colour.
-    let backdrop = Image::solid(520, 420, [34, 27, 22, 255]);
+    // Sixteen actions on one row take 548 px of screen.
+    let backdrop = Image::solid(560, 420, [34, 27, 22, 255]);
     // Hidden parent for the native text field, as the capture window hosts it.
     let owner = crate::resources::OwnedWindow(unsafe {
         CreateWindowExW(
@@ -610,7 +611,7 @@ fn support_heart_film(folder: &Path) -> Result<()> {
         )?
     });
     let mut session = session::Session::new(backdrop)?;
-    session.capture.region = Rect::new(p(30., 30.), p(430., 340.));
+    session.capture.region = Rect::new(p(50., 30.), p(450., 340.));
     session.capture.selecting = false;
     session.capture.editor.style.width = 14.;
     session.capture.text_size = 24.;
@@ -622,8 +623,15 @@ fn support_heart_film(folder: &Path) -> Result<()> {
         window: owner.0,
     };
     let none = Modifiers::default();
+    // A new action must widen the film, not send the close button alone onto a second row.
+    let buttons = film.session.capture.buttons();
+    let mut bar = buttons.iter().filter(|b| b.panel == 1);
+    let top = bar.next().map(|b| b.bounds.min.y);
+    if bar.any(|b| Some(b.bounds.min.y) != top) {
+        return Err(fail("the film is too narrow: its action bar wraps"));
+    }
 
-    film.shoot(p(260., 180.))?;
+    film.shoot(p(280., 180.))?;
     film.hold(8)?;
     film.pick(Action::Tool(Tool::Pen))?;
     film.pick(Action::Color(RED))?;
@@ -712,7 +720,7 @@ fn support_heart_film(folder: &Path) -> Result<()> {
     }
     film.hold(6)?;
     film.pick(Action::Tool(Tool::Select))?;
-    film.glide(p(385., 300.), 10, none)?;
+    film.glide(p(405., 300.), 10, none)?;
     film.click()?;
     film.hold(30)?;
     film.write_pointers()

@@ -1,19 +1,25 @@
 //! ROLE: The Linux capture editor: a full-screen winit window over the frozen capture,
-//! painted by `shotoshot-raster` and driven by the portable `Capture`.
-//! OWNER: One editor per capture; the process ends with it.
+//! painted by `shotoshot-raster` and driven by the portable `Capture`. A saved document
+//! is edited the same way (`document`).
+//! OWNER: One editor per capture or document; the process ends with it.
 //! INVARIANTS: Window pixels map to capture pixels by a per-axis scale (1:1 on one monitor).
-use crate::{clipboard, keymap, monitors, notice, png_io, settings};
-use shotoshot_core::{
-    Modifiers, Point,
-    settings::{SaveFormat, Settings},
-};
+mod document;
+use crate::{clipboard, files, keymap, monitors, notice, png_io, settings};
+use document::{Document, Place};
+pub use document::{PROBE, SAVED_EDITABLE, open};
+use shotoshot_core::{Modifiers, Point, settings::Settings};
 use shotoshot_raster::{Raster, pixmap_from_bgra};
 use shotoshot_ui::{
     Canvas, Capture, CursorKind, DimensionFields, DimensionKey, FieldKey, Host, Image, Monitor,
-    TextField, capture_name, draw_notice, keys::KeyOutcome, notice_size, toolbar::Action,
-    top_center, wheel,
+    TextField, draw_notice, keys::KeyOutcome, notice_size, toolbar::Action, top_center, wheel,
 };
-use std::{error::Error, num::NonZeroU32, path::PathBuf, rc::Rc, time::Instant};
+use std::{
+    error::Error,
+    num::NonZeroU32,
+    path::{Path, PathBuf},
+    rc::Rc,
+    time::Instant,
+};
 use tiny_skia::Pixmap;
 use winit::{
     application::ApplicationHandler,
@@ -148,14 +154,18 @@ impl Host for Native {
     }
 }
 
-/// Scripted run for `--linux-diagnostic`: gestures, then evidence files, then exit.
-struct Diagnostic {
-    out: PathBuf,
-    step: u8,
+/// Scripted run on a real desktop: gestures, then evidence, then exit.
+enum Diagnostic {
+    /// `--linux-diagnostic`: a capture, one step per frame, evidence files in `out`.
+    Capture { out: PathBuf, step: u8 },
+    /// Its children, each started on a document: moves the first object and saves.
+    Document,
 }
 
 struct Editor {
+    /// For a document, an empty stand-in until `resumed` decodes its frame.
     capture: Capture,
+    document: Option<Document>,
     native: Native,
     backdrop: Pixmap,
     frame: Pixmap,
@@ -171,7 +181,17 @@ struct Editor {
     error: Option<Box<dyn Error>>,
 }
 
+/// Edits the fresh capture `image`.
 pub fn run(image: Image, diagnostic: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
+    let diagnostic = diagnostic.map(|out| Diagnostic::Capture { out, step: 0 });
+    start(image, None, diagnostic)
+}
+
+fn start(
+    image: Image,
+    document: Option<Document>,
+    diagnostic: Option<Diagnostic>,
+) -> Result<(), Box<dyn Error>> {
     let backdrop = pixmap_from_bgra(&image).map_err(|e| e.0)?;
     // Diagnostics run with defaults and never touch the user's preferences.
     let (settings, persist, notice) = match diagnostic {
@@ -188,7 +208,8 @@ pub fn run(image: Image, diagnostic: Option<PathBuf>) -> Result<(), Box<dyn Erro
     let mut editor = Editor {
         frame: backdrop.clone(),
         backdrop,
-        capture: prepared(image, &settings),
+        capture: Capture::new(image),
+        document,
         native: Native {
             raster: Raster::new(),
             field: None,
@@ -197,23 +218,16 @@ pub fn run(image: Image, diagnostic: Option<PathBuf>) -> Result<(), Box<dyn Erro
         },
         window: None,
         surface: None,
-        diagnostic: diagnostic.map(|out| Diagnostic { out, step: 0 }),
+        diagnostic,
         settings,
         persist,
         notice,
         error: None,
     };
+    editor.prepare();
     EventLoop::new()?.run_app(&mut editor)?;
     editor.persist_preferences();
     editor.error.map_or(Ok(()), Err)
-}
-
-/// A capture starting with the remembered stroke width and custom colour.
-fn prepared(image: Image, settings: &Settings) -> Capture {
-    let mut capture = Capture::new(image);
-    capture.custom_color = settings.last_custom_color;
-    capture.editor.style.width = settings.capture_stroke_width as f64;
-    capture
 }
 
 /// Shows the opaque `frame` in `window`, scaled to its size (1:1 on one monitor).
@@ -243,6 +257,30 @@ pub(crate) fn present(
     }
     buffer.present()?;
     Ok(())
+}
+
+/// The capture flattened with its annotations, cropped to its region.
+fn flattened(raster: &mut Raster, capture: &Capture) -> Result<Image, Box<dyn Error>> {
+    let region = capture.region.ok_or("select a capture region first")?;
+    let editor = &capture.editor;
+    Ok(raster
+        .export(
+            &capture.image,
+            editor.background(),
+            editor.objects(),
+            region,
+        )
+        .map_err(|e| e.0)?)
+}
+
+/// A monitor in desktop pixels.
+fn area(monitor: &MonitorHandle) -> monitors::Area {
+    monitors::Area {
+        x: monitor.position().x,
+        y: monitor.position().y,
+        width: monitor.size().width,
+        height: monitor.size().height,
+    }
 }
 
 fn cursor_icon(kind: CursorKind) -> CursorIcon {
@@ -287,6 +325,19 @@ impl Editor {
         if let Err(error) = settings::save_editor(width, color) {
             notice::report(&format!("Shotoshot: preferences not saved: {error}"));
         }
+    }
+    /// Starts the capture with the remembered stroke width and custom colour.
+    fn prepare(&mut self) {
+        self.capture.custom_color = self.settings.last_custom_color;
+        self.capture.editor.style.width = self.settings.capture_stroke_width as f64;
+    }
+    /// Replaces the capture being edited, and the frozen frame behind it.
+    fn show(&mut self, capture: Capture) -> Result<(), Box<dyn Error>> {
+        self.backdrop = pixmap_from_bgra(&capture.image).map_err(|e| e.0)?;
+        self.frame = self.backdrop.clone();
+        self.capture = capture;
+        self.prepare();
+        Ok(())
     }
     fn redraw(&self) {
         if let Some(window) = &self.window {
@@ -434,8 +485,13 @@ impl Editor {
             return;
         }
         match action {
-            Action::Save => match self.save(None) {
-                Ok(_) => event_loop.exit(),
+            Action::Save | Action::SaveAs => match self.save(action == Action::SaveAs, None) {
+                Ok((_, editable)) => {
+                    if editable && self.diagnostic.is_none() {
+                        notice::confirm(SAVED_EDITABLE);
+                    }
+                    event_loop.exit()
+                }
                 Err(error) => self.report(event_loop, error),
             },
             Action::Copy => {
@@ -460,27 +516,35 @@ impl Editor {
         }
     }
     fn export(&mut self) -> Result<Image, Box<dyn Error>> {
-        let region = self.capture.region.ok_or("select a capture region first")?;
-        let editor = &self.capture.editor;
-        Ok(self
-            .native
-            .raster
-            .export(
-                &self.capture.image,
-                editor.background(),
-                editor.objects(),
-                region,
-            )
-            .map_err(|e| e.0)?)
+        flattened(&mut self.native.raster, &self.capture)
     }
-    /// Saves the cropped capture as the next "Shot NNN.png" in `folder` (Pictures by default).
-    fn save(&mut self, folder: Option<&std::path::Path>) -> Result<PathBuf, Box<dyn Error>> {
-        let image = self.export()?;
-        let folder = folder.map_or_else(pictures_dir, |f| f.to_path_buf());
-        std::fs::create_dir_all(&folder)?;
-        let path = capture_name::next_path(&folder, SaveFormat::Png)?;
-        png_io::save(&image, &path)?;
-        Ok(path)
+    /// Saves without asking, since Linux has no Save window: a capture as a flattened PNG,
+    /// a reopened document back into its file. `other` (Ctrl+Shift+S) saves in the other
+    /// format: the capture as an editable document, the document as a PNG. A new file is
+    /// the next "Shot NNN" in `folder` (Pictures by default). Returns the file written and
+    /// whether it is editable.
+    fn save(
+        &mut self,
+        other: bool,
+        folder: Option<&Path>,
+    ) -> Result<(PathBuf, bool), Box<dyn Error>> {
+        let editable = self.document.is_some() != other;
+        let bytes = if editable {
+            document::packed(&mut self.native.raster, &self.capture)?
+        } else {
+            png_io::encode(&self.export()?)?
+        };
+        let path = match &self.document {
+            Some(document) if !other => {
+                files::replace(&bytes, &document.path)?;
+                document.path.clone()
+            }
+            _ => {
+                let folder = folder.map_or_else(pictures_dir, Path::to_path_buf);
+                files::save_numbered(&bytes, &folder, editable)?
+            }
+        };
+        Ok((path, editable))
     }
     fn key(&mut self, vk: Option<u32>, text: Option<&str>, event_loop: &ActiveEventLoop) {
         self.notice = None;
@@ -558,8 +622,14 @@ impl Editor {
     }
     /// One scripted interaction per frame, so each state is really presented.
     fn diagnostic_step(&mut self, event_loop: &ActiveEventLoop) -> Result<(), Box<dyn Error>> {
-        let Some(step) = self.diagnostic.as_ref().map(|d| d.step) else {
-            return Ok(());
+        let (out, step) = match &self.diagnostic {
+            None => return Ok(()),
+            Some(Diagnostic::Document) => {
+                document::move_first_object(&mut self.capture)?;
+                self.run(Action::Save, event_loop);
+                return Ok(());
+            }
+            Some(Diagnostic::Capture { out, step }) => (out.clone(), *step),
         };
         let (w, h) = (
             self.capture.image.width as f64,
@@ -588,9 +658,8 @@ impl Editor {
                 self.key(None, Some(&format!("({h}+10)-10")), event_loop);
             }
             2 => {
-                let out = self.diagnostic.as_ref().map(|d| d.out.clone());
                 let frame = shotoshot_raster::image_from_pixmap(&self.frame, 0, 0);
-                png_io::save(&frame, &out.unwrap_or_default().join("dimensions.png"))?;
+                png_io::save(&frame, &out.join("dimensions.png"))?;
                 let typed = self
                     .native
                     .dimensions
@@ -630,11 +699,6 @@ impl Editor {
                 self.pointer_move(at(0.5, 0.5));
             }
             _ => {
-                let out = self
-                    .diagnostic
-                    .as_ref()
-                    .map(|d| d.out.clone())
-                    .unwrap_or_default();
                 let frame = shotoshot_raster::image_from_pixmap(&self.frame, 0, 0);
                 png_io::save(&frame, &out.join("frame.png"))?;
                 // The compositor's own view proves the window is really on screen.
@@ -650,12 +714,13 @@ impl Editor {
                     }
                 );
                 self.native.finish_text(&mut self.capture, true);
-                let saved = self.save(Some(&out))?;
+                let (saved, _) = self.save(false, Some(&out))?;
                 println!(
                     "editor: {} objects, saved {}",
                     self.capture.editor.objects().len(),
                     saved.display()
                 );
+                self.document_diagnostic(&out, event_loop)?;
                 // Another client must read the copy while the helper owns the clipboard.
                 let expected = self.export()?;
                 let mut helper = clipboard::copy_image(&expected)?;
@@ -672,8 +737,8 @@ impl Editor {
                 return Ok(());
             }
         }
-        if let Some(d) = &mut self.diagnostic {
-            d.step += 1;
+        if let Some(Diagnostic::Capture { step, .. }) = &mut self.diagnostic {
+            *step += 1;
         }
         self.redraw();
         Ok(())
@@ -731,10 +796,21 @@ impl ApplicationHandler for Editor {
         if self.window.is_some() {
             return;
         }
+        let reopened = match self.open_document(event_loop) {
+            Ok(place) => place,
+            Err(error) => return self.fail(event_loop, error),
+        };
+        let fresh = reopened.is_none();
         let attributes = Window::default_attributes()
             .with_title("Shotoshot")
-            .with_decorations(false)
-            .with_fullscreen(Some(Fullscreen::Borderless(None)));
+            .with_decorations(false);
+        let attributes = match reopened {
+            Some(Place::Window(size)) => attributes.with_resizable(false).with_inner_size(size),
+            Some(Place::Monitor(monitor)) => {
+                attributes.with_fullscreen(Some(Fullscreen::Borderless(Some(monitor))))
+            }
+            None => attributes.with_fullscreen(Some(Fullscreen::Borderless(None))),
+        };
         let created = event_loop.create_window(attributes).map(Rc::new);
         let window = match created {
             Ok(window) => window,
@@ -747,26 +823,15 @@ impl ApplicationHandler for Editor {
             Err(error) => return self.fail(event_loop, error.into()),
         }
         // With several monitors, edit only the one the window covers, at 1:1.
-        let area = |m: MonitorHandle| monitors::Area {
-            x: m.position().x,
-            y: m.position().y,
-            width: m.size().width,
-            height: m.size().height,
-        };
-        let all: Vec<_> = event_loop.available_monitors().map(area).collect();
+        let all: Vec<_> = event_loop.available_monitors().map(|m| area(&m)).collect();
         let size = (self.capture.image.width, self.capture.image.height);
-        if let Some(current) = window.current_monitor()
-            && let Some(crop) = monitors::crop_for(size, &all, area(current))
+        if fresh
+            && let Some(current) = window.current_monitor()
+            && let Some(crop) = monitors::crop_for(size, &all, area(&current))
             && let Some(image) = monitors::crop(&self.capture.image, crop)
+            && let Err(error) = self.show(Capture::new(image))
         {
-            match pixmap_from_bgra(&image) {
-                Ok(backdrop) => {
-                    self.frame = backdrop.clone();
-                    self.backdrop = backdrop;
-                    self.capture = prepared(image, &self.settings);
-                }
-                Err(error) => return self.fail(event_loop, error.0.into()),
-            }
+            return self.fail(event_loop, error);
         }
         self.set_scale(window.scale_factor());
         window.set_cursor(CursorIcon::Crosshair);

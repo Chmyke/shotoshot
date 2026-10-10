@@ -7,6 +7,7 @@ fn main() {
                 a.as_str(),
                 "--diagnostic"
                     | "--render-demo"
+                    | "--render-site-previews"
                     | "--editor-diagnostic"
                     | "--first-frame-diagnostic"
                     | "--prepared-editor"
