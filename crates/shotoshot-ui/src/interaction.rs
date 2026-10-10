@@ -105,9 +105,8 @@ impl Capture {
             return Ok(None);
         }
         if self.bucket {
-            // One click, one fill: the tool in hand works again on the next press.
+            // The bucket stays in hand, zone after zone, until another action puts it down.
             if self.region.is_some_and(|r| r.contains(p)) {
-                self.bucket = false;
                 self.editor.fill_at(p, modifiers.alt);
             }
             return Ok(None);
@@ -444,25 +443,41 @@ mod tests {
     }
 
     #[test]
-    fn bucket_fills_the_capture_with_one_click_then_gives_the_tool_back() {
+    fn bucket_stays_in_hand_and_fills_zone_after_zone() {
         let (mut c, mut host) = selected();
-        c.action(&mut host, Action::Tool(Tool::Pen));
+        c.action(&mut host, Action::Tool(Tool::Rectangle));
+        drag(&mut c, &mut host, p(150., 150.), p(250., 250.));
+        drag(&mut c, &mut host, p(300., 150.), p(400., 250.));
         c.action(&mut host, Action::Color(BLACK));
         c.action(&mut host, Action::Fill);
         assert!(c.bucket);
-        assert_eq!(
-            click(&mut c, &mut host, p(200., 200.), Modifiers::default()),
-            None
-        );
+        for zone in [p(200., 200.), p(350., 200.), p(500., 350.)] {
+            assert_eq!(click(&mut c, &mut host, zone, Modifiers::default()), None);
+            assert!(c.bucket, "still in hand after {zone:?}");
+        }
+        assert_eq!(c.editor.objects()[0].fill, Some(BLACK));
+        assert_eq!(c.editor.objects()[1].fill, Some(BLACK));
         assert_eq!(c.editor.background(), Some(BLACK));
-        assert!(!c.bucket && c.editor.tool == Tool::Pen);
-        assert!(c.editor.objects().is_empty() && !host.captured);
+        assert!(c.editor.objects().len() == 2 && !host.captured);
 
-        // The slate case: the next press draws in white, it does not repaint the slate.
+        // The slate case: picking a tool puts the bucket down, then the press draws in white.
+        c.action(&mut host, Action::Tool(Tool::Pen));
         c.action(&mut host, Action::Color(WHITE));
-        drag(&mut c, &mut host, p(200., 200.), p(260., 200.));
+        assert!(!c.bucket);
+        drag(&mut c, &mut host, p(500., 350.), p(560., 350.));
         assert_eq!(c.editor.background(), Some(BLACK));
-        assert_eq!(c.editor.objects().len(), 1);
+        assert_eq!(c.editor.objects().len(), 3);
+    }
+    #[test]
+    fn second_click_with_the_same_colour_takes_the_fill_back_and_keeps_the_bucket() {
+        let (mut c, mut host) = selected();
+        c.action(&mut host, Action::Color(BLACK));
+        c.action(&mut host, Action::Fill);
+        click(&mut c, &mut host, p(200., 200.), Modifiers::default());
+        assert_eq!(c.editor.background(), Some(BLACK));
+        click(&mut c, &mut host, p(200., 200.), Modifiers::default());
+        assert_eq!(c.editor.background(), None);
+        assert!(c.bucket);
     }
     #[test]
     fn bucket_fills_the_shape_under_the_pointer_and_leaves_the_capture_alone() {
@@ -534,14 +549,13 @@ mod tests {
         click(&mut c, &mut host, p(200., 200.), Modifiers::default());
         assert!(c.editor.background().is_some());
         c.action(&mut host, Action::Color(BLACK));
-        c.action(&mut host, Action::Fill);
         let alt = Modifiers {
             alt: true,
             ..Modifiers::default()
         };
         click(&mut c, &mut host, p(200., 200.), alt);
         assert_eq!(c.editor.background(), None);
-        assert!(!c.bucket);
+        assert!(c.bucket);
     }
     #[test]
     fn region_handles_keep_resizing_under_an_armed_bucket() {

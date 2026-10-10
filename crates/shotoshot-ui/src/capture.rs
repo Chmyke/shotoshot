@@ -56,7 +56,7 @@ pub struct Capture {
     pub region_before: Option<Rect>,
     pub pointer: Point,
     pub eyedropper: bool,
-    /// Armed bucket: the next click in the region fills, then the tool in hand returns.
+    /// Armed bucket: every click in the region fills, until another action puts it down.
     pub bucket: bool,
     pub width_preview: bool,
     pub(crate) wheel_travel: crate::wheel::Notches,
