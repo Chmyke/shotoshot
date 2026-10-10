@@ -1,5 +1,6 @@
 //! ROLE: Capture-session adapter between Windows events, pure editor, and rendering.
 //! OWNER: Resident application; dropped when the session ends.
+mod board;
 mod dimensions;
 mod document;
 mod editing;
@@ -41,6 +42,9 @@ pub struct TextInput {
     pub color: [u8; 3],
     pub font: HFONT,
     pub drag_anchor: Option<u32>,
+    /// What a one-line field shows of a text wider than itself; a text with no field
+    /// to overflow never moves.
+    pub scroll: std::cell::Cell<text::Scroll>,
 }
 /// Windows-only pieces of a capture: renderer, in-place text field, crop-size fields and
 /// the surfaces the overlay is drawn into before it reaches the window.
@@ -62,6 +66,9 @@ pub struct Session {
     pub native: Native,
     /// The `.shoto` file this session was reopened from; Save rewrites it.
     pub document: Option<std::path::PathBuf>,
+    /// For a board session, the screens its frame covers: the notes go back to them when it
+    /// ends, even if the display changed meanwhile.
+    pub board: Option<Vec<shotoshot_core::board::Screen>>,
 }
 impl Session {
     pub fn new(image: Image) -> Result<Self> {
@@ -88,6 +95,7 @@ impl Session {
                 acceleration: None,
             },
             document: None,
+            board: None,
         })
     }
     /// Builds the hardware renderer on another thread, then posts `ready` to `hwnd`, whose
@@ -146,7 +154,9 @@ impl Session {
         {
             return false;
         }
-        self.native.finish_text(&mut self.capture, hwnd, key != 27);
+        // A board loses nothing: Escape settles the text being typed instead of dropping it.
+        let commit = key != 27 || self.board.is_some();
+        self.native.finish_text(&mut self.capture, hwnd, commit);
         true
     }
     pub(crate) fn host(&mut self, hwnd: HWND) -> (&mut Capture, WinHost<'_>) {
@@ -200,9 +210,6 @@ impl Session {
         {
             return IDC_IBEAM;
         }
-        if self.capture.picker.is_some() {
-            return IDC_ARROW;
-        }
         match self.capture.cursor(p) {
             CursorKind::Arrow => IDC_ARROW,
             CursorKind::Cross => IDC_CROSS,
@@ -220,6 +227,7 @@ impl Session {
         if !self.capture.live {
             replacement.set_image(&self.capture.image)?;
         }
+        replacement.set_overlay(self.native.renderer.overlay().cloned())?;
         self.native.renderer = replacement;
         Ok(())
     }

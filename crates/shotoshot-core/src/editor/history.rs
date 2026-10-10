@@ -1,5 +1,10 @@
 use super::*;
 
+/// The pile's ids, bottom first.
+fn ids(objects: &[Object]) -> Vec<u64> {
+    objects.iter().map(|o| o.id).collect()
+}
+
 impl Editor {
     pub(super) fn commit(&mut self, before: Vec<Object>) {
         if before == self.objects {
@@ -17,9 +22,14 @@ impl Editor {
             .filter(|o| before.iter().find(|n| n.id == o.id) != Some(o))
             .cloned()
             .collect();
+        // Undo swaps objects in and out at the end of the pile: the order puts them back.
         self.undo.push(Change {
             before: removed,
             after: added,
+            order: Some(Stacking {
+                before: ids(&before),
+                after: ids(&self.objects),
+            }),
             background: None,
         });
         self.redo.clear();
@@ -32,6 +42,7 @@ impl Editor {
         self.undo.push(Change {
             before: Vec::new(),
             after: Vec::new(),
+            order: None,
             background: Some(Repaint {
                 before: self.background,
                 after: background,
@@ -40,11 +51,16 @@ impl Editor {
         self.redo.clear();
         self.background = background;
     }
-    pub(super) fn apply(&mut self, remove: &[Object], add: &[Object]) {
+    /// Swaps `remove` for `add`, then puts the pile back in `order` (bottom first) when the
+    /// step recorded one; a step that only changed objects leaves their places alone.
+    pub(super) fn apply(&mut self, remove: &[Object], add: &[Object], order: Option<&[u64]>) {
         self.objects
             .retain(|o| !remove.iter().any(|r| r.id == o.id));
         self.objects.extend_from_slice(add);
-        self.objects.sort_by_key(|o| o.id);
+        if let Some(order) = order {
+            self.objects
+                .sort_by_key(|o| order.iter().position(|id| *id == o.id));
+        }
         self.selected
             .retain(|id| self.objects.iter().any(|o| o.id == *id));
     }
@@ -57,7 +73,7 @@ impl Editor {
     pub fn undo(&mut self) {
         self.cancel();
         if let Some(c) = self.undo.pop() {
-            self.apply(&c.after, &c.before);
+            self.apply(&c.after, &c.before, c.order.as_ref().map(|s| &s.before[..]));
             if let Some(repaint) = c.background {
                 self.background = repaint.before;
             }
@@ -67,7 +83,7 @@ impl Editor {
     pub fn redo(&mut self) {
         self.cancel();
         if let Some(c) = self.redo.pop() {
-            self.apply(&c.before, &c.after);
+            self.apply(&c.before, &c.after, c.order.as_ref().map(|s| &s.after[..]));
             if let Some(repaint) = c.background {
                 self.background = repaint.after;
             }
@@ -87,6 +103,30 @@ impl Editor {
             }
         }
         self.commit(before);
+    }
+    /// Every object and the background gone, as one reversible step; nothing when there is
+    /// nothing to clear.
+    pub fn clear(&mut self) {
+        self.cancel();
+        if self.objects.is_empty() && self.background.is_none() {
+            return;
+        }
+        let before = std::mem::take(&mut self.objects);
+        self.selected.clear();
+        let background = self.background.take().map(|before| Repaint {
+            before: Some(before),
+            after: None,
+        });
+        self.undo.push(Change {
+            order: Some(Stacking {
+                before: ids(&before),
+                after: Vec::new(),
+            }),
+            before,
+            after: Vec::new(),
+            background,
+        });
+        self.redo.clear();
     }
     pub fn delete_selection(&mut self) {
         self.cancel();

@@ -65,6 +65,7 @@ impl Native {
                     font,
                     rotation: 0.,
                     drag_anchor: None,
+                    scroll: Default::default(),
                 })
             };
             self.dimensions = Some(DimensionsInput {
@@ -271,7 +272,8 @@ impl Native {
                     },
             };
             unsafe { target.PushAxisAlignedClip(&rect(clip), D2D1_ANTIALIAS_MODE_ALIASED) };
-            let result = self.draw_inline(field, unsafe { GetFocus() } == field.window);
+            let focused = unsafe { GetFocus() } == field.window;
+            let result = self.draw_inline(field, focused, Some(field_width as f32));
             unsafe { target.PopAxisAlignedClip() };
             result?;
         }
@@ -356,6 +358,182 @@ mod tests {
                 "dimension digits must remain in the overlay surface (live={live}, ink={ink})"
             );
         }
+        Ok(())
+    }
+
+    /// Left, top, right and bottom of the pixels two paints of the same size disagree on.
+    fn difference(a: &Image, b: &Image) -> Option<[usize; 4]> {
+        let width = a.width as usize;
+        let pixels = a.pixels.as_chunks::<4>().0.iter();
+        let mut bounds: Option<[usize; 4]> = None;
+        for (index, (one, other)) in pixels.zip(b.pixels.as_chunks::<4>().0).enumerate() {
+            if one != other {
+                let (x, y) = (index % width, index / width);
+                let b = bounds.get_or_insert([x, y, x, y]);
+                *b = [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)];
+            }
+        }
+        bounds
+    }
+
+    #[test]
+    fn an_expression_wider_than_its_field_follows_the_caret() -> Result<()> {
+        let _com = ComApartment::new()?;
+        // The field grows with its screen; the caret line stays one pixel wide.
+        for scale in [1., 2.5] {
+            follows_the_caret(scale)?;
+        }
+        Ok(())
+    }
+
+    fn follows_the_caret(scale: f64) -> Result<()> {
+        const SIZE: (u32, u32) = (900, 500);
+        let window = crate::resources::OwnedWindow(unsafe {
+            CreateWindowExW(
+                WINDOW_EX_STYLE::default(),
+                w!("STATIC"),
+                w!(""),
+                WS_POPUP,
+                0,
+                0,
+                SIZE.0 as i32,
+                SIZE.1 as i32,
+                None,
+                None,
+                None,
+                None,
+            )?
+        });
+        // The click below reads the modifier keys: none is held, whatever the user is typing.
+        unsafe { SetKeyboardState(&[0; 256])? };
+        let mut session = Session::new(Image::solid(SIZE.0, SIZE.1, [0, 0, 0, 255]))?;
+        let screen = Rect {
+            min: Point::default(),
+            max: Point {
+                x: SIZE.0 as f64,
+                y: SIZE.1 as f64,
+            },
+        };
+        session.capture.monitors = vec![shotoshot_ui::Monitor {
+            bounds: screen,
+            scale,
+        }];
+        session.capture.region = Rect::new(Point { x: 40., y: 200. }, Point { x: 860., y: 460. });
+        session.capture.selecting = false;
+        session
+            .native
+            .begin_dimensions(&mut session.capture, window.0)?;
+        let width = &session.native.dimensions.as_ref().unwrap().width;
+        let (field, origin) = (width.window, width.position);
+        let mut client = RECT::default();
+        unsafe { GetClientRect(field, &mut client)? };
+        // The field on screen, in whole pixels: left, top, right and bottom.
+        let (left, top) = (origin.x as usize, origin.y as usize);
+        let (right, bottom) = (
+            left + client.right as usize - 1,
+            top + client.bottom as usize - 1,
+        );
+        let inside = |[l, t, r, b]: [usize; 4]| l >= left && t >= top && r <= right && b <= bottom;
+        let send = |message: u32, value: usize| unsafe {
+            SendMessageW(field, message, Some(WPARAM(value)), None);
+        };
+        let paint =
+            |session: &mut Session| crate::paint_image(SIZE.0, SIZE.1, |dc| session.paint(dc));
+        // The caret is what the field paints with the focus and not without it.
+        let caret = |session: &mut Session, after: &str| -> Result<[usize; 4]> {
+            let focused = paint(session)?;
+            unsafe {
+                let _ = SetFocus(None);
+            }
+            let idle = paint(session)?;
+            unsafe {
+                let _ = SetFocus(Some(field));
+            }
+            let caret = difference(&focused, &idle)
+                .unwrap_or_else(|| panic!("no caret in sight after {after}, at {scale}"));
+            assert!(
+                inside(caret),
+                "caret {caret:?} outside {left}..={right} after {after}, at {scale}"
+            );
+            Ok(caret)
+        };
+        let y = (top + bottom) as f64 / 2.;
+        let click = |session: &mut Session, x: usize| -> Result<u32> {
+            let point = Point { x: x as f64, y };
+            assert!(session.native.dimension_pointer_down(
+                &mut session.capture,
+                window.0,
+                point
+            )?);
+            session.native.dimension_pointer_up();
+            let (start, end) = super::super::text::selection(field);
+            assert_eq!(start, end);
+            Ok(end)
+        };
+
+        // The width opens selected: the expression replaces it, about three fields wide.
+        let expression = "100+100+100+100";
+        for unit in expression.encode_utf16() {
+            send(WM_CHAR, unit as usize);
+        }
+        let at_end = caret(&mut session, "typing")?;
+        // The end of the expression is in view: changing its last digit changes the field.
+        let typed = paint(&mut session)?;
+        send(WM_CHAR, 8);
+        send(WM_CHAR, '7' as usize);
+        let last_digit = difference(&typed, &paint(&mut session)?)
+            .unwrap_or_else(|| panic!("the last digit is out of view, at {scale}"));
+        assert!(inside(last_digit), "{last_digit:?} at {scale}");
+
+        // A click lands on the character shown under it, not on the one the unscrolled
+        // text would have there.
+        let length = expression.len() as u32;
+        assert!(click(&mut session, right - 1)? >= length - 1, "at {scale}");
+        let first_shown = click(&mut session, left + 1)?;
+        assert!(
+            (6..length - 1).contains(&first_shown),
+            "{first_shown} at {scale}"
+        );
+
+        // Home brings the start back; End returns to the last digit.
+        const HOME: usize = 0x24;
+        const END: usize = 0x23;
+        const LEFT: usize = 0x25;
+        send(WM_KEYDOWN, HOME);
+        let at_home = caret(&mut session, "Home")?;
+        assert!(at_home[0] <= left + 1, "{at_home:?} at {scale}");
+        assert_eq!(click(&mut session, left + 1)?, 0, "at {scale}");
+        send(WM_KEYDOWN, END);
+        let back = caret(&mut session, "End")?;
+        assert_eq!(back, at_end, "at {scale}");
+        // The text only moves when the caret would leave: Left steps over one digit.
+        send(WM_KEYDOWN, LEFT);
+        let stepped = caret(&mut session, "Left")?;
+        let step = (back[0] as f64 - stepped[0] as f64) / scale;
+        assert!((5. ..=10.).contains(&step), "{step} at {scale}");
+
+        // Dragging past the left edge selects towards the start, and the text follows.
+        let from = Point {
+            x: (right - 1) as f64,
+            y,
+        };
+        session
+            .native
+            .dimension_pointer_down(&mut session.capture, window.0, from)?;
+        paint(&mut session)?;
+        let beyond = Point {
+            x: left as f64 - 60. * scale,
+            y,
+        };
+        session.native.dimension_pointer_move(beyond)?;
+        paint(&mut session)?;
+        session.native.dimension_pointer_up();
+        let (start, end) = super::super::text::selection(field);
+        assert!(start < 6 && end >= length - 1, "{start}..{end} at {scale}");
+        assert!(
+            click(&mut session, left + 1)?.abs_diff(start) <= 1,
+            "at {scale}"
+        );
         Ok(())
     }
 

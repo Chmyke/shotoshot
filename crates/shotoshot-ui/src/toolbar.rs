@@ -23,6 +23,8 @@ pub enum Action {
     Save,
     /// Ctrl+Shift+S: always asks where to save, even for a reopened document. No button.
     SaveAs,
+    /// Board sessions only: every note and the background gone, one undo step. No key.
+    ClearBoard,
     Close,
 }
 #[derive(Clone)]
@@ -91,7 +93,13 @@ pub const COLORS: [[u8; 3]; 6] = [
 ];
 // One source for toolbar hints and keyboard dispatch. Native text fields handle their own keys.
 const SHORTCUTS: [(&str, Action, u32, bool, bool); 24] = [
-    ("Select · V", Action::Tool(Tool::Select), 86, false, false),
+    (
+        "Select · V · Page Up/Down forward or back",
+        Action::Tool(Tool::Select),
+        86,
+        false,
+        false,
+    ),
     (
         "Rectangle · R",
         Action::Tool(Tool::Rectangle),
@@ -190,24 +198,33 @@ pub fn buttons(region: Rect, width: u32, height: u32) -> Vec<Button> {
             },
         },
         1.,
+        false,
     )
 }
 
-/// Both panels beside `region`, kept on `screen`. The layout is in 96-DPI logical pixels
-/// and scaled once here, so buttons keep their apparent size on every screen.
-pub(crate) fn buttons_in(region: Rect, screen: Rect, scale: f64) -> Vec<Button> {
+/// Buttons a board session adds to the action panel, before Close. They have no key.
+const BOARD_ACTIONS: [(&str, Action); 1] = [("Clear board · Ctrl+Z restores", Action::ClearBoard)];
+
+/// Both panels beside `region`, kept on `screen`, with the board's own buttons when `board`.
+/// The layout is in 96-DPI logical pixels and scaled once here, so buttons keep their apparent
+/// size on every screen.
+pub(crate) fn buttons_in(region: Rect, screen: Rect, scale: f64, board: bool) -> Vec<Button> {
     let resized = |r: Rect, factor: f64| Rect {
         min: r.min * factor,
         max: r.max * factor,
     };
-    let mut buttons = layout(resized(region, 1. / scale), resized(screen, 1. / scale));
+    let mut buttons = layout(
+        resized(region, 1. / scale),
+        resized(screen, 1. / scale),
+        board,
+    );
     for b in &mut buttons {
         b.bounds = resized(b.bounds, scale);
     }
     buttons
 }
 
-fn layout(region: Rect, screen: Rect) -> Vec<Button> {
+fn layout(region: Rect, screen: Rect, board: bool) -> Vec<Button> {
     let cell = 32.;
     let entries = SHORTCUTS.map(|(label, action, _, _, _)| (label, action));
     let is_tool = |a: Action| matches!(a, Action::Tool(_));
@@ -216,11 +233,15 @@ fn layout(region: Rect, screen: Rect) -> Vec<Button> {
         .copied()
         .filter(|(_, a)| is_tool(*a))
         .collect();
-    let actions: Vec<_> = entries
+    let mut actions: Vec<_> = entries
         .iter()
         .copied()
         .filter(|(_, a)| !is_tool(*a))
         .collect();
+    if board {
+        let close = actions.len().saturating_sub(1);
+        actions.splice(close..close, BOARD_ACTIONS);
+    }
     let columns = ((screen.size().x - 36.) / cell)
         .floor()
         .clamp(1., actions.len() as f64) as usize;

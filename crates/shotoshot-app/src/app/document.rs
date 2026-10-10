@@ -6,7 +6,7 @@ use shotoshot_core::{Modifiers, Rect, Tool, shoto};
 use std::path::{Path, PathBuf};
 
 /// Second argument of the probe's child: stand in for the user, then leave.
-const PROBE: &str = "--document-probe";
+pub(super) const PROBE: &str = "--document-probe";
 const REPORT: &str = "target/document-diagnostics.txt";
 
 /// The document to reopen, when the first argument is a file rather than a switch: what

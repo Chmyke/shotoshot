@@ -27,6 +27,7 @@ impl Resident {
                 setup: false,
                 hotkey: crate::hotkey::Hotkey::new(HWND::default()),
                 instant: instant::InstantCapture::new(HWND::default()),
+                board_hotkey: crate::hotkey::Hotkey::with_id(HWND::default(), 5),
                 tray: NOTIFYICONDATAW::default(),
                 quit_after_capture: false,
                 persist_preferences: false,
@@ -38,6 +39,7 @@ impl Resident {
                 first_frame: None,
                 toast: None,
                 presentation: None,
+                board_rebake_forced: false,
                 setup_ui: setup::Setup::default(),
             }));
             let window = crate::resources::OwnedWindow(

@@ -4,6 +4,7 @@
 mod fill;
 mod gestures;
 mod history;
+mod stacking;
 use crate::*;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -34,8 +35,17 @@ impl Modifiers {
 struct Change {
     before: Vec<Object>,
     after: Vec<Object>,
+    /// The pile on both sides of the step; none for a step that only repainted the background.
+    order: Option<Stacking>,
     /// Set when the step changed the capture background.
     background: Option<Repaint>,
+}
+/// Ids of the whole pile, bottom first, on both sides of one undo step: the objects
+/// themselves do not carry their place.
+#[derive(Clone)]
+struct Stacking {
+    before: Vec<u64>,
+    after: Vec<u64>,
 }
 /// The capture background on both sides of one undo step.
 #[derive(Clone, Copy)]

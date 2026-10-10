@@ -1,6 +1,7 @@
 //! ROLE: Native editing semantics with DirectWrite presentation on the capture.
 //! OWNER: Session owns the EDIT window and its font until commit or cancellation.
-//! INVARIANTS: The native control never paints a surface; UTF-16 offsets stay native.
+//! INVARIANTS: The native control never paints a surface; UTF-16 offsets stay native;
+//! what a one-line field shows of its text is decided here, never read from the control.
 use super::*;
 use crate::render::{annotation_font, vector};
 use windows::Win32::{
@@ -164,10 +165,65 @@ fn layout(text: &[u16], size: f32, face: Face) -> Result<IDWriteTextLayout> {
     }
 }
 
+/// How a one-line field last showed its text: the shift to the left, in pixels, and the
+/// selection that shift revealed. Only the drawing writes it, so a click is hit-tested
+/// against what is on screen.
+// PITFALL: EDIT scrolls its line by itself but reports nothing usable: it keeps a pixel
+// offset in its own GDI measure, which runs wider than this layout, and
+// EM_GETFIRSTVISIBLELINE answers 0.
+#[derive(Clone, Copy, Default)]
+pub struct Scroll {
+    offset: f32,
+    selection: (u32, u32),
+}
+
+impl Scroll {
+    /// Follows the end of `selection` that moved, in a field `view` pixels wide.
+    fn reveal(self, layout: &IDWriteTextLayout, selection: (u32, u32), view: f32) -> Result<Self> {
+        let (start, end) = selection;
+        // A caret is always followed; of a selection, only the end being placed.
+        let moved = if start == end || end != self.selection.1 {
+            Some(end)
+        } else if start != self.selection.0 {
+            Some(start)
+        } else {
+            None
+        };
+        let caret = moved
+            .map(|position| -> Result<f32> {
+                let (mut x, mut y) = (0., 0.);
+                let mut metrics = DWRITE_HIT_TEST_METRICS::default();
+                unsafe {
+                    layout.HitTestTextPosition(position, false, &mut x, &mut y, &mut metrics)?;
+                }
+                Ok(x)
+            })
+            .transpose()?;
+        let mut content = DWRITE_TEXT_METRICS::default();
+        unsafe { layout.GetMetrics(&mut content)? };
+        let width = content.widthIncludingTrailingWhitespace;
+        Ok(Self {
+            offset: scrolled(self.offset, caret, width, view),
+            selection,
+        })
+    }
+}
+
+/// The smallest move of a `view`-wide window over a `content`-wide line that shows the
+/// caret at `caret`, if there is one to follow, and leaves no gap after the text. Whole
+/// pixels: the glyphs keep their rendering while the line moves.
+fn scrolled(offset: f32, caret: Option<f32>, content: f32, view: f32) -> f32 {
+    // One pixel on either side for the caret line itself.
+    let shown = caret.map_or(offset, |x| {
+        offset.min((x - 1.).floor()).max((x + 1. - view).ceil())
+    });
+    shown.min((content + 1. - view).ceil()).max(0.)
+}
+
 pub(super) fn hit(input: &TextInput, point: Point) -> Result<(u32, bool)> {
     let layout = layout(&value(input.window), input.size, input.face)?;
     let mut point = rotate_point(point, text_center(input, &layout)?, -input.rotation);
-    point.x += horizontal_scroll(input, &layout)? as f64;
+    point.x += input.scroll.get().offset as f64;
     let (mut trailing, mut inside) = (BOOL(0), BOOL(0));
     let mut metrics = DWRITE_HIT_TEST_METRICS::default();
     unsafe {
@@ -260,11 +316,22 @@ impl Native {
         let Some(input) = &self.text else {
             return Ok(());
         };
-        self.draw_inline(input, true)
+        self.draw_inline(input, true, None)
     }
-    pub(super) fn draw_inline(&self, input: &TextInput, caret: bool) -> Result<()> {
+    /// `view` is the width of a one-line field, which then scrolls to its caret; the
+    /// caller clips to it.
+    pub(super) fn draw_inline(
+        &self,
+        input: &TextInput,
+        caret: bool,
+        view: Option<f32>,
+    ) -> Result<()> {
         let layout = layout(&value(input.window), input.size, input.face)?;
         let (start, end) = selection(input.window);
+        if let Some(view) = view {
+            let shown = input.scroll.get().reveal(&layout, (start, end), view)?;
+            input.scroll.set(shown);
+        }
         let target = &self.renderer.dc;
         let previous = unsafe {
             let mut m = windows_numerics::Matrix3x2::identity();
@@ -276,8 +343,7 @@ impl Native {
             input.rotation.to_degrees() as f32,
             crate::render::vector(center),
         );
-        let scroll =
-            windows_numerics::Matrix3x2::translation(-horizontal_scroll(input, &layout)?, 0.);
+        let scroll = windows_numerics::Matrix3x2::translation(-input.scroll.get().offset, 0.);
         unsafe {
             target.SetTransform(&(scroll * transform * previous));
         }
@@ -366,24 +432,6 @@ fn text_center(input: &TextInput, layout: &IDWriteTextLayout) -> Result<Point> {
             x: metrics.widthIncludingTrailingWhitespace as f64 / 2.,
             y: metrics.height as f64 / 2.,
         })
-}
-
-fn horizontal_scroll(input: &TextInput, layout: &IDWriteTextLayout) -> Result<f32> {
-    unsafe {
-        if GetWindowLongPtrW(input.window, GWL_STYLE) as u32 & ES_MULTILINE as u32 != 0 {
-            return Ok(0.);
-        }
-        let first = SendMessageW(input.window, EM_GETFIRSTVISIBLELINE, None, None)
-            .0
-            .max(0) as u32;
-        if first == 0 {
-            return Ok(0.);
-        }
-        let (mut x, mut y) = (0., 0.);
-        let mut metrics = DWRITE_HIT_TEST_METRICS::default();
-        layout.HitTestTextPosition(first, false, &mut x, &mut y, &mut metrics)?;
-        Ok(x)
-    }
 }
 
 #[cfg(test)]
@@ -495,6 +543,7 @@ mod tests {
                 color: [255; 3],
                 font,
                 drag_anchor: None,
+                scroll: Default::default(),
             };
             // Quick tripwire only; the pixels are watched by the real_desktop_ tests below.
             assert_eq!(GetWindowLongW(child, GWL_STYLE) as u32 & WS_VISIBLE.0, 0);
@@ -551,6 +600,40 @@ mod tests {
         assert_eq!(metric.textPosition, 5);
         assert!(inside.as_bool());
         Ok(())
+    }
+
+    #[test]
+    fn a_one_line_field_moves_its_text_only_to_keep_the_caret_in_view() {
+        let (view, content) = (43., 120.4);
+        // A text that fits never moves.
+        assert_eq!(scrolled(0., Some(30.), 30., view), 0.);
+        // Typing past the right edge takes the text along, caret line included.
+        let end = scrolled(0., Some(content), content, view);
+        assert_eq!(end, 79.);
+        // Stepping back inside the view leaves the text where it is.
+        assert_eq!(scrolled(end, Some(100.), content, view), end);
+        // Past the left edge the text follows, by no more than it takes.
+        assert_eq!(scrolled(end, Some(60.3), content, view), 59.);
+        assert_eq!(scrolled(end, Some(0.), content, view), 0.);
+        // Deleting the tail leaves no gap after the text, caret followed or not.
+        assert_eq!(scrolled(end, Some(90.), 90., view), 48.);
+        assert_eq!(scrolled(end, None, 90., view), 48.);
+        assert_eq!(scrolled(end, None, 20., view), 0.);
+        // A selection whose ends did not move leaves the text alone.
+        assert_eq!(scrolled(end, None, content, view), end);
+        // Wherever the text was and wherever the caret goes, its line is whole in the view.
+        for from in [0., 40., 79.] {
+            for step in 0..=172 {
+                let caret = step as f32 * 0.7;
+                let offset = scrolled(from, Some(caret), content, view);
+                assert_eq!(offset, offset.round());
+                assert!(caret + 1. <= offset + view, "{from} {caret} {offset}");
+                assert!(
+                    offset == 0. || caret - 1. >= offset,
+                    "{from} {caret} {offset}"
+                );
+            }
+        }
     }
 
     const STAGE_CLASS: PCWSTR = w!("Shotoshot.TextStage");
@@ -765,7 +848,8 @@ mod tests {
         );
         stage.after("Tab to the height")?;
         assert_eq!(unsafe { GetFocus() }, height);
-        stage.type_text(height, "100+50")?;
+        // Wider than the field: the control scrolls its own line, still without painting.
+        stage.type_text(height, "100+10+10+10+10+10")?;
         session.mouse_down(hwnd, on_width)?;
         session.mouse_up(hwnd, on_width);
         stage.after("clicking in a field")?;

@@ -1,8 +1,11 @@
-//! ROLE: Website previews: the real capture UI and presentation aids over supplied desktop pictures.
-//! The pictures come from the site repository; coordinates below match its fictional desktop.
+//! ROLE: Website previews: the real capture UI, presentation aids and Board session over supplied
+//! desktop pictures. The pictures come from the site repository; coordinates below match its
+//! fictional desktops.
+use crate::board::{bake, rendering};
 use crate::*;
+use shotoshot_core::board::{Gathered, Screen};
 use shotoshot_core::*;
-use shotoshot_ui::toolbar::Action;
+use shotoshot_ui::{keys::KeyOutcome, toolbar::Action};
 use std::path::{Path, PathBuf};
 use windows::Win32::{
     Foundation::{HWND, WPARAM},
@@ -39,8 +42,24 @@ fn draw(editor: &mut Editor, tool: Tool, color: [u8; 3], from: Point, to: Point,
     editor.finish();
 }
 
+/// Sizes of the notes: the pages show these pictures reduced, a note at the default 24 px
+/// reads small there.
+const NOTE_SIZE: f32 = 32.;
+const LABEL_SIZE: f32 = 40.;
+/// The label takes two lines: one would not fit between the board and the area's right edge.
+const LABEL: &str = "Mobile\n+12%";
+
+/// A note of the current colour, measured as the text field measures what is typed.
+fn note(editor: &mut Editor, renderer: &Renderer, at: Point, text: &str, size: f32) -> Result<()> {
+    let extent = renderer.measure_annotation_text(text, size)?;
+    editor
+        .add_text_measured_sized_colored(at, text.into(), extent, editor.style.color, size.into())
+        .map(|_| ())
+        .ok_or_else(|| fail("note refused"))
+}
+
 /// Annotated launch board: framed card, highlighted subtitle, circled chart, bound arrow.
-fn annotations() -> Editor {
+fn annotations(renderer: &Renderer) -> Result<Editor> {
     let mut editor = Editor::default();
     editor.style.width = 4.;
     draw(
@@ -52,7 +71,14 @@ fn annotations() -> Editor {
         false,
     );
     editor.style.color = RED;
-    editor.add_text(p(178., 462.), "Title too low?".into());
+    // Low enough under the frame for the editing film to enlarge and tilt it clear of the frame.
+    note(
+        &mut editor,
+        renderer,
+        p(178., 480.),
+        "Title too low?",
+        NOTE_SIZE,
+    )?;
     draw(
         &mut editor,
         Tool::Highlight,
@@ -73,14 +99,14 @@ fn annotations() -> Editor {
         &mut editor,
         Tool::Arrow,
         RED,
-        p(930., 214.),
+        p(952., 232.),
         p(640., 300.),
         true,
     );
     editor.style.color = WHITE;
-    editor.add_text(p(884., 150.), "Mobile +12%".into());
+    note(&mut editor, renderer, p(892., 106.), LABEL, LABEL_SIZE)?;
     editor.tool = Tool::Rectangle;
-    editor
+    Ok(editor)
 }
 
 fn session(backdrop: &Image, editor: Editor) -> Result<session::Session> {
@@ -88,6 +114,13 @@ fn session(backdrop: &Image, editor: Editor) -> Result<session::Session> {
     session.capture.editor = editor;
     session.capture.region = Rect::new(p(100., 86.), p(AREA_RIGHT, 612.));
     session.capture.selecting = false;
+    Ok(session)
+}
+
+/// The capture session over the annotated launch board.
+fn annotated(backdrop: &Image) -> Result<session::Session> {
+    let mut session = session(backdrop, Editor::default())?;
+    session.capture.editor = annotations(&session.native.renderer)?;
     Ok(session)
 }
 
@@ -112,6 +145,27 @@ fn turned(point: Point, center: Point, degrees: f64) -> Point {
 
 fn fail(message: &str) -> Error {
     Error::new(windows::Win32::Foundation::E_FAIL, message)
+}
+
+/// Hidden parent for the native text field, as the capture window hosts it over `desktop`.
+fn text_owner(desktop: &Image) -> Result<crate::resources::OwnedWindow> {
+    let window = unsafe {
+        CreateWindowExW(
+            WS_EX_TOOLWINDOW,
+            w!("STATIC"),
+            w!("Site preview"),
+            WS_POPUP,
+            0,
+            0,
+            desktop.width as i32,
+            desktop.height as i32,
+            None,
+            None,
+            None,
+            None,
+        )?
+    };
+    Ok(crate::resources::OwnedWindow(window))
 }
 
 fn draw_native_cursor(hdc: HDC, name: PCWSTR, pointer: Point) -> Result<()> {
@@ -217,6 +271,17 @@ impl Film {
             &self.folder.join(format!("{:03}.png", self.pointers.len())),
         )?;
         self.pointers.push(pointer);
+        Ok(())
+    }
+    /// Frames the session does not paint: the screen before it opens or once it has ended.
+    fn still(&mut self, picture: &Image, pointer: Point, frames: usize) -> Result<()> {
+        for _ in 0..frames {
+            save_png(
+                picture,
+                &self.folder.join(format!("{:03}.png", self.pointers.len())),
+            )?;
+            self.pointers.push(pointer);
+        }
         Ok(())
     }
     fn pointer(&self) -> Point {
@@ -339,11 +404,11 @@ impl Film {
 fn film(desktop: &Image, folder: &Path) -> Result<()> {
     std::fs::create_dir_all(folder)
         .map_err(|e| Error::new(windows::Win32::Foundation::E_FAIL, e.to_string()))?;
-    let mut editor = annotations();
-    editor.tool = Tool::Select;
-    let note = note_id(&editor)?;
+    let mut session = annotated(desktop)?;
+    session.capture.editor.tool = Tool::Select;
+    let note = note_id(&session.capture.editor)?;
     let mut film = Film {
-        session: session(desktop, editor)?,
+        session,
         folder: folder.to_path_buf(),
         pointers: Vec::new(),
         native_cursor: false,
@@ -421,39 +486,31 @@ fn film(desktop: &Image, folder: &Path) -> Result<()> {
     let frames = 22;
     for i in 1..=frames {
         let t = i as f64 / frames as f64;
-        let at = turned(handle, frame.bounds.center(), -12. * t * t * (3. - 2. * t));
+        let at = turned(handle, frame.bounds.center(), -8. * t * t * (3. - 2. * t));
         film.session.capture.editor.update(at);
         film.shoot(at)?;
     }
     film.release();
+    // Enlarged and tilted, the note must still sit clear of the card's frame above it.
+    let objects = film.session.capture.editor.objects();
+    let (Some(card), Some(text)) = (objects.first(), objects.iter().find(|o| o.id == note)) else {
+        return Err(fail("missing note"));
+    };
+    if text.bounds().min.y < card.bounds().max.y + card.style.width {
+        return Err(fail("the note runs into the card's frame"));
+    }
     film.hold(30)?;
     film.write_pointers()
 }
 
-/// From a bare desktop to a finished capture: select an area, draw an arrow, type a note, grow
-/// it with the wheel, recolour and turn it, draw a square and move it, then widen the area.
+/// From a bare desktop to a finished capture: select an area, draw an arrow, type a two-line
+/// note, grow it with the wheel, recolour and turn it, draw a square and move it, then widen
+/// the area.
 fn capture_film(desktop: &Image, folder: &Path) -> Result<()> {
     std::fs::create_dir_all(folder).map_err(|e| fail(&e.to_string()))?;
-    // Hidden parent for the native text field, as the capture window hosts it.
-    let owner = crate::resources::OwnedWindow(unsafe {
-        CreateWindowExW(
-            WS_EX_TOOLWINDOW,
-            w!("STATIC"),
-            w!("Site preview"),
-            WS_POPUP,
-            0,
-            0,
-            desktop.width as i32,
-            desktop.height as i32,
-            None,
-            None,
-            None,
-            None,
-        )?
-    });
+    let owner = text_owner(desktop)?;
     let mut session = session::Session::new(desktop.clone())?;
     session.capture.editor.style.width = 4.;
-    session.capture.text_size = 20.;
     let mut film = Film {
         session,
         folder: folder.to_path_buf(),
@@ -474,27 +531,32 @@ fn capture_film(desktop: &Image, folder: &Path) -> Result<()> {
     film.glide(p(AREA_RIGHT, 470.), 22, none)?;
     film.up(none);
     film.hold(8)?;
-    // An arrow onto the chart.
+    // An arrow onto the chart, between two lines of its legend.
     film.pick(Action::Tool(Tool::Arrow))?;
-    film.glide(p(955., 200.), 12, none)?;
+    film.glide(p(950., 271.), 12, none)?;
     film.down(none)?;
-    film.glide(p(684., 303.), 14, none)?;
+    film.glide(p(680., 302.), 14, none)?;
     film.up(none);
     film.hold(5)?;
     // A typed note, grown with the wheel, turned white and rotated.
     film.pick(Action::Tool(Tool::Text))?;
-    film.glide(p(874., 138.), 12, none)?;
+    film.glide(p(892., 134.), 12, none)?;
     film.click()?;
     film.hold(3)?;
-    film.type_text("Mobile +12%", 2)?;
+    // Return breaks the line in the text field, as on the keyboard.
+    film.type_text(&LABEL.replace('\n', "\r"), 2)?;
     film.hold(6)?;
     film.pick(Action::Tool(Tool::Select))?;
     film.glide(film.last_bounds()?.center(), 12, none)?;
     film.click()?;
     film.hold(4)?;
-    for _ in 0..3 {
+    // Four notches up the size ladder, from the default 24 px.
+    for _ in 0..4 {
         film.session.wheel(film.window, 120)?;
         film.hold(3)?;
+    }
+    if film.session.capture.text_size != LABEL_SIZE {
+        return Err(fail("the wheel did not bring the note to its size"));
     }
     film.hold(4)?;
     film.pick(Action::Color(WHITE))?;
@@ -516,6 +578,11 @@ fn capture_film(desktop: &Image, folder: &Path) -> Result<()> {
         )?;
     }
     film.up(none);
+    // The handle sits above the note: too near the area's top, the size badge takes the press.
+    let tilted = |o: &Object| matches!(o.shape, Shape::Text { .. }) && o.rotation != 0.;
+    if !film.session.capture.editor.objects().iter().any(tilted) {
+        return Err(fail("the note did not turn"));
+    }
     film.hold(8)?;
     // A blue square around the chart's centre, then moved onto the moon.
     film.pick(Action::Tool(Tool::Rectangle))?;
@@ -573,7 +640,8 @@ fn eyedropper_film(desktop: &Image, folder: &Path) -> Result<()> {
 const HEART: Point = Point { x: 230., y: 150. };
 const THANKS: &str = "Thank you.";
 /// Top of the thank-you line: it sits under the heart, on the heart's axis.
-const THANKS_TOP: f64 = 295.;
+const THANKS_TOP: f64 = 286.;
+const THANKS_SIZE: f32 = 36.;
 /// Cupid's arrow rises to the right through this point of the enlarged heart.
 const ARROW_THROUGH: Point = Point { x: 246., y: 176. };
 const ARROW_SLOPE_DEGREES: f64 = 30.;
@@ -593,28 +661,12 @@ fn support_heart_film(folder: &Path) -> Result<()> {
     // Image pixels are stored as BGRA. This renders the site's #161b22 panel colour.
     // Sixteen actions on one row take 548 px of screen.
     let backdrop = Image::solid(560, 420, [34, 27, 22, 255]);
-    // Hidden parent for the native text field, as the capture window hosts it.
-    let owner = crate::resources::OwnedWindow(unsafe {
-        CreateWindowExW(
-            WS_EX_TOOLWINDOW,
-            w!("STATIC"),
-            w!("Site preview"),
-            WS_POPUP,
-            0,
-            0,
-            backdrop.width as i32,
-            backdrop.height as i32,
-            None,
-            None,
-            None,
-            None,
-        )?
-    });
+    let owner = text_owner(&backdrop)?;
     let mut session = session::Session::new(backdrop)?;
     session.capture.region = Rect::new(p(50., 30.), p(450., 340.));
     session.capture.selecting = false;
     session.capture.editor.style.width = 14.;
-    session.capture.text_size = 24.;
+    session.capture.text_size = THANKS_SIZE;
     let mut film = Film {
         session,
         folder: folder.to_path_buf(),
@@ -726,6 +778,242 @@ fn support_heart_film(folder: &Path) -> Result<()> {
     film.write_pointers()
 }
 
+/// The desktop of the desktop-notes film, as Windows stacks it. The three pictures share one
+/// wallpaper and one size.
+struct NotesDesktop {
+    /// The user's own wallpaper: what the notes are baked into.
+    wallpaper: Image,
+    /// Explorer's rendering, the wallpaper under its icons and no window: a session opens on it.
+    explorer: Image,
+    /// The screen at rest: the same under the taskbar.
+    screen: Image,
+}
+
+/// The zone is drawn around the loose group of four icons, under the column.
+const ZONE: Rect = Rect {
+    min: Point { x: 12., y: 250. },
+    max: Point { x: 176., y: 414. },
+};
+/// A free spot between those four icons, where the bucket fills the zone.
+const ZONE_GAP: Point = Point { x: 91., y: 331. };
+const TODO: &str = "Today\n- send the build\n- call Sam at 3";
+const TODO_AT: Point = Point { x: 300., y: 130. };
+const HINT: &str = "zip first";
+/// Above the arrow's path, clear of it.
+const HINT_AT: Point = Point { x: 130., y: 126. };
+/// The step the pointer takes off a note it has just opened: the first letter shows.
+const ASIDE: Point = Point { x: -26., y: 30. };
+/// The arrow leaves the to-do's second line for the right edge of the Builds folder.
+const ARROW_FROM: Point = Point { x: 288., y: 172. };
+const ARROW_TO: Point = Point { x: 82., y: 196. };
+/// Where the pointer waits on the first and on the last frame: the loop has no jump.
+const REST: Point = Point { x: 620., y: 360. };
+const DESKTOP_NOTE_SIZE: f32 = 28.;
+/// Icon pixels that must lie over a note, about half of one icon: fewer would not read as an
+/// icon in front of what was drawn.
+const MIN_ICON_PIXELS: usize = 500;
+
+fn bgra(image: &Image) -> &[[u8; 4]] {
+    image.pixels.as_chunks::<4>().0
+}
+
+/// Pixels of `area` that `a` and `b`, two pictures of one size, do not share.
+fn differing(a: &Image, b: &Image, area: Rect) -> usize {
+    let (width, height) = (a.width as usize, a.height as usize);
+    let span = |from: f64, to: f64, limit: usize| {
+        from.clamp(0., limit as f64) as usize..to.ceil().clamp(0., limit as f64) as usize
+    };
+    let columns = span(area.min.x, area.max.x, width);
+    span(area.min.y, area.max.y, height)
+        .map(|y| {
+            let row = y * width + columns.start..y * width + columns.end;
+            bgra(a)[row.clone()]
+                .iter()
+                .zip(&bgra(b)[row])
+                .filter(|(ours, theirs)| ours[..3] != theirs[..3])
+                .count()
+        })
+        .sum()
+}
+
+/// Pixels where `frame` shows `icons`, the opaque layer the desktop lays over its wallpaper,
+/// although a note is drawn there: `baked` holds the notes, `wallpaper` does not.
+fn kept_in_front(frame: &Image, icons: &Image, baked: &Image, wallpaper: &Image) -> usize {
+    bgra(frame)
+        .iter()
+        .zip(bgra(icons))
+        .zip(bgra(baked).iter().zip(bgra(wallpaper)))
+        .filter(|((shown, icon), (note, bare))| {
+            icon[3] != 0 && note[..3] != bare[..3] && shown[..3] == icon[..3]
+        })
+        .count()
+}
+
+/// The Board, Shotoshot's notes on the desktop: from a calm screen, a session opens on Explorer's
+/// rendering (the taskbar is a window: it goes), a zone is drawn around four icons and filled, a
+/// to-do is typed, a hint is typed and turned yellow, an arrow points at a folder. Escape ends
+/// the session and the notes stay on the desktop, under its icons.
+/// INVARIANTS: every note is made by the session's own gestures; the closed desktop is the
+/// bake's picture under what the screen lays over its wallpaper, icons and taskbar.
+fn desktop_notes_film(desktop: &NotesDesktop, folder: &Path) -> Result<()> {
+    let NotesDesktop {
+        wallpaper,
+        explorer,
+        screen,
+    } = desktop;
+    let size = |image: &Image| (image.width, image.height);
+    if size(wallpaper) != size(screen) || size(explorer) != size(screen) {
+        return Err(fail("the desktop's three pictures differ in size"));
+    }
+    let whole = Rect {
+        min: p(0., 0.),
+        max: p(screen.width as f64, screen.height as f64),
+    };
+    let screens = [Screen {
+        id: "film".into(),
+        bounds: whole,
+    }];
+    // What Explorer lays over the wallpaper, lifted as an opening session lifts it.
+    let Some(icons) = rendering::icons_over(explorer, wallpaper, &screens) else {
+        return Err(fail("the desktop shows no icon over its wallpaper"));
+    };
+    if differing(explorer, wallpaper, ZONE) < MIN_ICON_PIXELS {
+        return Err(fail("the zone is drawn around no icon"));
+    }
+    std::fs::create_dir_all(folder).map_err(|e| fail(&e.to_string()))?;
+    let owner = text_owner(screen)?;
+    let mut session = session::Session::board(
+        explorer.clone(),
+        Some(icons.clone()),
+        Gathered::default(),
+        screens.to_vec(),
+    )?;
+    // PITFALL: a Board session lays its tools out on this machine's monitors, at their scale.
+    // The film's frame is its own screen, at 100 %.
+    session.capture.monitors.clear();
+    // Blue is the colour an earlier session left, as the settings keep it.
+    session.capture.editor.style = Style {
+        color: BLUE,
+        width: 4.,
+    };
+    session.capture.text_size = DESKTOP_NOTE_SIZE;
+    let mut film = Film {
+        session,
+        folder: folder.to_path_buf(),
+        pointers: Vec::new(),
+        native_cursor: false,
+        window: owner.0,
+    };
+    let none = Modifiers::default();
+    // A calm screen, then Alt+B: the session covers it, taskbar included.
+    film.still(screen, REST, 30)?;
+    film.shoot(REST)?;
+    film.hold(12)?;
+    // The zone: the rectangle is the tool in hand when a session opens, the bucket fills it.
+    film.glide(ZONE.min, 12, none)?;
+    film.down(none)?;
+    film.glide(ZONE.max, 16, none)?;
+    film.up(none);
+    film.hold(4)?;
+    film.pick(Action::Fill)?;
+    film.glide(ZONE_GAP, 10, none)?;
+    film.click()?;
+    film.hold(8)?;
+    // The to-do, in white. Picking the text tool puts the bucket down.
+    film.pick(Action::Tool(Tool::Text))?;
+    film.pick(Action::Color(WHITE))?;
+    film.glide(TODO_AT, 12, none)?;
+    film.click()?;
+    film.glide(TODO_AT + ASIDE, 5, none)?;
+    // Return breaks the line in the text field, as on the keyboard.
+    film.type_text(&TODO.replace('\n', "\r"), 2)?;
+    film.hold(6)?;
+    // A click elsewhere settles the to-do and opens the hint; a colour recolours what is typed.
+    film.glide(HINT_AT, 12, none)?;
+    film.click()?;
+    film.glide(HINT_AT + ASIDE, 5, none)?;
+    film.type_text(HINT, 2)?;
+    film.hold(4)?;
+    film.pick(Action::Color(YELLOW))?;
+    // Picking the arrow settles the hint. ORDER: the arrow comes last, so that nothing is
+    // pending and one Escape ends the session.
+    film.pick(Action::Tool(Tool::Arrow))?;
+    film.glide(ARROW_FROM, 12, none)?;
+    film.down(none)?;
+    film.glide(ARROW_TO, 14, none)?;
+    film.up(none);
+    film.hold(6)?;
+    film.glide(REST, 12, none)?;
+    film.hold(8)?;
+
+    fn typed(note: &Object) -> Option<&str> {
+        match &note.shape {
+            Shape::Text { text, .. } => Some(text),
+            _ => None,
+        }
+    }
+    let objects = film.session.capture.editor.objects();
+    // The text field breaks its lines with a carriage return and a line feed.
+    let texts = objects
+        .iter()
+        .filter_map(typed)
+        .map(|t| t.replace('\r', ""));
+    if texts.ne([TODO, HINT]) || objects.len() != 4 {
+        return Err(fail("the notes are not the four the film draws"));
+    }
+    if objects[0].fill.is_none() {
+        return Err(fail("the bucket did not fill the zone"));
+    }
+    // Both panels of the tools show whole and clear of every note.
+    let panels = shotoshot_ui::toolbar::panels(&film.session.capture.buttons(), 1.);
+    if panels.len() != 2 || panels.iter().any(|panel| !whole.contains_rect(*panel)) {
+        return Err(fail("the toolbar is off the screen"));
+    }
+    let bounds = |o: &Object| o.resolved_bounds(objects);
+    if objects
+        .iter()
+        .any(|o| panels.iter().any(|panel| bounds(o).intersects(*panel)))
+    {
+        return Err(fail("a note runs under the toolbar"));
+    }
+    let editing = paint_image(screen.width, screen.height, |hdc| film.session.paint(hdc))?;
+    // Escape as the window forwards it, then what the session's owner does: the notes are baked
+    // into the wallpaper, and the screen shows it under its icons and taskbar.
+    let (capture, mut host) = film.session.host(film.window);
+    if capture.key(&mut host, 27, none) != KeyOutcome::Close {
+        return Err(fail("Escape did not end the session"));
+    }
+    let editor = &film.session.capture.editor;
+    let notes = Gathered {
+        objects: editor.objects().to_vec(),
+        last_id: editor.last_id(),
+        background: editor.background(),
+    };
+    let mut renderer = Renderer::with(Backend::Software, false)?;
+    let baked = bake::render_screens(&renderer, wallpaper, &notes, &screens)?
+        .pop()
+        .map(|(_, picture)| picture)
+        .ok_or_else(|| fail("nothing was baked"))?;
+    renderer.set_overlay(rendering::icons_over(screen, wallpaper, &screens))?;
+    let closed = renderer.export(&baked, None, &[], whole)?;
+    // The film's point, read in its own frames: icons lie over a note while it is edited and
+    // once the session is over, and every note is still on the screen without the toolbar.
+    for (frame, when) in [(&editing, "in the session"), (&closed, "on the desktop")] {
+        if kept_in_front(frame, &icons, &baked, wallpaper) < MIN_ICON_PIXELS {
+            return Err(fail(&format!("no icon lies over a note {when}")));
+        }
+    }
+    if notes
+        .objects
+        .iter()
+        .any(|o| differing(&closed, screen, o.resolved_bounds(&notes.objects)) == 0)
+    {
+        return Err(fail("a note did not stay on the desktop"));
+    }
+    film.still(&closed, REST, 100)?;
+    film.write_pointers()
+}
+
 fn paint(mut session: session::Session, path: &Path) -> Result<()> {
     let (width, height) = (session.capture.image.width, session.capture.image.height);
     save_png(&paint_image(width, height, |hdc| session.paint(hdc))?, path)
@@ -739,7 +1027,7 @@ pub fn render(backdrops: &Path, out: &Path) -> Result<()> {
             "desktop-capture.png must be 1100x680",
         ));
     }
-    paint(session(&desktop, annotations())?, &out.join("capture.png"))?;
+    paint(annotated(&desktop)?, &out.join("capture.png"))?;
 
     eyedropper_film(&desktop, &out.join("eyedropper-frames"))?;
     film(&desktop, &out.join("editing-frames"))?;
@@ -748,7 +1036,15 @@ pub fn render(backdrops: &Path, out: &Path) -> Result<()> {
 
     let stage = load_png(&backdrops.join("desktop-presentation.png"))?;
     presentation::demo::render_over(&stage, &out.join("presentation.png"))?;
-    presentation::demo::film_over(&stage, &out.join("presentation-frames"))
+    presentation::demo::film_over(&stage, &out.join("presentation-frames"))?;
+
+    let layer = |name: &str| load_png(&backdrops.join(format!("desktop-board-{name}.png")));
+    let notes = NotesDesktop {
+        wallpaper: layer("wallpaper")?,
+        explorer: layer("icons")?,
+        screen: layer("screen")?,
+    };
+    desktop_notes_film(&notes, &out.join("board-frames"))
 }
 
 #[cfg(test)]
@@ -818,6 +1114,92 @@ mod tests {
         let _ = std::fs::remove_dir_all(&folder);
         filmed?;
         assert!(frames > 300, "only {frames} files for a ten-second film");
+        Ok(())
+    }
+
+    /// The other films check theirs as well: the hero's typed note reaches its size and turns,
+    /// the editing film's note stays clear of the card's frame. Any desktop will do.
+    #[test]
+    fn films_of_the_board_render_their_enlarged_notes() -> Result<()> {
+        let _com = ComApartment::new()?;
+        let desktop = Image::solid(1100, 680, [58, 22, 8, 255]);
+        let folder =
+            std::env::temp_dir().join(format!("shotoshot-board-films-{}", std::process::id()));
+        let filmed = capture_film(&desktop, &folder.join("capture"))
+            .and_then(|()| film(&desktop, &folder.join("editing")));
+        let _ = std::fs::remove_dir_all(&folder);
+        filmed
+    }
+
+    fn block(image: &mut Image, x: std::ops::Range<usize>, y: std::ops::Range<usize>, to: [u8; 4]) {
+        let width = image.width as usize;
+        for row in y {
+            let pixels = &mut image.pixels[(row * width + x.start) * 4..(row * width + x.end) * 4];
+            pixels.as_chunks_mut::<4>().0.fill(to);
+        }
+    }
+
+    #[test]
+    fn an_icon_counts_as_kept_in_front_only_over_a_note_and_where_the_frame_shows_it() {
+        const ICON: [u8; 4] = [10, 200, 250, 255];
+        let wallpaper = Image::solid(5, 1, [90, 40, 20, 255]);
+        // Notes on the last four pixels, icons on the first three.
+        let mut baked = wallpaper.clone();
+        block(&mut baked, 1..5, 0..1, [92, 79, 237, 255]);
+        let mut icons = Image::solid(5, 1, [0, 0, 0, 0]);
+        block(&mut icons, 0..3, 0..1, ICON);
+        // A frame that lets the note through on the third pixel.
+        let mut frame = baked.clone();
+        block(&mut frame, 0..2, 0..1, ICON);
+        assert_eq!(kept_in_front(&frame, &icons, &baked, &wallpaper), 1);
+        let mut desktop = frame.clone();
+        block(&mut desktop, 2..3, 0..1, ICON);
+        assert_eq!(kept_in_front(&desktop, &icons, &baked, &wallpaper), 2);
+        assert_eq!(kept_in_front(&wallpaper, &icons, &baked, &wallpaper), 0);
+
+        let area = |from: f64, to: f64| Rect {
+            min: p(from, 0.),
+            max: p(to, 1.),
+        };
+        assert_eq!(differing(&desktop, &wallpaper, area(0., 5.)), 5);
+        assert_eq!(differing(&baked, &wallpaper, area(0., 2.)), 1);
+        assert_eq!(differing(&baked, &wallpaper, area(-3., 0.5)), 0);
+        assert_eq!(
+            differing(&baked, &wallpaper, area(3., 40.)),
+            2,
+            "clipped to the picture"
+        );
+    }
+
+    /// A plain desktop of the site's size under a taskbar, one icon in its column at `top`.
+    fn notes_desktop(top: usize) -> NotesDesktop {
+        let wallpaper = Image::solid(960, 540, [58, 22, 8, 255]);
+        let mut explorer = wallpaper.clone();
+        block(&mut explorer, 30..70, top..top + 40, [92, 208, 255, 255]);
+        let mut screen = explorer.clone();
+        block(&mut screen, 0..960, 496..540, [38, 28, 24, 255]);
+        NotesDesktop {
+            wallpaper,
+            explorer,
+            screen,
+        }
+    }
+
+    /// The desktop-notes film checks its picture too: an icon over a note in the session and on
+    /// the closed desktop, every note still there. An icon the zone misses is refused unfilmed.
+    #[test]
+    fn desktop_notes_film_keeps_an_icon_over_its_zone_and_refuses_a_zone_without_one() -> Result<()>
+    {
+        let _com = ComApartment::new()?;
+        let folder =
+            std::env::temp_dir().join(format!("shotoshot-desktop-notes-{}", std::process::id()));
+        assert!(desktop_notes_film(&notes_desktop(14), &folder).is_err());
+        assert!(!folder.exists(), "a refused film writes nothing");
+        let filmed = desktop_notes_film(&notes_desktop(260), &folder);
+        let frames = std::fs::read_dir(&folder).map_or(0, |entries| entries.count());
+        let _ = std::fs::remove_dir_all(&folder);
+        filmed?;
+        assert!(frames > 300, "only {frames} files for a six-second film");
         Ok(())
     }
 }

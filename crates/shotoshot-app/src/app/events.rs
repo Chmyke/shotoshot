@@ -127,6 +127,7 @@ impl App {
                     invalidate(hwnd);
                 }
             }
+            WM_HOTKEY if self.board_hotkey.matches(w.0) => super::board::spawn_session()?,
             WM_HOTKEY if self.instant.hotkey.matches(w.0) => self.start_instant_capture(hwnd),
             WM_HOTKEY if self.hotkey.matches(w.0) => self.start_capture(hwnd)?,
             CAPTURE_MESSAGE => {
@@ -283,12 +284,47 @@ impl App {
                 if let Some(presentation) = &self.presentation {
                     presentation.borrow_mut().display_changed()?;
                 }
-                if self.session.is_some() {
-                    self.close_session(hwnd);
-                    message(
-                        hwnd,
-                        "The display configuration changed. Start a new capture.",
-                    );
+                if let Some(session) = &self.session {
+                    if session.board.is_some() {
+                        self.close_session_saying(
+                            hwnd,
+                            Some("The display configuration changed. The board was saved."),
+                        );
+                    } else {
+                        self.close_session(hwnd);
+                        message(
+                            hwnd,
+                            "The display configuration changed. Start a new capture.",
+                        );
+                    }
+                }
+                if !self.quit_after_capture {
+                    // One bake once a storm of changes settles, whatever the screens show.
+                    self.board_rebake_forced = true;
+                    unsafe {
+                        let _ = SetTimer(Some(hwnd), BOARD_TIMER, BOARD_SETTLE_MS, None);
+                    }
+                }
+            }
+            WM_SETTINGCHANGE
+                if w.0 == SPI_SETDESKWALLPAPER.0 as usize && !self.quit_after_capture =>
+            {
+                // Our own bake raises this too: look only once things settle, then compare.
+                unsafe {
+                    let _ = SetTimer(Some(hwnd), BOARD_TIMER, BOARD_SETTLE_MS, None);
+                }
+            }
+            WM_TIMER if w.0 == BOARD_TIMER => {
+                unsafe {
+                    let _ = KillTimer(Some(hwnd), BOARD_TIMER);
+                }
+                let forced = std::mem::take(&mut self.board_rebake_forced);
+                if super::board::rebake_needed(
+                    self.board_visible()?,
+                    forced,
+                    super::board::desktop_shows_ours,
+                )? {
+                    let _ = crate::board::bake::spawn();
                 }
             }
             crate::presentation::PREFERENCES_CHANGED => {

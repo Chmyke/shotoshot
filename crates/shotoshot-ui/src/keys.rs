@@ -7,6 +7,8 @@ use shotoshot_core::{Modifiers, Point};
 pub const KEY_TAB: u32 = 9;
 pub const KEY_ENTER: u32 = 13;
 pub const KEY_ESCAPE: u32 = 27;
+pub const KEY_PAGE_UP: u32 = 33;
+pub const KEY_PAGE_DOWN: u32 = 34;
 pub const KEY_LEFT: u32 = 37;
 pub const KEY_UP: u32 = 38;
 pub const KEY_RIGHT: u32 = 39;
@@ -96,6 +98,9 @@ impl Capture {
         let amount = if m.shift { 10. } else { 1. };
         match key {
             KEY_DELETE => self.editor.delete_selection(),
+            // Through the pile, as the arrows move across the plane; Shift goes all the way.
+            KEY_PAGE_UP => self.editor.raise_selection(m.shift),
+            KEY_PAGE_DOWN => self.editor.lower_selection(m.shift),
             KEY_LEFT => self.editor.nudge(Point { x: -amount, y: 0. }),
             KEY_RIGHT => self.editor.nudge(Point { x: amount, y: 0. }),
             KEY_UP => self.editor.nudge(Point { x: 0., y: -amount }),
@@ -186,5 +191,31 @@ mod tests {
             KeyOutcome::Ignored
         );
         assert_eq!(c.editor.objects().len(), 1);
+    }
+    #[test]
+    fn page_keys_move_the_selection_through_the_pile_and_shift_sends_it_to_the_end() {
+        let mut c = capture();
+        let mut host = FakeHost::default();
+        for (from, to) in [(200., 300.), (210., 310.), (220., 320.)] {
+            c.editor
+                .begin(Point { x: from, y: from }, Modifiers::default());
+            c.editor.update(Point { x: to, y: to });
+            c.editor.finish();
+        }
+        let ids = |c: &Capture| c.editor.objects().iter().map(|o| o.id).collect::<Vec<_>>();
+        c.editor.select_only(1);
+        let none = Modifiers::default();
+        assert_eq!(c.key(&mut host, KEY_PAGE_UP, none), KeyOutcome::Handled);
+        assert_eq!(ids(&c), vec![2, 1, 3]);
+        let shift = Modifiers {
+            shift: true,
+            ..Modifiers::default()
+        };
+        c.key(&mut host, KEY_PAGE_UP, shift);
+        assert_eq!(ids(&c), vec![2, 3, 1]);
+        c.key(&mut host, KEY_PAGE_DOWN, none);
+        assert_eq!(ids(&c), vec![2, 1, 3]);
+        c.key(&mut host, KEY_PAGE_DOWN, shift);
+        assert_eq!(ids(&c), vec![1, 2, 3]);
     }
 }

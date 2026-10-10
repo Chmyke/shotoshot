@@ -475,6 +475,7 @@ mod tests {
                 setup_ui: setup::Setup::default(),
                 hotkey: crate::hotkey::Hotkey::new(owner.0),
                 instant: instant::InstantCapture::new(owner.0),
+                board_hotkey: crate::hotkey::Hotkey::with_id(owner.0, 5),
                 tray: NOTIFYICONDATAW::default(),
                 quit_after_capture: true,
                 persist_preferences: false,
@@ -486,6 +487,7 @@ mod tests {
                 google_search: None,
                 first_frame: None,
                 presentation: None,
+                board_rebake_forced: false,
             };
             let foreground = GetForegroundWindow();
             app.notify(Notice::Copied);

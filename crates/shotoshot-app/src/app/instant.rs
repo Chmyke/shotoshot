@@ -138,6 +138,10 @@ impl App {
             self.setup_ui.error = "This shortcut is already used by Shotoshot.".into();
             return Ok(());
         }
+        if self.settings.board_shortcut == shortcut {
+            self.setup_ui.error = "This shortcut is already used by the board.".into();
+            return Ok(());
+        }
         if !(self.instant.hotkey.active() && self.settings.instant_shortcut == shortcut) {
             let mut next = self.settings.clone();
             next.instant_shortcut = shortcut;
@@ -207,6 +211,7 @@ mod tests {
             setup_ui: setup::Setup::default(),
             hotkey: crate::hotkey::Hotkey::new(hwnd),
             instant: InstantCapture::new(hwnd),
+            board_hotkey: crate::hotkey::Hotkey::with_id(hwnd, 5),
             tray: NOTIFYICONDATAW::default(),
             quit_after_capture: false,
             persist_preferences: false,
@@ -218,6 +223,7 @@ mod tests {
             google_search: None,
             first_frame: None,
             presentation: None,
+            board_rebake_forced: false,
         }
     }
     #[test]

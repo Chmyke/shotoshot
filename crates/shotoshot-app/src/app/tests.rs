@@ -30,6 +30,7 @@ fn capture_shortcut_cannot_steal_a_suspended_shape_shortcut() {
         },
         hotkey: crate::hotkey::Hotkey::new(owner.0),
         instant: instant::InstantCapture::new(owner.0),
+        board_hotkey: crate::hotkey::Hotkey::with_id(owner.0, 5),
         tray: NOTIFYICONDATAW::default(),
         quit_after_capture: false,
         persist_preferences: false,
@@ -41,6 +42,7 @@ fn capture_shortcut_cannot_steal_a_suspended_shape_shortcut() {
         first_frame: None,
         toast: None,
         presentation: None,
+        board_rebake_forced: false,
     };
     app.setup_activate(owner.0, 2).unwrap();
     assert!(
@@ -77,6 +79,182 @@ fn capture_shortcut_cannot_steal_a_suspended_shape_shortcut() {
 }
 
 #[test]
+fn diagnostics_and_the_document_probe_never_write_the_settings() {
+    let persists =
+        |args: &[&str]| runtime::persists_preferences(args.iter().map(|a| a.to_string()));
+    assert!(persists(&["shotoshot.exe"]), "the resident");
+    assert!(persists(&["shotoshot.exe", "--board"]), "a board session");
+    assert!(
+        persists(&["shotoshot.exe", "notes.shoto"]),
+        "a reopened document"
+    );
+    assert!(
+        !persists(&["shotoshot.exe", "notes.shoto", "--document-probe"]),
+        "the document diagnostic's child saves without touching the user's settings"
+    );
+    assert!(!persists(&["shotoshot.exe", "--diagnostic"]));
+    assert!(!persists(&["shotoshot.exe", "--first-frame-diagnostic"]));
+}
+
+#[test]
+fn the_uninstaller_runs_exactly_the_restores_the_app_offers() {
+    let script = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../packaging/shotoshot.iss"
+    ))
+    .unwrap();
+    let section = script
+        .split("[UninstallRun]")
+        .nth(1)
+        .and_then(|rest| rest.split("\n[").next())
+        .expect("an [UninstallRun] section");
+    let run: Vec<&str> = section
+        .lines()
+        .filter(|line| line.starts_with("Filename:"))
+        .map(|line| {
+            assert!(
+                line.contains("Flags: runhidden waituntilterminated"),
+                "hidden, and finished before the files go: {line}"
+            );
+            let parameters = line.split("Parameters: \"").nth(1).expect(line);
+            parameters.split('"').next().unwrap()
+        })
+        .collect();
+    assert_eq!(run, runtime::UNINSTALL_RESTORES);
+}
+
+#[test]
+fn a_restore_run_by_the_uninstaller_fails_without_a_message_box() {
+    let on_stderr =
+        |args: &[&str]| runtime::reports_errors_on_stderr(args.iter().map(|a| a.to_string()));
+    for restore in runtime::UNINSTALL_RESTORES {
+        assert!(
+            on_stderr(&["shotoshot.exe", restore]),
+            "{restore} would block a silent uninstall on a message box"
+        );
+    }
+    assert!(on_stderr(&["shotoshot.exe", "--board-diagnostic"]));
+    assert!(
+        !on_stderr(&["shotoshot.exe"]),
+        "the resident shows its errors"
+    );
+    assert!(
+        !on_stderr(&["shotoshot.exe", "--board"]),
+        "so does a session"
+    );
+    assert!(
+        !on_stderr(&["shotoshot.exe", "--board-bake"]),
+        "and a bake nobody watches"
+    );
+}
+
+fn hidden_window() -> crate::resources::OwnedWindow {
+    crate::resources::OwnedWindow(unsafe {
+        CreateWindowExW(
+            WS_EX_TOOLWINDOW,
+            w!("STATIC"),
+            w!("Board shortcut test"),
+            WS_POPUP,
+            -32000,
+            -32000,
+            1,
+            1,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+    })
+}
+/// A resident with its shortcut window open, without the user's settings.
+fn resident(owner: HWND) -> App {
+    App {
+        settings: Settings::default(),
+        session: None,
+        setup: true,
+        setup_ui: setup::Setup::default(),
+        hotkey: crate::hotkey::Hotkey::new(owner),
+        instant: instant::InstantCapture::new(owner),
+        board_hotkey: crate::hotkey::Hotkey::with_id(owner, 5),
+        tray: NOTIFYICONDATAW::default(),
+        quit_after_capture: false,
+        persist_preferences: false,
+        pending_stroke_width: None,
+        worker: None,
+        prepared: None,
+        notification_owner: None,
+        google_search: None,
+        first_frame: None,
+        toast: None,
+        presentation: None,
+        board_rebake_forced: false,
+    }
+}
+
+#[test]
+fn the_board_shortcut_refuses_the_capture_combination() {
+    let owner = hidden_window();
+    let mut app = resident(owner.0);
+    app.settings.modifiers = 1;
+    app.settings.key = 66;
+    app.setup_ui.target = setup::ShortcutTarget::Board;
+    app.save_board_shortcut(owner.0, 1, 66).unwrap();
+    assert!(app.setup_ui.error.contains("already used"));
+    app.setup_ui.error.clear();
+    app.save_board_shortcut(owner.0, 0, 66).unwrap();
+    assert!(
+        app.setup_ui.error.contains("Ctrl or Alt"),
+        "{}",
+        app.setup_ui.error
+    );
+    assert!(app.setup && !app.board_hotkey.active());
+    assert_eq!(
+        app.settings.board_shortcut,
+        Settings::default().board_shortcut
+    );
+    // Ctrl+Shift+Alt+F22: free on a test desktop, where the installed Shotoshot may hold Alt+B.
+    app.setup_ui.error.clear();
+    app.save_board_shortcut(owner.0, 7, 0x85).unwrap();
+    assert!(app.setup_ui.error.is_empty(), "{}", app.setup_ui.error);
+    assert!(app.board_hotkey.active());
+    assert_eq!(
+        app.settings.board_shortcut,
+        crate::settings::Shortcut {
+            modifiers: 7,
+            key: 0x85
+        }
+    );
+    assert!(
+        !app.setup,
+        "the window closes and the resident keeps running"
+    );
+}
+
+#[test]
+fn the_other_shortcuts_refuse_the_board_combination() {
+    let owner = hidden_window();
+    let mut app = resident(owner.0);
+    let board = app.settings.board_shortcut;
+    app.setup_ui.pending = Some((board.modifiers, board.key));
+    app.setup_activate(owner.0, 2).unwrap();
+    assert!(app.setup_ui.error.contains("board"), "capture");
+    assert!(!app.hotkey.active());
+    app.setup_ui.error.clear();
+    app.save_instant_shortcut(owner.0, board.modifiers, board.key)
+        .unwrap();
+    assert!(app.setup_ui.error.contains("board"), "instant");
+    assert!(!app.instant.hotkey.active());
+    app.setup_ui.error.clear();
+    assert!(
+        !app.save_shape_shortcut(owner.0, 0, board.modifiers, board.key)
+            .unwrap()
+    );
+    assert!(app.setup_ui.error.contains("board"), "shape");
+    assert!(app.setup, "every refusal leaves the window open");
+}
+
+#[test]
 fn stop_presentation_is_handled_even_while_a_menu_borrows_the_app() {
     unsafe {
         let instance = GetModuleHandleW(None).unwrap();
@@ -95,6 +273,7 @@ fn stop_presentation_is_handled_even_while_a_menu_borrows_the_app() {
             setup: false,
             hotkey: crate::hotkey::Hotkey::new(HWND::default()),
             instant: instant::InstantCapture::new(HWND::default()),
+            board_hotkey: crate::hotkey::Hotkey::with_id(HWND::default(), 5),
             tray: NOTIFYICONDATAW::default(),
             quit_after_capture: false,
             persist_preferences: false,
@@ -106,6 +285,7 @@ fn stop_presentation_is_handled_even_while_a_menu_borrows_the_app() {
             first_frame: None,
             toast: None,
             presentation: None,
+            board_rebake_forced: false,
             setup_ui: setup::Setup::default(),
         }));
         let window = crate::resources::OwnedWindow(
@@ -219,6 +399,7 @@ fn entering_the_live_eyedropper_samples_without_mouse_movement() {
             setup_ui: setup::Setup::default(),
             hotkey: crate::hotkey::Hotkey::new(HWND::default()),
             instant: instant::InstantCapture::new(HWND::default()),
+            board_hotkey: crate::hotkey::Hotkey::with_id(HWND::default(), 5),
             tray: NOTIFYICONDATAW::default(),
             quit_after_capture: false,
             persist_preferences: false,
@@ -230,6 +411,7 @@ fn entering_the_live_eyedropper_samples_without_mouse_movement() {
             google_search: None,
             first_frame: None,
             presentation: None,
+            board_rebake_forced: false,
         };
         app.action(owner.0, Action::Eyedropper).unwrap();
         assert_eq!(
@@ -302,6 +484,7 @@ fn native_window_messages_edit_export_and_recover_after_failure() {
             setup: false,
             hotkey: crate::hotkey::Hotkey::new(HWND::default()),
             instant: instant::InstantCapture::new(HWND::default()),
+            board_hotkey: crate::hotkey::Hotkey::with_id(HWND::default(), 5),
             tray: NOTIFYICONDATAW::default(),
             quit_after_capture: false,
             persist_preferences: false,
@@ -313,6 +496,7 @@ fn native_window_messages_edit_export_and_recover_after_failure() {
             first_frame: None,
             toast: None,
             presentation: None,
+            board_rebake_forced: false,
             setup_ui: setup::Setup::default(),
         }));
         let hwnd = CreateWindowExW(
@@ -912,8 +1096,24 @@ fn region_edges_resize_one_axis_and_picker_reads_outside_capture() {
     s.mouse_down(HWND::default(), square_center).unwrap();
     s.mouse_up(HWND::default(), square_center);
     let chosen = s.capture.picker.as_ref().unwrap().color();
-    s.mouse_down(HWND::default(), Point { x: 900., y: 650. })
+    assert_eq!(
+        s.key(HWND::default(), 13),
+        shotoshot_ui::keys::KeyOutcome::Handled
+    );
+    assert_eq!(
+        s.capture.editor.style.color, chosen,
+        "Enter keeps the wheel's colour"
+    );
+    assert!(s.capture.picker.is_none());
+    // A click outside the panel applies the wheel's colour; the screen is the eyedropper's job.
+    s.action(HWND::default(), Action::CustomColor);
+    s.mouse_down(HWND::default(), square_center).unwrap();
+    s.mouse_up(HWND::default(), square_center);
+    let chosen = s.capture.picker.as_ref().unwrap().color();
+    let effect = s
+        .mouse_down(HWND::default(), Point { x: 900., y: 650. })
         .unwrap();
+    assert_eq!(effect, None);
     assert_eq!(s.capture.editor.style.color, chosen);
     assert!(s.capture.picker.is_none());
 }

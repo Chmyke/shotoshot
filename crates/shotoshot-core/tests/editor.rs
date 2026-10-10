@@ -344,3 +344,34 @@ fn straight_line_replaces_endpoint_instead_of_recording_mouse_path() {
     e.redo();
     assert_eq!(e.objects().len(), 1);
 }
+
+#[test]
+fn clearing_removes_every_object_and_the_background_in_one_undo_step() {
+    let mut editor = Editor::default();
+    editor.tool = Tool::Rectangle;
+    editor.begin(p(10., 10.), Modifiers::default());
+    editor.update(p(60., 40.));
+    editor.finish();
+    editor.tool = Tool::Pen;
+    editor.begin(p(80., 80.), Modifiers::default());
+    editor.update(p(120., 90.));
+    editor.finish();
+    editor.fill_at(p(200., 200.), false);
+    assert_eq!(editor.objects().len(), 2);
+    assert!(
+        editor.background().is_some(),
+        "the bucket painted the background"
+    );
+    editor.clear();
+    assert!(editor.objects().is_empty());
+    assert_eq!(editor.background(), None);
+    editor.undo();
+    assert_eq!(editor.objects().len(), 2, "one undo brings everything back");
+    assert!(editor.background().is_some());
+    editor.redo();
+    assert!(editor.objects().is_empty() && editor.background().is_none());
+    // Nothing to clear records no step: the next undo is still the clear itself.
+    editor.clear();
+    editor.undo();
+    assert_eq!(editor.objects().len(), 2);
+}

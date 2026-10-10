@@ -18,6 +18,7 @@ Tray:      the Shotoshot icon starts at login; click it to capture.
 
 Requires a desktop with the XDG screenshot portal (GNOME, KDE, wlroots
 compositors such as labwc or Sway, most X11 desktops).
-Not yet on Linux: presentation mode, crop-size fields, Google Lens, live capture.
+Not yet on Linux: presentation mode, the Board (desktop notes), crop-size
+fields, Google Lens, live capture.
 
 License and source code: see ABOUT.txt.

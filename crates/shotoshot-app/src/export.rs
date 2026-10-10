@@ -237,6 +237,44 @@ fn decoded(
         Ok(image)
     }
 }
+/// The largest picture `scale` will allocate: 2^27 pixels, 512 MiB of BGRA (an 8K screen is a
+/// quarter of it). A picture file is user input; an absurd aspect ratio must not abort the process.
+const MAX_SCALED_PIXELS: u64 = 1 << 27;
+/// `image` resampled to `width` x `height` with WIC's best filter (high quality cubic). The
+/// result sits at the origin (`left` and `top` are 0). The same size is a plain copy.
+pub fn scale(image: &Image, width: u32, height: u32) -> Result<Image> {
+    image.validate()?;
+    if width == 0 || height == 0 || u64::from(width) * u64::from(height) > MAX_SCALED_PIXELS {
+        return Err(Error::new(E_INVALIDARG, "Unsupported scaled image size"));
+    }
+    if (width, height) == (image.width, image.height) {
+        return Ok(Image {
+            left: 0,
+            top: 0,
+            ..image.clone()
+        });
+    }
+    unsafe {
+        let wic = factory()?;
+        let source = wic.CreateBitmapFromMemory(
+            image.width,
+            image.height,
+            &GUID_WICPixelFormat32bppBGRA,
+            image.width * 4,
+            &image.pixels,
+        )?;
+        let scaler = wic.CreateBitmapScaler()?;
+        scaler.Initialize(
+            &source,
+            width,
+            height,
+            WICBitmapInterpolationModeHighQualityCubic,
+        )?;
+        let mut scaled = Image::solid(width, height, [0, 0, 0, 255]);
+        scaler.CopyPixels(std::ptr::null(), width * 4, &mut scaled.pixels)?;
+        Ok(scaled)
+    }
+}
 pub fn copy_image(image: &Image, owner: HWND) -> Result<()> {
     image.validate()?;
     unsafe {
@@ -367,4 +405,44 @@ pub(crate) fn png_bytes(image: &Image) -> Result<Vec<u8>> {
         ));
     }
     Ok(data)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scaling_reaches_the_requested_size_and_keeps_a_flat_colour() {
+        let _com = crate::ComApartment::new().unwrap();
+        let flat = Image::solid(3, 2, [10, 20, 30, 255]);
+        let scaled = scale(&flat, 7, 5).unwrap();
+        assert_eq!((scaled.width, scaled.height), (7, 5));
+        assert_eq!((scaled.left, scaled.top), (0, 0));
+        assert!(scaled.validate().is_ok());
+        for pixel in scaled.pixels.chunks(4) {
+            for (got, want) in pixel.iter().zip([10u8, 20, 30, 255]) {
+                assert!(got.abs_diff(want) <= 1, "{pixel:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn scaling_to_the_same_size_copies_and_moves_to_the_origin() {
+        let mut image = Image::solid(2, 2, [1, 2, 3, 255]);
+        image.pixels[..4].copy_from_slice(&[9, 8, 7, 255]);
+        image.left = -40;
+        image.top = 12;
+        let copy = scale(&image, 2, 2).unwrap();
+        assert_eq!(copy.pixels, image.pixels);
+        assert_eq!((copy.left, copy.top), (0, 0));
+    }
+
+    #[test]
+    fn scaling_refuses_an_empty_or_absurd_size_before_allocating() {
+        let image = Image::solid(1, 1, [0, 0, 0, 255]);
+        assert!(scale(&image, 0, 10).is_err());
+        assert!(scale(&image, 10, 0).is_err());
+        assert!(scale(&image, 1 << 20, 1 << 20).is_err());
+        assert!(scale(&image, u32::MAX, u32::MAX).is_err());
+    }
 }

@@ -75,24 +75,35 @@ Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
 
 ; A double-click on an editable ".shoto" image reopens it in Shotoshot. Per-user keys, removed
-; with the application. The file is a PNG, so it is declared as an image. Explorer shows the
-; Shotoshot icon, not a thumbnail: Windows only extracts one for extensions registered
-; machine-wide, and nothing of ours is loaded in Explorer.
+; with the application. The file is a PNG, so it is declared as an image.
+; Thumbnails: the perceived type alone gives none (0x8004B200, probed 2026-10-10). Binding the
+; extension to Windows' own Photo Thumbnail Provider (shell extension category
+; {E357FCCD-...}, provider {C7657C4A-...}) makes Explorer and the desktop show the capture
+; itself, decoded as the PNG it is. The TypeOverlay value makes Explorer stamp the Shotoshot
+; icon on that thumbnail, as it does for documents. Nothing of ours is loaded in Explorer;
+; packaging/test-thumbnail.ps1 proves the thumbnail after an installation.
 [Registry]
 Root: HKCU; Subkey: "Software\Classes\.shoto"; ValueType: string; ValueName: ""; ValueData: "Shotoshot.Document"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\.shoto"; ValueType: string; ValueName: "Content Type"; ValueData: "image/png"
 Root: HKCU; Subkey: "Software\Classes\.shoto"; ValueType: string; ValueName: "PerceivedType"; ValueData: "image"
+Root: HKCU; Subkey: "Software\Classes\.shoto\ShellEx\{{E357FCCD-A995-4576-B01F-234630154E96}"; ValueType: string; ValueName: ""; ValueData: "{{C7657C4A-9F68-40fa-A4DF-96BC08EB3551}"
 Root: HKCU; Subkey: "Software\Classes\Shotoshot.Document"; ValueType: string; ValueName: ""; ValueData: "Shotoshot editable image"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Shotoshot.Document"; ValueType: string; ValueName: "TypeOverlay"; ValueData: "{app}\{#AppExeName},0"
 Root: HKCU; Subkey: "Software\Classes\Shotoshot.Document\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#AppExeName},0"
 Root: HKCU; Subkey: "Software\Classes\Shotoshot.Document\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 
-; Gives Print Screen back to the Windows Snipping Tool if Shotoshot took it (no-op otherwise).
-; Runs before files are removed; the app owns this logic (crates/shotoshot-app/src/print_screen.rs).
+; Gives back to Windows what Shotoshot took, before the files are removed; the app owns the logic.
+; - Print Screen goes back to the Snipping Tool if Shotoshot took it
+;   (crates/shotoshot-app/src/print_screen.rs).
+; - A desktop that still shows the Board gets its own wallpaper back; the notes stay on disk
+;   (crates/shotoshot-app/src/board/bake.rs).
+; Each is a no-op otherwise. The app's tests keep this list equal to the restores it offers.
 [UninstallRun]
 Filename: "{app}\{#AppExeName}"; Parameters: "--restore-print-screen"; Flags: runhidden waituntilterminated; RunOnceId: "RestorePrintScreen"
+Filename: "{app}\{#AppExeName}"; Parameters: "--restore-wallpaper"; Flags: runhidden waituntilterminated; RunOnceId: "RestoreWallpaper"
 
 [Code]
 const

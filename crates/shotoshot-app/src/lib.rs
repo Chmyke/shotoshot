@@ -1,6 +1,7 @@
 //! ROLE: Windows platform layer of Shotoshot (Win32, Direct2D, WIC); empty elsewhere.
 #![cfg(windows)]
 mod app;
+pub mod board;
 use shotoshot_ui::capture_name;
 mod demo;
 mod diagnostics;
@@ -19,7 +20,7 @@ pub mod settings;
 mod site_previews;
 mod startup;
 mod toolbar;
-pub use app::run;
+pub use app::{reports_errors_on_stderr, run};
 pub use export::*;
 pub use image::*;
 pub use render::*;

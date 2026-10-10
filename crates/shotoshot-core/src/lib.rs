@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod board;
 mod document;
 mod editor;
 mod geometry;

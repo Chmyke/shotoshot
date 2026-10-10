@@ -57,6 +57,8 @@ pub trait Store: Sized {
     /// Changes only the editor's custom color, preserving current resident preferences.
     fn save_custom_color(color: [u8; 3]) -> std::result::Result<(), String>;
     fn save_stroke_width(width: u32) -> std::result::Result<(), String>;
+    /// Changes only whether the board is shown, preserving current resident preferences.
+    fn save_board_visible(visible: bool) -> std::result::Result<(), String>;
     /// Remembers where and in which format the editor last saved.
     fn save_destination(folder: &Path, format: SaveFormat) -> std::result::Result<(), String>;
     fn save_folder(&self) -> Result<PathBuf>;
@@ -85,6 +87,11 @@ impl Store for Settings {
         let _lock = SettingsLock::acquire()?;
         let path = Self::path().map_err(|e| e.to_string())?;
         Self::save_editor_to(&path, None, Some(width), None, replace)
+    }
+    fn save_board_visible(visible: bool) -> std::result::Result<(), String> {
+        let _lock = SettingsLock::acquire()?;
+        let path = Self::path().map_err(|e| e.to_string())?;
+        Self::save_board_visible_to(&path, visible, replace)
     }
     fn save_destination(folder: &Path, format: SaveFormat) -> std::result::Result<(), String> {
         let _lock = SettingsLock::acquire()?;

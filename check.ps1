@@ -47,10 +47,31 @@ try {
         cargo build --workspace --release --locked
         if ($LASTEXITCODE -ne 0) { exit 1 }
         Get-ChildItem (Join-Path $PSScriptRoot 'target') -Filter 'shotoshot-*.png' | Remove-Item
-        foreach ($argument in @('--render-demo', '--diagnostic', '--warm-diagnostic', '--presentation-diagnostic', '--document-diagnostic')) {
+        # The probes stand in for the user without being the user: the real settings and board
+        # files must come out unchanged (2026-10-10: a probe rewrote the settings in its format).
+        $userState = {
+            $root = Join-Path $env:LOCALAPPDATA 'Shotoshot'
+            $settings = Join-Path $root 'settings.txt'
+            $board = Join-Path $root 'board'
+            if (Test-Path -LiteralPath $settings) {
+                'settings.txt ' + (Get-FileHash -LiteralPath $settings -Algorithm SHA256).Hash
+            }
+            if (Test-Path -LiteralPath $board) {
+                'board/'
+                Get-ChildItem -LiteralPath $board -Recurse -File -Force | Sort-Object FullName |
+                    ForEach-Object { '{0} {1}' -f $_.FullName.Substring($board.Length), $_.Length }
+            }
+        }
+        $before = (& $userState) -join "`n"
+        foreach ($argument in @('--render-demo', '--diagnostic', '--warm-diagnostic', '--presentation-diagnostic', '--document-diagnostic', '--board-diagnostic')) {
             $probe = Start-Process -FilePath (Join-Path $PSScriptRoot 'target/release/shotoshot.exe') -ArgumentList $argument -WindowStyle Hidden -PassThru
             $null = $probe.Handle
-            if (-not $probe.WaitForExit(20000)) { $probe.Kill(); throw "Timed out: $argument" }
+            $finished = $probe.WaitForExit(20000)
+            if (-not $finished) { $probe.Kill() }
+            if (((& $userState) -join "`n") -ne $before) {
+                throw "$argument changed the user's settings or board under $env:LOCALAPPDATA\Shotoshot."
+            }
+            if (-not $finished) { throw "Timed out: $argument" }
             $probe.Refresh()
             if ($probe.ExitCode -ne 0) { throw "Failed: $argument ($($probe.ExitCode))" }
         }

@@ -184,6 +184,98 @@ pub fn capture_desktop() -> Result<Image> {
     Screen::Desktop.capture()
 }
 
+/// Copies `src` into `dst` at (`x`, `y`), clipped.
+pub(crate) fn blit(dst: &mut Image, src: &Image, x: i32, y: i32) {
+    for row in 0..src.height as i32 {
+        let ty = y + row;
+        if ty < 0 || ty >= dst.height as i32 {
+            continue;
+        }
+        let from = (-x).clamp(0, src.width as i32);
+        let to = (dst.width as i32 - x).clamp(0, src.width as i32);
+        if to <= from {
+            continue;
+        }
+        let s = (row as usize * src.width as usize + from as usize) * 4;
+        let d = (ty as usize * dst.width as usize + (x + from) as usize) * 4;
+        let n = (to - from) as usize * 4;
+        dst.pixels[d..d + n].copy_from_slice(&src.pixels[s..s + n]);
+    }
+}
+
+/// The desktop as Explorer composes it, wallpaper and icons and no window: a DWM rendering of
+/// the Progman window, drawn over `into` where the two overlap. Fails when Progman is missing
+/// or when the rendering comes back entirely black (the sign that nothing was drawn).
+pub fn render_desktop(into: &mut Image) -> Result<()> {
+    use windows::Win32::{
+        Foundation::{E_FAIL, RECT},
+        Storage::Xps::{PRINT_WINDOW_FLAGS, PrintWindow},
+    };
+    unsafe {
+        let progman = FindWindowW(w!("Progman"), None)?;
+        let mut area = RECT::default();
+        GetWindowRect(progman, &mut area)?;
+        let (width, height) = (area.right - area.left, area.bottom - area.top);
+        if width <= 0 || height <= 0 {
+            return Err(Error::new(E_FAIL, "The desktop window has no area"));
+        }
+        let mut rendering = Image::solid(width as u32, height as u32, [0, 0, 0, 255]);
+        let screen = GetDC(None);
+        if screen.is_invalid() {
+            return Err(Error::from_thread());
+        }
+        let mut surface = CaptureSurface {
+            screen,
+            memory: CreateCompatibleDC(Some(screen)),
+            bitmap: HBITMAP::default(),
+            previous: HGDIOBJ::default(),
+        };
+        if surface.memory.is_invalid() {
+            return Err(Error::from_thread());
+        }
+        let mut bits = std::ptr::null_mut();
+        surface.bitmap = CreateDIBSection(
+            Some(screen),
+            &rendering.info(),
+            DIB_RGB_COLORS,
+            &mut bits,
+            None,
+            0,
+        )?;
+        surface.previous = SelectObject(surface.memory, surface.bitmap.into());
+        // PITFALL: PW_RENDERFULLCONTENT asks DWM for the composed content, children included,
+        // and works while other windows cover the desktop; a BitBlt of the screen would copy
+        // those windows into the picture.
+        if !PrintWindow(
+            progman,
+            surface.memory,
+            PRINT_WINDOW_FLAGS(PW_RENDERFULLCONTENT),
+        )
+        .as_bool()
+        {
+            return Err(Error::new(E_FAIL, "The desktop could not be rendered"));
+        }
+        GdiFlush().ok()?;
+        std::ptr::copy_nonoverlapping(
+            bits.cast::<u8>(),
+            rendering.pixels.as_mut_ptr(),
+            rendering.pixels.len(),
+        );
+        if rendering
+            .pixels
+            .chunks(4)
+            .all(|pixel| pixel[0] | pixel[1] | pixel[2] == 0)
+        {
+            return Err(Error::new(E_FAIL, "The desktop rendering is empty"));
+        }
+        for pixel in rendering.pixels.as_chunks_mut::<4>().0 {
+            pixel[3] = 255;
+        }
+        blit(into, &rendering, area.left - into.left, area.top - into.top);
+        Ok(())
+    }
+}
+
 /// Reused local DIB for the live eyedropper. The portable image keeps its desktop size;
 /// only the pixels visible in the loupe are refreshed.
 pub(crate) struct DesktopSample(LiveSurface);
@@ -462,5 +554,42 @@ mod sample_tests {
             let r = sample_bounds(&image, shotoshot_core::Point { x, y });
             assert_eq!([r.left, r.top, r.right, r.bottom], expected);
         }
+    }
+}
+
+#[cfg(test)]
+mod blit_tests {
+    use super::*;
+    #[test]
+    fn blit_copies_a_picture_clipped_to_the_destination() {
+        let mut dst = Image::solid(3, 2, [0, 0, 0, 255]);
+        let src = Image::solid(2, 2, [9, 9, 9, 255]);
+        blit(&mut dst, &src, 2, 1); // only one pixel is inside
+        let painted: Vec<usize> = dst
+            .pixels
+            .chunks(4)
+            .enumerate()
+            .filter(|(_, p)| p[0] == 9)
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(painted, vec![5], "bottom right pixel only");
+        blit(&mut dst, &src, -5, -5); // fully outside: nothing happens
+        blit(&mut dst, &src, 3, 0); // fully to the right: nothing happens
+        assert_eq!(dst.pixels.iter().filter(|b| **b == 9).count(), 3);
+    }
+}
+
+#[cfg(test)]
+mod desktop_rendering_tests {
+    /// Reads the desktop composition only and changes nothing; `check.ps1` runs it on its own.
+    #[test]
+    #[ignore = "real desktop: reads Explorer's composition of the desktop, run alone by check.ps1"]
+    fn real_desktop_rendering_covers_the_frame_without_any_window() {
+        let mut frame = super::Screen::Desktop.blank().unwrap();
+        super::render_desktop(&mut frame).unwrap();
+        assert!(
+            frame.pixels.chunks(4).any(|p| p[0] | p[1] | p[2] != 0),
+            "something was drawn"
+        );
     }
 }

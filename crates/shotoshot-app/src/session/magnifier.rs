@@ -68,4 +68,43 @@ mod tests {
         assert_eq!(s.capture.editor.style.color, expected);
         assert!(!s.capture.eyedropper);
     }
+    #[test]
+    fn no_loupe_is_painted_while_the_wheel_is_open() {
+        let _com = ComApartment::new().unwrap();
+        let mut image = Image::solid(800, 600, [25, 25, 25, 255]);
+        for y in 0..600usize {
+            for x in 0..800usize {
+                image.pixels[(y * 800 + x) * 4..(y * 800 + x) * 4 + 4].copy_from_slice(&[
+                    (x % 256) as u8,
+                    (y % 256) as u8,
+                    ((x + y) % 256) as u8,
+                    255,
+                ]);
+            }
+        }
+        let mut s = Session::new(image).unwrap();
+        s.capture.region = Rect::new(Point { x: 10., y: 10. }, Point { x: 700., y: 500. });
+        s.capture.selecting = false;
+        s.capture.toolbar_visible = false;
+        s.capture.pointer = Point { x: 600., y: 450. };
+        s.action(HWND::default(), Action::CustomColor);
+        let panel = s.capture.picker.as_ref().unwrap().bounds();
+        assert!(panel.contains(s.capture.pointer));
+        // The pointer wanders off the panel: the frame does not change, the wheel alone shows.
+        let reference = crate::paint_image(800, 600, |dc| s.paint(dc))
+            .unwrap()
+            .pixels;
+        for pointer in [Point { x: 120.8, y: 100.2 }, Point { x: 40., y: 420. }] {
+            assert!(!panel.contains(pointer));
+            s.capture.pointer = pointer;
+            let frame = crate::paint_image(800, 600, |dc| s.paint(dc))
+                .unwrap()
+                .pixels;
+            assert_eq!(
+                frame, reference,
+                "the wheel and the eyedropper are two tools"
+            );
+        }
+        assert!(s.capture.picker.is_some());
+    }
 }

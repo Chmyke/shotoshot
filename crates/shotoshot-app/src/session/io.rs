@@ -234,6 +234,7 @@ impl Native {
                 color: rgb,
                 font,
                 drag_anchor: None,
+                scroll: Default::default(),
             });
             let _ = SetFocus(Some(input));
             if id.is_some() {

@@ -467,8 +467,6 @@ impl Editor {
                     .is_some_and(|r| r.contains(p));
             window.set_cursor(cursor_icon(if over_badge {
                 CursorKind::IBeam
-            } else if self.capture.picker.is_some() {
-                CursorKind::Arrow
             } else {
                 self.capture.cursor(p)
             }));

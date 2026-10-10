@@ -35,6 +35,8 @@ pub(super) enum Icon {
     Clock,
     Sound,
     Power,
+    /// A note pinned to the desktop.
+    Board,
     /// The editor toolbar's glyph for the same notion.
     Toolbar(Action),
 }
@@ -60,6 +62,14 @@ const fn title(id: u32, label: &'static str) -> Row {
 /// Command ids are the ones `App::menu` handles; titles (90..) and the separator are inert.
 const ROOT: &[Row] = &[
     row(1, "Take a screenshot", Icon::Capture, Kind::Command),
+    row(8, "Edit board", Icon::Board, Kind::Command),
+    row(9, "Show board", Icon::Board, Kind::Toggle),
+    row(
+        10,
+        "Clear board",
+        Icon::Toolbar(Action::ClearBoard),
+        Kind::Command,
+    ),
     title(90, "Presentation"),
     row(101, "Pointer halo", Icon::Halo, Kind::Toggle),
     row(103, "Keyboard", Icon::Keyboard, Kind::Toggle),
@@ -94,6 +104,7 @@ const ROOT: &[Row] = &[
         Icon::Toolbar(Action::Tool(Tool::Ellipse)),
         Kind::Command,
     ),
+    row(13, "Board", Icon::Board, Kind::Command),
     title(92, "Options"),
     row(7, "Screenshot sound", Icon::Sound, Kind::Toggle),
     row(
@@ -166,6 +177,10 @@ pub(super) struct Values {
     pub sound: bool,
     pub live: bool,
     pub startup: bool,
+    /// Whether the board is shown in the wallpaper.
+    pub board: bool,
+    /// Packed with `shortcut`.
+    pub board_shortcut: usize,
 }
 impl Values {
     fn checked(&self, id: u32) -> bool {
@@ -177,6 +192,7 @@ impl Values {
             7 => self.sound,
             5 => self.live,
             4 => self.startup,
+            9 => self.board,
             _ => {
                 commands::duration_ms(id) == Some(self.duration_ms)
                     || commands::layout(id) == Some(self.layout)
@@ -188,6 +204,7 @@ impl Values {
         match id {
             1 | 2 => self.capture,
             6 => self.instant,
+            8 | 13 => self.board_shortcut,
             110..=112 => self.shapes[(id - 110) as usize],
             120 => self.duration_ms as usize,
             130 => self.layout.index(),
@@ -469,6 +486,21 @@ pub(super) fn draw_icon<C: Canvas>(
         Icon::Power => {
             arc(canvas, origin, scale, rgb, ((10., 10.5), 7.5), (-55., 235.))?;
             segments(canvas, origin, scale, rgb, &[(10., 2.), (10., 10.)])?;
+        }
+        Icon::Board => {
+            // A note and two lines of its text.
+            canvas.stroke_round_rect(
+                Rect {
+                    min: at(3., 2.5),
+                    max: at(17., 17.5),
+                },
+                2.5 * scale,
+                ink,
+                1.6 * scale,
+            )?;
+            for line in [[(6.5, 8.), (13.5, 8.)], [(6.5, 12.), (11., 12.)]] {
+                segments(canvas, origin, scale, rgb, &line)?;
+            }
         }
     }
     Ok(())
@@ -885,6 +917,8 @@ fn sample() -> Values {
         sound: defaults.instant_sound,
         live: defaults.live_capture,
         startup: defaults.start_with_windows,
+        board: defaults.board_visible,
+        board_shortcut: shortcut(defaults.board_shortcut, false),
     }
 }
 pub(super) fn preview() -> Result<()> {
@@ -1018,6 +1052,23 @@ mod tests {
                 row.label
             );
         }
+    }
+
+    #[test]
+    fn the_board_rows_show_their_state_and_shortcut() {
+        let values = Values {
+            board: true,
+            board_shortcut: 77,
+            ..Default::default()
+        };
+        assert!(values.checked(9));
+        assert_eq!([values.data(8), values.data(13)], [77, 77]);
+        assert!(find(8).is_some_and(|r| r.label == "Edit board"));
+        assert!(find(9).is_some_and(|r| r.label == "Show board" && r.kind == Kind::Toggle));
+        assert!(find(13).is_some_and(|r| r.label == "Board" && r.kind == Kind::Command));
+        assert!(find(10).is_some_and(|r| r.label == "Clear board"
+            && r.kind == Kind::Command
+            && matches!(r.icon, Icon::Toolbar(Action::ClearBoard))));
     }
 
     #[test]

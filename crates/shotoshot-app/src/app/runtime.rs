@@ -2,8 +2,50 @@
 //! ORDER: COM and window guards outlive all callbacks and session resources.
 use super::*;
 
+/// Whether a process started with `args` may write the user's settings. Never a diagnostic
+/// that uses the default settings, nor the document diagnostic's child: it stands in for
+/// the user, and its Save would rewrite their real settings in this build's format.
+pub(super) fn persists_preferences(mut args: impl Iterator<Item = String>) -> bool {
+    !args.any(|a| {
+        matches!(
+            a.as_str(),
+            "--diagnostic" | "--first-frame-diagnostic" | document::PROBE
+        )
+    })
+}
+
+const RESTORE_PRINT_SCREEN: &str = "--restore-print-screen";
+const RESTORE_WALLPAPER: &str = "--restore-wallpaper";
+/// What the uninstaller runs before it removes the files (`packaging/shotoshot.iss`,
+/// `[UninstallRun]`), in this order: each gives back to Windows something Shotoshot took.
+pub(super) const UNINSTALL_RESTORES: [&str; 2] = [RESTORE_PRINT_SCREEN, RESTORE_WALLPAPER];
+
+/// Whether a process started with `args` has nobody to read a message box: its error goes to
+/// stderr with exit code 1 (see main.rs).
+pub fn reports_errors_on_stderr(mut args: impl Iterator<Item = String>) -> bool {
+    args.any(|a| {
+        UNINSTALL_RESTORES.contains(&a.as_str())
+            || matches!(
+                a.as_str(),
+                "--diagnostic"
+                    | "--render-demo"
+                    | "--render-site-previews"
+                    | "--editor-diagnostic"
+                    | "--first-frame-diagnostic"
+                    | "--prepared-editor"
+                    | "--warm-diagnostic"
+                    | "--presentation-diagnostic"
+                    | "--google-diagnostic"
+                    | "--document-diagnostic"
+                    | "--board-diagnostic"
+                    | "--board-diagnostic-set"
+                    | "--document-probe"
+            )
+    })
+}
+
 pub fn run() -> Result<()> {
-    if std::env::args().any(|a| a == "--restore-print-screen") {
+    if std::env::args().any(|a| a == RESTORE_PRINT_SCREEN) {
         // Called by the uninstaller: no window, no COM, errors go to stderr (see main.rs).
         // A pre-0.2.0 backup of the Print Screen option must be found under the new name.
         crate::rename_migration::run();
@@ -18,14 +60,38 @@ pub fn run() -> Result<()> {
     // The first-frame diagnostic is a real editor, without the user's settings.
     let first_frame = std::env::args().any(|a| a == "--first-frame-diagnostic");
     let prepared_editor = std::env::args().any(|a| a == "--prepared-editor");
+    // The board's notes in the editor, a process of its own like a reopened document.
+    let board = std::env::args().any(|a| a == "--board");
     let editor_process = first_frame
         || prepared_editor
         || document.is_some()
+        || board
         || std::env::args().any(|a| a == "--editor");
     let _com = ComApartment::new()?;
     // PITFALL: Set process DPI before creating any window or reading screen metrics.
     unsafe {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    }
+    if std::env::args().any(|a| a == "--board-bake") {
+        // Spawned by the resident: no window and no mutex of the roles below, only the
+        // bake's own lock. Screen rectangles need the DPI awareness set above.
+        return crate::board::bake::process();
+    }
+    if std::env::args().any(|a| a == RESTORE_WALLPAPER) {
+        // Called by the uninstaller: no window, errors go to stderr (see main.rs).
+        return crate::board::bake::restore();
+    }
+    if std::env::args().any(|a| a == "--board-clear") {
+        // Spawned by the resident's Clear board: the same footing as a bake.
+        return crate::board::clear::process();
+    }
+    if std::env::args().any(|a| a == "--board-diagnostic") {
+        // Reads the screens and renders a synthetic board under target/: the desktop is not set.
+        return crate::board::probe::run();
+    }
+    if std::env::args().any(|a| a == "--board-diagnostic-set") {
+        // Explicit opt-in, never run by check.ps1: really sets the desktop, then gives it back.
+        return crate::board::probe::run_set();
     }
     if std::env::args().any(|a| a == "--google-diagnostic") {
         // Explicit opt-in network probe: generated pixels only, never the desktop.
@@ -79,6 +145,9 @@ pub fn run() -> Result<()> {
                 w!("Local\\Shotoshot.Diagnostics")
             } else if first_frame {
                 w!("Local\\Shotoshot.FirstFrameDiagnostic")
+            } else if board {
+                // Never the editor's name, as for a document; one board session at a time.
+                w!("Local\\Shotoshot.Board")
             } else if document.is_some() {
                 // Never the editor's name: holding it would stop the resident's next editor.
                 w!("Local\\Shotoshot.Document")
@@ -91,6 +160,10 @@ pub fn run() -> Result<()> {
         let _mutex = crate::resources::OwnedMutex(mutex);
         // Reopened documents do not exclude each other.
         if GetLastError() == ERROR_ALREADY_EXISTS && document.is_none() {
+            if board {
+                // A board session is already open: this second request has nothing to add.
+                return Ok(());
+            }
             if prepared_editor {
                 return Err(Error::new(E_FAIL, "An editor already exists"));
             }
@@ -146,9 +219,10 @@ pub fn run() -> Result<()> {
             session: None,
             hotkey: crate::hotkey::Hotkey::new(HWND::default()),
             instant: instant::InstantCapture::new(HWND::default()),
+            board_hotkey: crate::hotkey::Hotkey::with_id(HWND::default(), 5),
             tray: NOTIFYICONDATAW::default(),
             quit_after_capture: editor_process,
-            persist_preferences: !diagnostic && !first_frame,
+            persist_preferences: persists_preferences(std::env::args()),
             pending_stroke_width: None,
             worker: None,
             prepared: None,
@@ -166,6 +240,7 @@ pub fn run() -> Result<()> {
             first_frame: first_frame.then(Default::default),
             toast: None,
             presentation: None,
+            board_rebake_forced: false,
             setup_ui: setup::Setup::default(),
         }));
         let hwnd = CreateWindowExW(
@@ -191,6 +266,7 @@ pub fn run() -> Result<()> {
             let mut app = state.borrow_mut();
             app.hotkey = crate::hotkey::Hotkey::new(hwnd);
             app.instant = instant::InstantCapture::new(hwnd);
+            app.board_hotkey = crate::hotkey::Hotkey::with_id(hwnd, 5);
             app.tray = NOTIFYICONDATAW {
                 cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
                 hWnd: hwnd,
@@ -245,6 +321,31 @@ pub fn run() -> Result<()> {
                     )
                     .ok();
                 }
+                let shortcut = app.settings.board_shortcut;
+                let reserved = app
+                    .settings
+                    .presentation
+                    .shape_shortcuts
+                    .contains(&shortcut)
+                    || app.settings.instant_shortcut == shortcut
+                    || (app.settings.modifiers == shortcut.modifiers
+                        && app.settings.key == shortcut.key)
+                    || (shortcut.modifiers == 3 && shortcut.key == 27);
+                if reserved
+                    || app
+                        .board_hotkey
+                        .replace(free, shortcut.modifiers, shortcut.key, || Ok(()))
+                        .is_err()
+                {
+                    app.toast = notice::Toast::new(
+                        "Board shortcut unavailable. Change it in the Shotoshot menu.",
+                        true,
+                    )
+                    .ok();
+                }
+                if app.settings.board_visible {
+                    let _ = crate::board::bake::spawn();
+                }
                 let presentation = crate::presentation::Presentation::new(
                     hwnd,
                     app.settings.presentation.clone(),
@@ -289,6 +390,8 @@ pub fn run() -> Result<()> {
         }
         if let Some(path) = &document {
             state.borrow_mut().open_document(hwnd, path)?;
+        } else if board {
+            state.borrow_mut().open_board(hwnd)?;
         } else if !prepared_editor && (editor_process || std::env::args().any(|a| a == "--capture"))
         {
             PostMessageW(Some(hwnd), CAPTURE_MESSAGE, WPARAM(0), LPARAM(0))?;

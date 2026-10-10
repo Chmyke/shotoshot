@@ -55,6 +55,7 @@ impl Preparation {
                 acceleration: None,
             },
             document: None,
+            board: None,
         })
     }
 }

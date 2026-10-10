@@ -22,6 +22,14 @@ pub(super) fn held_modifiers() -> u32 {
 }
 
 impl App {
+    /// Remembers whether the board is shown, here and for the other processes.
+    fn save_board_visible(&mut self, visible: bool) -> Result<()> {
+        if self.persist_preferences {
+            Settings::save_board_visible(visible).map_err(|e| Error::new(E_FAIL, e))?;
+        }
+        self.settings.board_visible = visible;
+        Ok(())
+    }
     pub(super) fn key(&mut self, hwnd: HWND, key: u32) -> Result<()> {
         if self.setup {
             return self.setup_key(hwnd, key);
@@ -118,6 +126,11 @@ impl App {
                     sound: self.settings.instant_sound,
                     live: self.settings.live_capture,
                     startup: crate::startup::enabled()?,
+                    board: self.settings.board_visible,
+                    board_shortcut: tray_menu::shortcut(
+                        self.settings.board_shortcut,
+                        !self.board_hotkey.active(),
+                    ),
                 },
             )?;
             let _ = SetMenuInfo(
@@ -189,6 +202,41 @@ impl App {
                 }
                 2 => self.show_setup(hwnd)?,
                 6 => self.show_shortcut_setup(hwnd, setup::ShortcutTarget::Instant)?,
+                8 => super::board::spawn_session()?,
+                // Every note gone, in a process of its own; it refuses while a session is open.
+                10 => crate::board::clear::spawn()?,
+                9 => {
+                    let visible = !self.settings.board_visible;
+                    // ORDER: saved first. A bake process reads it once it holds the bake's lock,
+                    // so one still waiting behind `hide` leaves without showing the board again.
+                    self.save_board_visible(visible)?;
+                    let applied = if visible {
+                        // Baked in a process of its own, like every bake the resident starts.
+                        // TRADE-OFF: only the start is checked here. The switch reflects the
+                        // request: a bake that then fails shows its own error, one that gives up
+                        // behind a lock held for 60 s says nothing, and either leaves the switch
+                        // on with nothing on screen until the next display or wallpaper event
+                        // bakes again. Waiting for the result would block this thread for the
+                        // bake's length; turning the setting off from the failed process would
+                        // cancel that retry, which only runs for a visible board.
+                        crate::board::bake::spawn()
+                    } else {
+                        // Quick, on this thread; waits for a running bake, up to 10 s, and for the
+                        // desktop to show the base, up to 2 s.
+                        crate::board::folder().and_then(|folder| {
+                            crate::board::bake::hide(
+                                &folder,
+                                &crate::board::wallpaper::Wallpaper::new()?,
+                            )
+                        })
+                    };
+                    if let Err(error) = applied {
+                        // Not done: the menu offers the same choice again.
+                        self.save_board_visible(!visible)?;
+                        return Err(error);
+                    }
+                }
+                13 => self.show_shortcut_setup(hwnd, setup::ShortcutTarget::Board)?,
                 7 => {
                     let mut next = self.settings.clone();
                     next.instant_sound = !next.instant_sound;

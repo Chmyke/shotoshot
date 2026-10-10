@@ -27,6 +27,8 @@ impl Capture {
                 host.capture_pointer();
                 return Ok(None);
             }
+            // A click off the panel applies the wheel's colour. The wheel never reads the
+            // screen: that is the eyedropper's job, a tool of its own (Mickaël, 2026-10-10).
             let color = picker.color();
             self.picker = None;
             self.accept_custom_color(host, color);
@@ -242,6 +244,7 @@ impl Capture {
             Action::FullScreen if !self.selecting => self.toggle_screen(),
             Action::Undo => self.editor.undo(),
             Action::Redo => self.editor.redo(),
+            Action::ClearBoard if self.board => self.editor.clear(),
             _ => {}
         }
     }
@@ -393,6 +396,48 @@ mod tests {
         c.pointer_move(&mut host, p(300., 200.), Modifiers::default());
         assert_eq!((c.editor.style.width, c.text_size), (8., 48.));
         assert_eq!(c.stroke_width_setting(), 4);
+    }
+    #[test]
+    fn a_click_outside_the_open_wheel_applies_its_colour_and_closes_it() {
+        let (mut c, mut host) = selected_at(1.);
+        c.image.pixels[(700 * 1800 + 1500) * 4..][..4].copy_from_slice(&[30, 20, 10, 255]);
+        c.pointer = p(300., 300.);
+        c.action(&mut host, Action::CustomColor);
+        let before = c.editor.style.color;
+        let square = c.picker.as_ref().unwrap().bounds().min + p(130., 144.);
+        c.pointer_down(&mut host, square, Modifiers::default())
+            .unwrap();
+        c.pointer_up(&mut host, square, Modifiers::default());
+        let chosen = c.picker.as_ref().unwrap().color();
+        assert_ne!(chosen, before);
+        let effect = c
+            .pointer_down(&mut host, p(1500., 700.), Modifiers::default())
+            .unwrap();
+        assert_eq!(
+            effect, None,
+            "the wheel never reads the screen: that is the eyedropper's job"
+        );
+        assert!(c.picker.is_none());
+        assert_eq!(c.editor.style.color, chosen);
+        assert_eq!(c.custom_color, chosen);
+    }
+    #[test]
+    fn a_click_inside_the_wheel_panel_keeps_it_open() {
+        let (mut c, mut host) = selected_at(1.);
+        c.pointer = p(300., 300.);
+        c.action(&mut host, Action::CustomColor);
+        let picker = c.picker.as_ref().unwrap();
+        let chosen = picker.color();
+        let before = c.editor.style.color;
+        // The panel's margin: inside the bounds, on no control.
+        let margin = picker.bounds().min + p(2., 2.);
+        let effect = c
+            .pointer_down(&mut host, margin, Modifiers::default())
+            .unwrap();
+        assert_eq!(effect, None);
+        assert_eq!(c.editor.style.color, before);
+        let picker = c.picker.as_ref().expect("the wheel stays open");
+        assert_eq!(picker.color(), chosen);
     }
     #[test]
     fn the_picker_opens_at_the_interface_scale() {

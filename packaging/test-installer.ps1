@@ -130,6 +130,12 @@ try {
         $extension.'Content Type' -eq 'image/png') '.shoto is a Shotoshot document and an image'
     $command = (Get-ItemProperty -Path "$documentKey\shell\open\command" -ErrorAction SilentlyContinue).'(default)'
     Check ($command -eq "`"$installedExe`" `"%1`"") ".shoto opens with the installed exe (got $command)"
+    $thumbnailProvider = (Get-ItemProperty -Path "$extensionKey\ShellEx\{E357FCCD-A995-4576-B01F-234630154E96}" -ErrorAction SilentlyContinue).'(default)'
+    Check ($thumbnailProvider -eq '{C7657C4A-9F68-40fa-A4DF-96BC08EB3551}') ".shoto thumbnails come from Windows' photo thumbnail provider (got $thumbnailProvider)"
+    $overlay = (Get-ItemProperty -Path $documentKey -ErrorAction SilentlyContinue).TypeOverlay
+    Check ($overlay -eq "$installedExe,0") ".shoto thumbnails are stamped with the Shotoshot icon (got $overlay)"
+    $thumbnail = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-thumbnail.ps1') | Out-String
+    Check ($LASTEXITCODE -eq 0) "Explorer gets the image as the .shoto thumbnail ($($thumbnail.Trim()))"
     Check ((Installed-Processes).Count -eq 0) 'silent install does not launch the app'
 
     # The uninstaller must close a running installed copy and clean its autostart value.

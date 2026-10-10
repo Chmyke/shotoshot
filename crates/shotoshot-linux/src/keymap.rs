@@ -20,6 +20,8 @@ pub fn virtual_key(logical: &Key, physical: PhysicalKey) -> Option<u32> {
             NamedKey::Tab => 9,
             NamedKey::Enter => 13,
             NamedKey::Escape => 27,
+            NamedKey::PageUp => 33,
+            NamedKey::PageDown => 34,
             NamedKey::End => 35,
             NamedKey::Home => 36,
             NamedKey::ArrowLeft => 37,
@@ -73,6 +75,20 @@ mod tests {
                 PhysicalKey::Code(KeyCode::Escape)
             ),
             Some(27)
+        );
+        assert_eq!(
+            virtual_key(
+                &Key::Named(NamedKey::PageUp),
+                PhysicalKey::Code(KeyCode::PageUp)
+            ),
+            Some(33)
+        );
+        assert_eq!(
+            virtual_key(
+                &Key::Named(NamedKey::PageDown),
+                PhysicalKey::Code(KeyCode::PageDown)
+            ),
+            Some(34)
         );
     }
 }

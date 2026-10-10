@@ -258,6 +258,10 @@ pub struct Settings {
     pub save_format: SaveFormat,
     pub presentation: PresentationSettings,
     pub last_custom_color: [u8; 3],
+    /// Toggles the desktop board; Ctrl or Alt is required (see `validate_board_shortcut`).
+    pub board_shortcut: Shortcut,
+    /// Whether the board is currently shown in the wallpaper.
+    pub board_visible: bool,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -277,6 +281,12 @@ impl Default for Settings {
             save_format: SaveFormat::default(),
             presentation: PresentationSettings::default(),
             last_custom_color: [237, 79, 92],
+            // Alt+B.
+            board_shortcut: Shortcut {
+                modifiers: 1,
+                key: 0x42,
+            },
+            board_visible: false,
         }
     }
 }
@@ -315,6 +325,7 @@ impl Settings {
             Some("10" | "11") => 22,
             Some("12") => 24,
             Some("13") => 25,
+            Some("14") => 27,
             _ => 0,
         };
         if fields.len() != expected_len {
@@ -339,7 +350,9 @@ impl Settings {
             // An arrow left on the old default follows the editor's letter, unless Alt+A
             // already draws another shape. Formats 11 and later keep an Alt+F chosen since.
             let arrow = DEFAULT_SHAPE_SHORTCUTS[0];
-            if !matches!(version, Some("11" | "12" | "13"))
+            // PITFALL: every format from 11 on is listed; the next version goes here too, or
+            // its users' Alt+F arrow would be migrated away on every load.
+            if !matches!(version, Some("11" | "12" | "13" | "14"))
                 && presentation.shape_shortcuts[0] == OLD_ARROW_SHORTCUT
                 && !presentation.shape_shortcuts.contains(&arrow)
             {
@@ -416,6 +429,19 @@ impl Settings {
         if instant_shortcut.modifiers > 15 || !(1..=254).contains(&instant_shortcut.key) {
             return Err("Invalid instant capture shortcut".into());
         }
+        let board_shortcut = match fields.get(25) {
+            None => Self::default().board_shortcut,
+            Some(value) => {
+                let shortcut = Shortcut::decode(value)?;
+                Self::validate_board_shortcut(&shortcut)?;
+                shortcut
+            }
+        };
+        let board_visible = match fields.get(26) {
+            None | Some(&"0") => false,
+            Some(&"1") => true,
+            Some(_) => return Err("Invalid board visibility".into()),
+        };
         Ok(Self {
             instant_shortcut,
             instant_sound: match fields.get(21) {
@@ -457,7 +483,25 @@ impl Settings {
             } else {
                 Self::default().last_custom_color
             },
+            board_shortcut,
+            board_visible,
         })
+    }
+    /// A board shortcut needs Ctrl or Alt so that typing never toggles the board.
+    pub fn validate_board_shortcut(shortcut: &Shortcut) -> std::result::Result<(), String> {
+        if shortcut.modifiers > 15 || !(1..=254).contains(&shortcut.key) {
+            return Err("Invalid board shortcut".into());
+        }
+        if shortcut.modifiers & 3 == 0 {
+            return Err(
+                "Choose a shortcut with Ctrl or Alt to avoid opening the board while typing."
+                    .into(),
+            );
+        }
+        if shortcut.modifiers == 3 && shortcut.key == 27 {
+            return Err("Ctrl+Alt+Escape is reserved".into());
+        }
+        Ok(())
     }
     pub fn encode(&self) -> String {
         let folder = encode_folder(&self.folder)
@@ -467,7 +511,7 @@ impl Settings {
             .join(",");
         let color = |[red, green, blue]: [u8; 3]| format!("{red:02x}{green:02x}{blue:02x}");
         format!(
-            "{HEADER}13\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{},{}\n{},{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n{}\n",
+            "{HEADER}14\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{},{}\n{},{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n",
             self.modifiers,
             self.key,
             u8::from(self.legacy_style),
@@ -497,7 +541,10 @@ impl Settings {
             u8::from(self.instant_sound),
             self.presentation.input_layout.index(),
             self.presentation.input_scale,
-            self.save_format.index()
+            self.save_format.index(),
+            self.board_shortcut.modifiers,
+            self.board_shortcut.key,
+            u8::from(self.board_visible)
         )
     }
     /// Changes only the editor's custom color, preserving the other stored preferences.
@@ -507,6 +554,16 @@ impl Settings {
         replace: Replace,
     ) -> std::result::Result<(), String> {
         Self::save_editor_to(path, Some(color), None, None, replace)
+    }
+    /// Changes only whether the board is shown, preserving the other stored preferences.
+    pub fn save_board_visible_to(
+        path: &Path,
+        visible: bool,
+        replace: Replace,
+    ) -> std::result::Result<(), String> {
+        let mut current = Self::load_from(path)?;
+        current.board_visible = visible;
+        current.write_to(path, replace)
     }
     /// Merges only fields changed by an editor into the latest resident preferences.
     pub fn save_editor_to(
@@ -531,6 +588,8 @@ impl Settings {
     }
     /// Writes these settings, keeping the stored custom color and stroke width unless
     /// given: editors own those two and may have saved them since this copy was loaded.
+    /// The board visibility is never taken from this copy: it is only changed by
+    /// `save_board_visible_to`.
     pub fn save_to(
         &self,
         path: &Path,
@@ -542,10 +601,12 @@ impl Settings {
         let mut merged = self.clone();
         merged.last_custom_color = color.unwrap_or(stored.last_custom_color);
         merged.capture_stroke_width = width.unwrap_or(stored.capture_stroke_width);
+        merged.board_visible = stored.board_visible;
         merged.write_to(path, replace)
     }
     fn write_to(&self, path: &Path, replace: Replace) -> std::result::Result<(), String> {
         self.presentation.validate_shape_shortcuts()?;
+        Self::validate_board_shortcut(&self.board_shortcut)?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
@@ -593,13 +654,76 @@ mod tests {
             ..Default::default()
         };
         let encoded = settings.encode();
-        assert!(encoded.starts_with("shotoshot-settings-13\n"));
+        assert!(encoded.starts_with("shotoshot-settings-14\n"));
         let legacy = encoded.replacen("shotoshot-settings-", "shotshot-settings-", 1);
         assert_eq!(Settings::decode(&legacy).unwrap(), settings);
         let oldest = Settings::decode("shotshot-settings-1\n3\n65\n1\n43,3a,2f,e9\n").unwrap();
         assert_eq!((oldest.modifiers, oldest.key), (3, 65));
         assert!(Settings::decode(&encoded.replacen("shotoshot-", "other-", 1)).is_err());
-        assert!(Settings::decode(&encoded.replacen("-13\n", "-14\n", 1)).is_err());
+        assert!(Settings::decode(&encoded.replacen("-14\n", "-15\n", 1)).is_err());
+    }
+    #[test]
+    fn board_fields_roundtrip_and_older_files_get_defaults() {
+        let fields: Vec<String> = Settings::default()
+            .encode()
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        assert_eq!(fields.len(), 27);
+        assert_eq!(&fields[25..], &["1,66", "0"]);
+        let mut old = fields[..25].to_vec();
+        old[0] = "shotoshot-settings-13".into();
+        let migrated = Settings::decode(&old.join("\n")).unwrap();
+        assert_eq!(
+            migrated.board_shortcut,
+            Shortcut {
+                modifiers: 1,
+                key: 66
+            }
+        );
+        assert!(!migrated.board_visible);
+        let settings = Settings {
+            board_shortcut: Shortcut {
+                modifiers: 3,
+                key: 78,
+            },
+            board_visible: true,
+            ..Default::default()
+        };
+        assert_eq!(Settings::decode(&settings.encode()).unwrap(), settings);
+        for (index, invalid) in [
+            (25, "0,66"),
+            (25, "3,27"),
+            (25, "1,0"),
+            (25, "16,66"),
+            (26, "2"),
+            (26, ""),
+        ] {
+            let mut damaged = fields.clone();
+            damaged[index] = invalid.into();
+            assert!(
+                Settings::decode(&damaged.join("\n")).is_err(),
+                "accepted {invalid:?}"
+            );
+        }
+    }
+    #[test]
+    fn board_visibility_is_saved_alone() {
+        let dir =
+            std::env::temp_dir().join(format!("shotoshot-board-visible-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.txt");
+        let settings = Settings {
+            board_visible: false,
+            capture_stroke_width: 9,
+            ..Default::default()
+        };
+        std::fs::write(&path, settings.encode()).unwrap();
+        Settings::save_board_visible_to(&path, true, rename).unwrap();
+        let read = Settings::load_from(&path).unwrap();
+        assert!(read.board_visible);
+        assert_eq!(read.capture_stroke_width, 9, "other fields are kept");
+        std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     fn save_format_roundtrips_and_older_files_keep_png() {
@@ -608,7 +732,7 @@ mod tests {
             .lines()
             .map(str::to_owned)
             .collect();
-        assert_eq!(&fields[24..], &["0"]);
+        assert_eq!(&fields[24..25], &["0"]);
         let mut old = fields[..24].to_vec();
         old[0] = "shotoshot-settings-12".into();
         let migrated = Settings::decode(&old.join("\n")).unwrap();
@@ -628,6 +752,47 @@ mod tests {
                 "accepted save format {invalid:?}"
             );
         }
+    }
+    #[test]
+    fn full_and_editor_saves_keep_the_stored_board_visibility() {
+        let path =
+            std::env::temp_dir().join(format!("shotoshot-board-merge-{}.txt", std::process::id()));
+        // Another process shows the board while the resident still holds `false`.
+        let resident = Settings {
+            key: 65,
+            ..Default::default()
+        };
+        assert!(!resident.board_visible);
+        resident.save_to(&path, None, None, rename).unwrap();
+        Settings::save_board_visible_to(&path, true, rename).unwrap();
+        resident.save_to(&path, None, None, rename).unwrap();
+        let stored = Settings::load_from(&path).unwrap();
+        assert!(
+            stored.board_visible,
+            "a resident save keeps the board shown"
+        );
+        assert_eq!(stored.key, 65, "the resident's own fields are still saved");
+        Settings::save_editor_to(&path, Some([1, 2, 3]), Some(7), None, rename).unwrap();
+        let stored = Settings::load_from(&path).unwrap();
+        assert!(stored.board_visible, "an editor save keeps the board shown");
+        assert_eq!(stored.capture_stroke_width, 7);
+        std::fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn an_invalid_board_shortcut_is_never_written() {
+        let path = std::env::temp_dir().join(format!(
+            "shotoshot-board-shortcut-{}.txt",
+            std::process::id()
+        ));
+        let invalid = Settings {
+            board_shortcut: Shortcut {
+                modifiers: 0,
+                key: 66,
+            },
+            ..Default::default()
+        };
+        assert!(invalid.save_to(&path, None, None, rename).is_err());
+        assert!(!path.exists(), "nothing is written");
     }
     #[test]
     fn save_format_follows_the_file_extension() {
@@ -693,7 +858,7 @@ mod tests {
         old[0] = "shotoshot-settings-9".into();
         let migrated = Settings::decode(&old.join("\n")).unwrap().encode();
         let fields: Vec<_> = migrated.lines().collect();
-        assert_eq!(fields[0], "shotoshot-settings-13");
+        assert_eq!(fields[0], "shotoshot-settings-14");
         assert_eq!(&fields[20..22], &["0,145", "1"]);
         let mut custom: Vec<_> = fields.iter().map(|v| v.to_string()).collect();
         custom[20] = "6,122".into();
@@ -736,7 +901,7 @@ mod tests {
             .take(18)
             .collect::<Vec<_>>()
             .join("\n")
-            .replacen("settings-13", "settings-8", 1);
+            .replacen("settings-14", "settings-8", 1);
         assert!(Settings::decode(&old).unwrap().start_with_windows);
     }
     #[test]
@@ -954,10 +1119,12 @@ mod tests {
             fields[0] = format!("shotoshot-settings-{version}");
             fields[10] = arrow.into();
             fields[11] = rectangle.into();
-            // Formats 10 and 11 end before the input layout and size, 12 before the save format.
+            // Formats 10 and 11 end before the input layout and size, 12 before the save
+            // format, 13 before the board shortcut and visibility.
             match version {
                 "10" | "11" => fields.truncate(22),
                 "12" => fields.truncate(24),
+                "13" => fields.truncate(25),
                 _ => {}
             }
             let settings = Settings::decode(&(fields.join("\n") + "\n")).unwrap();
@@ -986,6 +1153,7 @@ mod tests {
         );
         assert_eq!(stored("12", "1,70", "1,82"), alt(0x46));
         assert_eq!(stored("13", "1,70", "1,82"), alt(0x46));
+        assert_eq!(stored("14", "1,70", "1,82"), alt(0x46));
     }
     #[test]
     fn custom_shortcuts_roundtrip_and_invalid_shortcuts_are_rejected() {
@@ -1061,7 +1229,7 @@ mod tests {
             assert_eq!(
                 settings.encode(),
                 format!(
-                    "shotoshot-settings-13\n3\n65\n1\n43,3a,2f,e9\n{live_capture}\n3000\nffd340\ned4f5c\n4\n1,65\n1,82\n1,67\n5\n28\n-\n0\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n"
+                    "shotoshot-settings-14\n3\n65\n1\n43,3a,2f,e9\n{live_capture}\n3000\nffd340\ned4f5c\n4\n1,65\n1,82\n1,67\n5\n28\n-\n0\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n"
                 )
             );
         }
@@ -1076,7 +1244,7 @@ mod tests {
             assert_eq!(
                 settings.encode(),
                 format!(
-                    "shotoshot-settings-13\n3\n65\n0\n43,3a,2f,e9\n1\n{duration}\n00aaff\nff0001\n4\n1,65\n1,82\n1,67\n5\n28\n-\n0\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n"
+                    "shotoshot-settings-14\n3\n65\n0\n43,3a,2f,e9\n1\n{duration}\n00aaff\nff0001\n4\n1,65\n1,82\n1,67\n5\n28\n-\n0\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n"
                 )
             );
         }
@@ -1143,6 +1311,11 @@ mod tests {
                 halo_color: [0, 128, 255],
                 shape_color: [4, 17, 92],
             },
+            board_shortcut: Shortcut {
+                modifiers: 2,
+                key: 78,
+            },
+            board_visible: true,
         };
         assert_eq!(Settings::decode(&s.encode()).unwrap(), s);
     }

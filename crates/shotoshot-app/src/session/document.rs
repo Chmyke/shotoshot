@@ -59,6 +59,7 @@ impl Session {
                 acceleration: None,
             },
             document: Some(path.into()),
+            board: None,
         })
     }
 }

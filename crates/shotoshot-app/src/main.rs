@@ -2,23 +2,7 @@
 #[cfg(windows)]
 fn main() {
     if let Err(error) = shotoshot_app::run() {
-        if std::env::args().any(|a| {
-            matches!(
-                a.as_str(),
-                "--diagnostic"
-                    | "--render-demo"
-                    | "--render-site-previews"
-                    | "--editor-diagnostic"
-                    | "--first-frame-diagnostic"
-                    | "--prepared-editor"
-                    | "--warm-diagnostic"
-                    | "--presentation-diagnostic"
-                    | "--google-diagnostic"
-                    | "--document-diagnostic"
-                    | "--document-probe"
-                    | "--restore-print-screen"
-            )
-        }) {
+        if shotoshot_app::reports_errors_on_stderr(std::env::args()) {
             eprintln!("{error}");
             std::process::exit(1);
         }

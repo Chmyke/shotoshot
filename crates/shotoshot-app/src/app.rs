@@ -1,6 +1,7 @@
 //! ROLE: Owns the Windows resident, first-run shortcut setup and capture session.
 //! OWNER: Main thread; window callbacks borrow checked RefCell state.
 //! INVARIANTS: No polling or rendering while idle; presentation input is explicitly opt-in.
+mod board;
 mod document;
 mod editor_events;
 mod editor_process;
@@ -20,7 +21,7 @@ use crate::{
     toolbar::Action,
     *,
 };
-pub use runtime::run;
+pub use runtime::{reports_errors_on_stderr, run};
 use shotoshot_core::Point;
 use std::cell::RefCell;
 use windows::{
@@ -40,6 +41,10 @@ const RENDERER_READY: u32 = WM_APP + 7;
 const STROKE_WIDTH_TIMER: usize = 0x5357;
 /// Ends a reopened document's process once its confirmation has faded.
 const QUIT_TIMER: usize = 0x5158;
+/// Looks at the wallpaper once a change has settled, to bake the board over a foreign one.
+const BOARD_TIMER: usize = 0x5342;
+/// How long the wallpaper or the displays must stay unchanged before `BOARD_TIMER` looks.
+const BOARD_SETTLE_MS: u32 = 1500;
 const STROKE_WIDTH_DELAY_MS: u32 = 250;
 #[cfg(test)]
 mod display_tests;
@@ -52,6 +57,8 @@ struct App {
     setup_ui: setup::Setup,
     hotkey: crate::hotkey::Hotkey,
     instant: instant::InstantCapture,
+    /// Opens a board session (`Settings::board_shortcut`).
+    board_hotkey: crate::hotkey::Hotkey,
     tray: NOTIFYICONDATAW,
     quit_after_capture: bool,
     persist_preferences: bool,
@@ -63,6 +70,9 @@ struct App {
     google_search: Option<std::sync::mpsc::Receiver<std::result::Result<String, String>>>,
     first_frame: Option<crate::diagnostics::FirstFrame>,
     presentation: Option<Box<RefCell<crate::presentation::Presentation>>>,
+    /// The next `BOARD_TIMER` bakes even while every screen shows our pictures: the displays
+    /// changed, and the pictures must be baked again for them.
+    board_rebake_forced: bool,
 }
 /// Paints the notification menu off screen, then closes it, for the resident diagnostic.
 pub(crate) fn menu_probe() -> Result<()> {
@@ -163,6 +173,13 @@ impl App {
     fn worker_busy(&self) -> bool {
         self.worker.as_ref().is_some_and(|worker| worker.busy())
     }
+    /// Whether the board is shown, as last saved: a board session's own process saves it.
+    fn board_visible(&mut self) -> Result<bool> {
+        if self.persist_preferences {
+            self.settings = Settings::load().map_err(|e| Error::new(E_FAIL, e))?;
+        }
+        Ok(self.settings.board_visible)
+    }
     fn prepare_editor(&mut self, hwnd: HWND) {
         // Preparation is optional: an unavailable renderer must never show a boot dialog
         // or trigger an automatic restart loop. The next explicit request can try cold.
@@ -249,6 +266,11 @@ impl App {
                             self.settings.instant_shortcut.modifiers,
                             self.settings.instant_shortcut.key,
                         ))
+                    } else if target == setup::ShortcutTarget::Board {
+                        Some((
+                            self.settings.board_shortcut.modifiers,
+                            self.settings.board_shortcut.key,
+                        ))
                     } else {
                         (self.settings.key != 0)
                             .then_some((self.settings.modifiers, self.settings.key))
@@ -314,6 +336,7 @@ impl App {
         unsafe {
             if self.hotkey.active()
                 || self.instant.hotkey.active()
+                || self.board_hotkey.active()
                 || self.setup_ui.target.shape_index().is_some()
             {
                 let _ = ShowWindow(hwnd, SW_HIDE);
@@ -349,6 +372,17 @@ impl App {
                 return Err(Error::new(
                     E_INVALIDARG,
                     "This combination is already used for capture.",
+                ));
+            }
+            if self.settings.board_shortcut
+                == (crate::settings::Shortcut {
+                    modifiers: mods,
+                    key,
+                })
+            {
+                return Err(Error::new(
+                    E_INVALIDARG,
+                    "This shortcut is already used by the board.",
                 ));
             }
             // A real collision is allowed: drawing shortcuts now take priority through the hook.
@@ -526,6 +560,31 @@ impl App {
         Ok(())
     }
     fn close_session(&mut self, hwnd: HWND) {
+        self.close_session_saying(hwnd, None);
+    }
+    /// Ends the session. A board session first writes its notes and stays open if it cannot;
+    /// then it bakes them and, once the window is hidden, shows `board_saved` if all went well.
+    fn close_session_saying(&mut self, hwnd: HWND, board_saved: Option<&str>) {
+        let board_saved = if self.session.as_ref().is_some_and(|s| s.board.is_some()) {
+            if let Err(error) = self.save_board(hwnd) {
+                // Nothing is lost: Escape tries again, Ctrl+S still exports the picture.
+                message(hwnd, &format!("The board could not be saved: {error}"));
+                invalidate(hwnd);
+                return;
+            }
+            match self.apply_board() {
+                Ok(()) => board_saved,
+                Err(error) => {
+                    message(
+                        hwnd,
+                        &format!("The notes are saved, but the wallpaper was not updated: {error}"),
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
         if let Err(error) = self
             .persist_stroke_width(hwnd)
             .and_then(|_| self.flush_stroke_width())
@@ -546,6 +605,10 @@ impl App {
         self.google_search = None;
         unsafe {
             let _ = ShowWindow(hwnd, SW_HIDE);
+        }
+        if let Some(text) = board_saved {
+            // Before the quit request below: a message box shown after it closes at once.
+            message(hwnd, text);
         }
         if self.quit_after_capture {
             unsafe {

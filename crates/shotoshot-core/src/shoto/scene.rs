@@ -52,6 +52,14 @@ impl Scene {
             && self.objects.last().is_none_or(|o| o.id <= self.last_id)
             && self.objects.iter().all(|o| object_valid(o, &mut points))
     }
+    /// The version 1 text of this scene, as written inside a `.shoto` file.
+    pub fn to_text(&self) -> String {
+        self.encode()
+    }
+    /// A scene read back from `to_text`; `None` for anything not fully understood.
+    pub fn from_text(text: &str) -> Option<Self> {
+        decode(text)
+    }
     pub(super) fn encode(&self) -> String {
         let mut out = String::new();
         let r = self.region;

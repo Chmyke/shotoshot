@@ -69,6 +69,9 @@ pub struct Capture {
     style_scale: f64,
     /// Selection replaced by the full-screen button, and the screen it applied.
     pub screen_toggle: Option<(Rect, Rect)>,
+    /// A board session: the region spans every screen, so the toolbar stays on the screen under
+    /// the pointer, where the hand is, and offers `Clear board`.
+    pub board: bool,
 }
 impl Capture {
     pub fn new(image: Image) -> Self {
@@ -101,6 +104,7 @@ impl Capture {
             monitors: Vec::new(),
             style_scale: 1.,
             screen_toggle: None,
+            board: false,
         }
     }
     /// Interface scale: that of the screen under the region, or under the pointer before a
@@ -136,7 +140,7 @@ impl Capture {
         }
         let mut buttons = self
             .region
-            .map(|r| toolbar::buttons_in(r, self.toolbar_screen(r), self.ui_scale()))
+            .map(|r| toolbar::buttons_in(r, self.toolbar_screen(r), self.ui_scale(), self.board))
             .unwrap_or_default();
         for b in &mut buttons {
             match b.action {
@@ -179,7 +183,12 @@ impl Capture {
         }
         buttons
     }
+    /// The screen that keeps the toolbar: the one under the pointer on a board, else the
+    /// monitor holding the whole region, else the whole frame.
     fn toolbar_screen(&self, region: Rect) -> Rect {
+        if self.board {
+            return self.screen_at(self.pointer);
+        }
         self.monitors
             .iter()
             .map(|m| m.bounds)
@@ -396,8 +405,12 @@ impl Capture {
         self.screen_toggle = Some((region, screen));
         self.region = Some(screen);
     }
-    /// Pointer shape for the canvas, once overlays (picker, size fields) are ruled out.
+    /// Pointer shape for the canvas, once the size fields are ruled out.
     pub fn cursor(&self, p: Point) -> CursorKind {
+        if self.picker.is_some() {
+            // The wheel is a panel of its own: an arrow everywhere, a click outside applies.
+            return CursorKind::Arrow;
+        }
         if self.screen_button_bounds().is_some_and(|r| r.contains(p)) {
             return CursorKind::Hand;
         }
@@ -506,6 +519,22 @@ mod tests {
         c.region = Rect::new(Point { x: 100., y: 100. }, Point { x: 600., y: 400. });
         c.selecting = false;
         c
+    }
+    #[test]
+    fn the_pointer_is_an_arrow_everywhere_while_the_wheel_is_open() {
+        let mut c = Capture::new(Image::solid(900, 600, [0, 0, 0, 255]));
+        c.region = Rect::new(Point { x: 100., y: 100. }, Point { x: 600., y: 400. });
+        c.selecting = false;
+        c.pointer = Point { x: 300., y: 300. };
+        let mut host = crate::test_host::FakeHost::default();
+        c.action(&mut host, Action::CustomColor);
+        let inside = c.picker.as_ref().unwrap().bounds().center();
+        let outside = Point { x: 50., y: 50. };
+        assert_eq!(c.cursor(inside), CursorKind::Arrow);
+        assert_eq!(c.cursor(outside), CursorKind::Arrow);
+        c.picker = None;
+        c.eyedropper = true;
+        assert_eq!(c.cursor(outside), CursorKind::Cross);
     }
     #[test]
     fn region_handles_drive_resize_cursors() {
@@ -667,6 +696,56 @@ mod tests {
                 1.
             )
         );
+    }
+    #[test]
+    fn a_toolbar_following_the_pointer_stays_on_the_pointer_screen_of_a_frame_wide_region() {
+        let mut c = three_screens();
+        c.region = Rect::new(Point::default(), Point { x: 5760., y: 1080. });
+        c.board = true;
+        for (index, x) in [(0, 300.), (2, 4000.), (1, 2500.)] {
+            c.pointer = Point { x, y: 500. };
+            let screen = c.monitors[index].bounds;
+            let panels = toolbar::panels(&c.buttons(), 1.);
+            assert!(!panels.is_empty());
+            assert!(
+                panels.iter().all(|panel| screen.contains_rect(*panel)),
+                "pointer on screen {index}: {panels:?} in {screen:?}"
+            );
+        }
+        // Without the flag, a frame-wide region keeps its placement beside the region.
+        c.board = false;
+        assert_eq!(
+            toolbar::panels(&c.buttons(), 1.),
+            toolbar::panels(
+                &toolbar::buttons(c.region.unwrap(), c.image.width, c.image.height),
+                1.
+            )
+        );
+    }
+    #[test]
+    fn only_a_board_offers_clear_board_and_puts_it_before_close() {
+        let mut c = three_screens();
+        c.region = Rect::new(Point::default(), Point { x: 5760., y: 1080. });
+        assert!(
+            !c.buttons().iter().any(|b| b.action == Action::ClearBoard),
+            "a capture has no board to clear"
+        );
+        c.board = true;
+        let buttons = c.buttons();
+        let clear = buttons
+            .iter()
+            .position(|b| b.action == Action::ClearBoard)
+            .expect("the board's clear button");
+        let close = buttons
+            .iter()
+            .position(|b| b.action == Action::Close)
+            .unwrap();
+        assert_eq!(clear + 1, close, "clear sits right before close");
+        assert_eq!(
+            buttons[clear].panel, buttons[close].panel,
+            "in the action panel"
+        );
+        assert!(buttons[clear].enabled);
     }
     #[test]
     fn monitor_selection_follows_points_including_shared_edges_and_frame_clipping() {

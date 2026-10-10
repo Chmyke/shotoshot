@@ -1,8 +1,9 @@
 # Shotoshot
 
 Native screen capture and annotation for Windows 11. Press a key, drag a region, annotate on the
-frozen screen with objects that stay editable, then copy or save. The whole interface is in
-English; the on-screen keyboard always follows the active keyboard layout.
+frozen screen with objects that stay editable, then copy or save. The same editor writes notes
+on your desktop, under the icons: the [Board](#board-notes-under-the-icons). The whole interface
+is in English; the on-screen keyboard always follows the active keyboard layout.
 
 - **Light.** A small resident process starts one editor process per capture. That process ends
   with the session, which returns its memory to Windows, graphics caches included.
@@ -17,8 +18,8 @@ Windows SmartScreen may ask for confirmation; the SHA-256 of each download is pu
 site.
 
 A Linux preview (x86_64 and ARM64, glibc 2.31 or later, Wayland and X11) is published as a
-`tar.gz` with its own `README.txt`. Presentation mode, crop-size fields, Google Lens and live
-capture are not on Linux yet.
+`tar.gz` with its own `README.txt`. Presentation mode, the Board, crop-size fields, Google Lens
+and live capture are not on Linux yet.
 
 ## First run and tray menu
 
@@ -31,16 +32,16 @@ the field and the buttons and Enter activates the selected control.
 
 Combinations use Ctrl, Shift, Alt or Win with a key. Windows remains in charge of reserved or
 already taken keys: a conflict is shown in the panel without losing the previous shortcut.
-Shotoshot never modifies Lightshot. If Windows reserves Print Screen for the Snipping Tool,
-Shotoshot turns off your account's "Use the Print screen key to open screen capture" option
-(`HKCU\Control Panel\Keyboard`), only when you save Print Screen. It restores the option when no
-shortcut uses the key any more, and on uninstall.
+Shotoshot never modifies another app's settings. If Windows reserves Print Screen for the
+Snipping Tool, Shotoshot turns off your account's "Use the Print screen key to open screen
+capture" option (`HKCU\Control Panel\Keyboard`), only when you save Print Screen. It restores the
+option when no shortcut uses the key any more, and on uninstall.
 
 The icon lives in the notification area. Left click and right click open the same menu, in titled
-groups: capture first, then **Presentation**, **Shortcuts** (the five shortcuts, one click to
-change one) and **Options**, and finally the exit. Every row has its icon; what can be turned on
-carries a switch. **Start with Windows** is on by default and can be unchecked; the choice is
-remembered.
+groups: capture and **Board** first, then **Presentation**, **Shortcuts** (the six shortcuts, one
+click to change one) and **Options**, and finally the exit. Every row has its icon; what can be
+turned on carries a switch. **Start with Windows** is on by default and can be unchecked; the
+choice is remembered.
 
 ## Instant screenshot
 
@@ -105,6 +106,7 @@ drawn keep theirs. Ctrl+Z undoes the whole stroke.
 | S / 1–6 | Color wheel / six quick colors |
 | Wheel | Stroke width; text size while typing it, with it selected or with the Text tool |
 | Arrows / Shift+arrows | Move the selected objects by 1 / 10 pixels |
+| Page Up / Page Down | Bring the selection forward / send it back, past the next object it overlaps; with Shift, to the front / to the back |
 | Del | Delete the selection |
 | Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z | Undo / redo |
 | Ctrl+C / Ctrl+V | Copy the selected annotations / duplicate them in the session; with no selection, Ctrl+C copies the image |
@@ -117,7 +119,7 @@ drawn keep theirs. Ctrl+Z undoes the whole stroke.
 
 The swatches offer six quick colors. The swatch ringed with colors opens the wheel: the ring sets
 the hue, the square sets saturation and brightness. Enter or a click outside the panel applies the
-color; Esc cancels.
+color; Esc cancels. The wheel and the eyedropper are two tools: the wheel never reads the screen.
 
 The **eyedropper (I)** samples anywhere on the frozen screen, including outside the chosen region.
 It shows a pixel magnifier with the central pixel framed and its hex color before the click. The
@@ -177,6 +179,12 @@ a shape leaves its arrows in place. The round handle above the selection rotates
 included, and Shift constrains the rotation to 45°. Rotated shapes resize proportionally to keep
 their geometry.
 
+New objects land on top of the pile. **Page Up** and **Page Down** move the selection through it,
+one visible step at a time: past the next object it overlaps, so each press changes what you see.
+With Shift they send it straight to the front or to the back. A multiple selection moves as one
+block, keeping its own order, and each move is one undo step. The bucket's background always
+stays underneath.
+
 Copying and pasting annotations keeps their styles and the attachments between the copied objects.
 It stays within the session: a new copy in another application, or with the eyedropper, replaces
 that clipboard content. In text fields, Ctrl+C and Ctrl+V remain the Windows commands.
@@ -225,7 +233,9 @@ A `.shoto` file is a real PNG: renamed to `.png`, any viewer shows the annotated
 it, Shotoshot keeps the objects and the whole screen the selection was on, without annotations.
 **That screen stays in the file**, including what lies around the selection and under an opaque
 annotation: share the PNG, keep the `.shoto` for yourself. Your other screens are never saved,
-and the copy, PNG, JPEG and Google Lens outputs never carry this data.
+and the copy, PNG, JPEG and Google Lens outputs never carry this data. On Windows, the desktop
+and Explorer show the annotated capture as the file's thumbnail, with the Shotoshot icon in
+its corner.
 
 A file from a newer Shotoshot, a damaged file or an image larger than the current screens is
 refused with a message; there is no zoom yet. Live capture is not offered on a reopened image.
@@ -236,6 +246,39 @@ still rewrites a reopened image. A message confirms each editable save and recal
 screen is in the file. `install.sh` declares the file type, so a double-click opens it in
 Shotoshot; `shotoshot <file>` does the same from a terminal. An image as large as a monitor
 opens full screen on it, a smaller one in a window of its size.
+
+## Board: notes under the icons
+
+**Board** keeps notes, drawn or typed, on your desktop, below the icons. Press **Alt+B** (the
+**Board** row of the Shortcuts group changes it; it needs Ctrl or Alt) or choose **Edit board**
+in the tray menu. The editor opens on a picture of your desktop, background and icons but no
+window, with its usual tools; live capture is greyed. The toolbar sits on the screen under the
+pointer and follows it from screen to screen, and your icons are drawn in front of the notes, as
+the desktop will show them. **Esc** ends the session and applies it: the notes are baked into the
+wallpaper of each screen. With a text box open, the first Esc commits the text and the next one
+ends the session. Alt+F4 and a change of display end it the same way, and **Ctrl+C** or **Ctrl+S**
+copy or save the picture and also end the session.
+
+- **Show board** in the tray menu is a switch, checked while the notes are shown: turning it off
+  gives your own background back at once, turning it on bakes the notes again in the background.
+  The notes stay on the desktop when Shotoshot is not running.
+- **Clear board** removes every note. In the tray menu it acts at once, without asking, on every
+  screen, unplugged ones included; it is refused while a session is open. In a session, the broom
+  button before **Close** removes the notes shown and a painted background in one step:
+  **Ctrl+Z** brings them back.
+- Uninstalling Shotoshot gives your own background back if the Board is shown. The notes stay in
+  their folder and show again once Shotoshot is installed again.
+- Notes belong to the screen they are on. An unplugged screen keeps its notes and a new screen
+  starts empty.
+- If you change your wallpaper (picture, color or position) while the Board is shown, Shotoshot
+  takes the new one as your background and bakes the notes over it a moment later.
+- It uses only the documented Windows wallpaper API; nothing stays resident for it and nothing
+  leaves your machine. The notes are text and one baked picture per screen in
+  `%LOCALAPPDATA%/Shotoshot/board`.
+- Limits: a slideshow or Spotlight background is replaced by a still picture, and hiding gives back
+  the picture that was shown when the Board was first used; the Tile and Span positions are drawn
+  like Fill; signing out of Windows during a session loses the notes drawn since it opened. Windows
+  only.
 
 ## Presenting live, without capturing
 
@@ -346,8 +389,9 @@ the test. The presentation probe verifies, in a fresh process, the Raw Input reg
 conflicts and the release of shortcuts, with no simulated keystroke and no visible window.
 
 Check outputs: `target/shotoshot-demo.png`, `target/shotoshot-interface.png`,
-`target/shotoshot-presentation.png`, `target/shotoshot-presentation-menu.png`,
-`target/presentation-diagnostics.txt` and `target/diagnostics.json`. The last one measures the
+`target/shotoshot-presentation.png`, `target/shotoshot-menu.png`,
+`target/presentation-diagnostics.txt`, `target/board-diagnostics.txt` and
+`target/diagnostics.json`. The last one measures the
 idle state and five captures with creation and destruction of the editor; it does not measure the
 delay until the first pixel shown on screen.
 

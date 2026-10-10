@@ -29,6 +29,9 @@ pub struct Renderer {
     pub(crate) arrow_stroke: ID2D1StrokeStyle,
     pub dc: ID2D1DCRenderTarget,
     backdrop: Option<ID2D1Bitmap>,
+    // What lies over the annotations (the desktop icons of a board), kept with its bitmap for
+    // this render target; export targets get their own from the picture.
+    overlay: Option<(Image, ID2D1Bitmap)>,
     // Canvas rasters by key with their version; they die with this render target.
     rasters: std::cell::RefCell<Vec<(&'static str, u64, ID2D1Bitmap)>>,
     strokes: std::cell::RefCell<strokes::StrokeCache>,
@@ -79,6 +82,18 @@ pub fn color(rgb: [u8; 3], alpha: f32) -> D2D1_COLOR_F {
         g: rgb[1] as f32 / 255.,
         b: rgb[2] as f32 / 255.,
         a: alpha,
+    }
+}
+/// Draws `bitmap` whole at the target's origin, pixel for pixel.
+fn draw_bitmap(target: &ID2D1RenderTarget, bitmap: &ID2D1Bitmap) {
+    unsafe {
+        target.DrawBitmap(
+            bitmap,
+            None,
+            1.,
+            D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
+            None,
+        );
     }
 }
 fn properties() -> D2D1_RENDER_TARGET_PROPERTIES {
@@ -181,6 +196,7 @@ impl Renderer {
                 arrow_stroke,
                 dc,
                 backdrop: None,
+                overlay: None,
                 rasters: Default::default(),
                 strokes: Default::default(),
                 scene: Default::default(),
@@ -212,6 +228,49 @@ impl Renderer {
                 image.width * 4,
                 &D2D1_BITMAP_PROPERTIES {
                     pixelFormat: properties().pixelFormat,
+                    dpiX: 96.,
+                    dpiY: 96.,
+                },
+            )
+        }
+    }
+    /// Lays `image`, premultiplied BGRA with its own alpha, over the annotations of every
+    /// paint and export; `None` lays nothing. Transparent pixels show the notes through.
+    pub fn set_overlay(&mut self, image: Option<Image>) -> Result<()> {
+        self.overlay = match image {
+            Some(image) => {
+                let bitmap = self.alpha_bitmap(&self.dc, &image)?;
+                Some((image, bitmap))
+            }
+            None => None,
+        };
+        Ok(())
+    }
+    /// The picture laid over the annotations, to hand to a replacement renderer.
+    pub fn overlay(&self) -> Option<&Image> {
+        self.overlay.as_ref().map(|(image, _)| image)
+    }
+    /// Draws the overlay on this renderer's target, at the frame's origin.
+    pub fn paint_overlay(&self) {
+        if let Some((_, bitmap)) = &self.overlay {
+            draw_bitmap(&self.dc, bitmap);
+        }
+    }
+    fn alpha_bitmap(&self, target: &ID2D1RenderTarget, image: &Image) -> Result<ID2D1Bitmap> {
+        image.validate()?;
+        unsafe {
+            target.CreateBitmap(
+                D2D_SIZE_U {
+                    width: image.width,
+                    height: image.height,
+                },
+                Some(image.pixels.as_ptr().cast()),
+                image.width * 4,
+                &D2D1_BITMAP_PROPERTIES {
+                    pixelFormat: D2D1_PIXEL_FORMAT {
+                        format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                        alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
+                    },
                     dpiX: 96.,
                     dpiY: 96.,
                 },
@@ -473,7 +532,12 @@ impl Renderer {
                     None,
                 );
             }
-            let result = self.annotations(&target, objects);
+            let result = self.annotations(&target, objects).and_then(|()| {
+                if let Some((image, _)) = &self.overlay {
+                    draw_bitmap(&target, &self.alpha_bitmap(&target, image)?);
+                }
+                Ok(())
+            });
             let end = target.EndDraw(None, None);
             result?;
             end?;

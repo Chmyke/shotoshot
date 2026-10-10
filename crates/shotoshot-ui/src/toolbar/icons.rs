@@ -267,6 +267,14 @@ pub fn glyph<C: Canvas>(
             g.line((4., 4.), (16., 16.))?;
             g.line((16., 4.), (4., 16.))?;
         }
+        // A broom: the handle, the band that holds the bristles, three bristles.
+        Action::ClearBoard => {
+            g.line((17., 3.), (9., 11.))?;
+            g.line((6., 10.), (12., 16.))?;
+            g.path(&[(7., 12.), (2., 15.), (3., 18.)])?;
+            g.path(&[(9., 13.), (5., 18.), (7., 19.)])?;
+            g.path(&[(11., 15.), (9., 19.), (11., 19.)])?;
+        }
     }
     Ok(())
 }

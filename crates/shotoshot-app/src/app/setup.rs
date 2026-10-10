@@ -33,11 +33,12 @@ pub(super) enum ShortcutTarget {
     Arrow,
     Rectangle,
     Ellipse,
+    Board,
 }
 impl ShortcutTarget {
     pub fn shape_index(self) -> Option<usize> {
         match self {
-            Self::Capture | Self::Instant => None,
+            Self::Capture | Self::Instant | Self::Board => None,
             Self::Arrow => Some(0),
             Self::Rectangle => Some(1),
             Self::Ellipse => Some(2),
@@ -51,6 +52,7 @@ impl ShortcutTarget {
             Self::Arrow => 110,
             Self::Rectangle => 111,
             Self::Ellipse => 112,
+            Self::Board => 13,
         }
     }
     fn title(self) -> &'static str {
@@ -60,6 +62,7 @@ impl ShortcutTarget {
             Self::Arrow => "Arrow shortcut",
             Self::Rectangle => "Rectangle shortcut",
             Self::Ellipse => "Ellipse shortcut",
+            Self::Board => "Board shortcut",
         }
     }
 }
@@ -94,15 +97,21 @@ impl Setup {
         }
     }
     fn hint(&self) -> &str {
+        let any_key = matches!(
+            self.target,
+            ShortcutTarget::Capture | ShortcutTarget::Instant
+        );
         if !self.error.is_empty() {
             &self.error
         } else if self.recording {
-            if self.target.shape_index().is_none() {
+            if any_key {
                 "Any key works, alone or with Ctrl, Shift, Alt or Windows."
+            } else if self.target == ShortcutTarget::Board {
+                "A key with Ctrl or Alt. Shift or Windows can also be added."
             } else {
                 "A letter with Ctrl or Alt. Shift can also be added."
             }
-        } else if self.target.shape_index().is_none()
+        } else if any_key
             && self
                 .pending
                 .is_some_and(|(m, k)| crate::print_screen::is_bare(m, k))
@@ -186,7 +195,7 @@ pub(super) fn key_label(mods: u32, key: u32) -> String {
 /// Explains a Print Screen that stays taken once Shotoshot has freed it from the Snipping Tool.
 pub(super) fn print_screen_error(mods: u32, key: u32, error: &Error) -> Option<String> {
     (crate::print_screen::is_bare(mods, key) && crate::print_screen::held(error)).then(|| {
-        "Print Screen is still in use, by another app such as Lightshot or by Windows until you sign out and back in. Close that app or choose another key.".into()
+        "Print Screen is still in use, by another app or by Windows until you sign out and back in. Close that app or choose another key.".into()
     })
 }
 
@@ -234,6 +243,11 @@ impl App {
                     invalidate(hwnd);
                     return Ok(());
                 }
+                if self.setup_ui.target == ShortcutTarget::Board {
+                    return self
+                        .save_board_shortcut(hwnd, mods, key)
+                        .map(|_| invalidate(hwnd));
+                }
                 if self.settings.instant_shortcut
                     == (crate::settings::Shortcut {
                         modifiers: mods,
@@ -254,6 +268,16 @@ impl App {
                     || (mods == 3 && key == 27)
                 {
                     self.setup_ui.error = "This shortcut is already used by presentation mode. Choose another shortcut.".into();
+                    invalidate(hwnd);
+                    return Ok(());
+                }
+                if self.settings.board_shortcut
+                    == (crate::settings::Shortcut {
+                        modifiers: mods,
+                        key,
+                    })
+                {
+                    self.setup_ui.error = "This shortcut is already used by the board.".into();
                     invalidate(hwnd);
                     return Ok(());
                 }
@@ -291,6 +315,50 @@ impl App {
             _ => {}
         }
         invalidate(hwnd);
+        Ok(())
+    }
+    /// Saves the shortcut that opens a board session; it needs Ctrl or Alt.
+    pub(super) fn save_board_shortcut(&mut self, hwnd: HWND, mods: u32, key: u32) -> Result<()> {
+        let shortcut = crate::settings::Shortcut {
+            modifiers: mods,
+            key,
+        };
+        if let Err(error) = Settings::validate_board_shortcut(&shortcut) {
+            self.setup_ui.error = error;
+            return Ok(());
+        }
+        if (self.settings.modifiers == mods && self.settings.key == key)
+            || self.settings.instant_shortcut == shortcut
+            || self
+                .settings
+                .presentation
+                .shape_shortcuts
+                .contains(&shortcut)
+        {
+            self.setup_ui.error = "This shortcut is already used by Shotoshot.".into();
+            return Ok(());
+        }
+        if !(self.board_hotkey.active() && self.settings.board_shortcut == shortcut) {
+            let mut next = self.settings.clone();
+            next.board_shortcut = shortcut;
+            // Ctrl or Alt is required: never a bare Print Screen to take back from Windows.
+            if let Err(error) = self.board_hotkey.replace(None, mods, key, || {
+                if self.persist_preferences {
+                    next.save().map_err(|e| Error::new(E_FAIL, e))
+                } else {
+                    Ok(())
+                }
+            }) {
+                self.setup_ui.error = format!(
+                    "Shortcut unavailable ({}). Choose another key.",
+                    error.code().0
+                );
+                return Ok(());
+            }
+            self.settings = next;
+        }
+        self.close_setup(hwnd)?;
+        self.notify(Notice::Preferences);
         Ok(())
     }
 }
@@ -719,12 +787,24 @@ mod tests {
             ShortcutTarget::Arrow,
             ShortcutTarget::Rectangle,
             ShortcutTarget::Ellipse,
+            ShortcutTarget::Board,
         ]
         .map(drawn);
         assert!(inks.iter().all(|&ink| ink > 20), "{inks:?}");
         assert_ne!(
             inks[3], inks[4],
             "rectangle and ellipse are different glyphs"
+        );
+    }
+
+    #[test]
+    fn the_board_shortcut_asks_for_ctrl_or_alt() {
+        let mut ui = Setup::change(ShortcutTarget::Board, Some((1, 0x42)));
+        assert!(ui.hint().contains("Ctrl or Alt"), "{}", ui.hint());
+        ui.record(0, crate::print_screen::KEY);
+        assert!(
+            !ui.hint().contains("Snipping Tool"),
+            "the board never takes Print Screen from Windows"
         );
     }
 

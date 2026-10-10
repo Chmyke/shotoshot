@@ -74,6 +74,13 @@ impl Rect {
     pub fn contains_rect(self, r: Self) -> bool {
         self.contains(r.min) && self.contains(r.max)
     }
+    /// True when the two rectangles share at least one point, edges included.
+    pub fn intersects(self, r: Self) -> bool {
+        self.min.x <= r.max.x
+            && r.min.x <= self.max.x
+            && self.min.y <= r.max.y
+            && r.min.y <= self.max.y
+    }
     pub fn expanded(self, n: f64) -> Self {
         Self {
             min: self.min - Point { x: n, y: n },
