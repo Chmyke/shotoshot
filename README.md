@@ -11,6 +11,8 @@ is in English; the on-screen keyboard always follows the active keyboard layout.
   when you click its button.
 - **Open.** GPL-3.0, written in Rust on Direct2D, with no web engine.
 
+![Shotoshot at work: an area is selected and widened, an arrow points at a chart, a note is typed, enlarged and rotated, and a square is drawn then moved.](https://shotoshot.com/assets/capture.gif)
+
 ## Install
 
 Download the installer from [shotoshot.com](https://shotoshot.com). It is not code-signed yet, so
@@ -118,6 +120,8 @@ drawn keep theirs. Ctrl+Z undoes the whole stroke.
 
 ### Colors and eyedropper
 
+![The eyedropper wanders around the edge of a moon: the loupe magnifies the pixels under the pointer and its color code changes.](https://shotoshot.com/assets/eyedropper.gif)
+
 The swatches offer six quick colors. The swatch ringed with colors opens the wheel: the ring sets
 the hue, the square sets saturation and brightness. Enter or a click outside the panel applies the
 color; Esc cancels. The wheel and the eyedropper are two tools: the wheel never reads the screen.
@@ -173,6 +177,8 @@ size and color together as a single undoable action. The wheel adjusts text in s
 wheel gesture applied to several selected texts is also undone as a single action.
 
 ### Editing objects
+
+![A circle is shrunk and moved while the arrow bound to it follows, then a note written earlier is enlarged and tilted.](https://shotoshot.com/assets/editing.gif)
 
 Handles resize the selected objects. The ends of an arrow can be moved to change what they attach
 to. Moving a shape carries its attached arrows along; moving an arrow alone detaches it; deleting
@@ -250,6 +256,8 @@ opens full screen on it, a smaller one in a window of its size.
 
 ## Board: notes under the icons
 
+![The Board on a desktop: a zone is filled behind icons that stay in front, a to-do is typed, a note and an arrow point at a folder, then the notes stay on the desktop.](https://shotoshot.com/assets/board.gif)
+
 **Board** keeps notes, drawn or typed, on your desktop, below the icons. Press **Alt+B** (the
 **Board** row of the Shortcuts group changes it; it needs Ctrl or Alt) or choose **Edit board**
 in the tray menu. The editor opens on a picture of your desktop, background and icons but no
@@ -288,6 +296,8 @@ copy or save the picture and also end the session.
   only.
 
 ## Presenting live, without capturing
+
+![Presentation mode over a slide: the shortcuts light up on the mini keyboard, the click shows under the pointer halo, and a rectangle, an arrow and a circle are drawn then fade away.](https://shotoshot.com/assets/presentation.gif)
 
 Left or right click the Shotoshot icon: every control is in the menu. Turn on **Pointer halo**,
 **Temporary shapes**, **Keyboard** and **Mouse** separately. Halo, keyboard and mouse are off at
