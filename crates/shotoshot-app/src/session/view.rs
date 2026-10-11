@@ -3,17 +3,55 @@ use super::*;
 impl Session {
     pub(super) fn paint_contents(&self) -> Result<()> {
         let capture = &self.capture;
-        let mut canvas =
-            crate::render::D2dCanvas::new(&self.native.renderer, &self.native.renderer.dc)?;
-        capture.draw_underlay(&mut canvas)?;
+        let renderer = &self.native.renderer;
+        if capture.zoomed() {
+            // Each screen through its own view, without the scene checkpoints, which only
+            // apply at the identity transform.
+            for view in &capture.views {
+                renderer.push_view(view);
+                let scene = crate::render::D2dCanvas::direct(renderer, &renderer.dc).and_then(
+                    |mut canvas| {
+                        let smooth = view.zoomed();
+                        renderer.paint_backdrop(smooth);
+                        self.paint_scene(&mut canvas, capture.ui_scale() / view.zoom, smooth)
+                    },
+                );
+                renderer.pop_view();
+                scene?;
+            }
+        } else {
+            let mut canvas = crate::render::D2dCanvas::new(renderer, &renderer.dc)?;
+            self.paint_scene(&mut canvas, capture.ui_scale(), false)?;
+        }
+        let mut canvas = crate::render::D2dCanvas::direct(renderer, &renderer.dc)?;
+        self.paint_chrome(&mut canvas)
+    }
+    /// What a view transforms: shade, background, notes, the text being typed, the icons over
+    /// them, then the selection chrome at `scale`. `begin` painted the backdrop at 1:1; a
+    /// zoomed pass paints its own, `smooth`.
+    fn paint_scene(
+        &self,
+        canvas: &mut crate::render::D2dCanvas,
+        scale: f64,
+        smooth: bool,
+    ) -> Result<()> {
+        let capture = &self.capture;
+        capture.draw_underlay(canvas)?;
         if capture.region.is_some() {
             let editing = self.native.text.as_ref().and_then(|t| t.object);
-            let result = canvas.annotations(capture.editor.objects(), editing);
+            let result = capture.draw_annotations(canvas, editing);
             result.and_then(|_| self.native.draw_text_input())?;
             // What the desktop lays over the notes (a board's icons) goes over them here too,
             // under the editor's own chrome.
-            self.native.renderer.paint_overlay();
-            capture.draw_frame(&mut canvas, self.native.text.is_none())?;
+            self.native.renderer.paint_overlay(smooth);
+            capture.draw_frame_scaled(canvas, self.native.text.is_none(), scale)?;
+        }
+        Ok(())
+    }
+    /// What stays in screen coordinates: toolbar, pointer feedback, picker, fields, hints.
+    fn paint_chrome(&self, canvas: &mut crate::render::D2dCanvas) -> Result<()> {
+        let capture = &self.capture;
+        if capture.region.is_some() {
             if !capture.selecting {
                 let current = self
                     .capture
@@ -27,20 +65,20 @@ impl Session {
                             .map(|t| t.color)
                             .unwrap_or(capture.editor.style.color)
                     });
-                capture.draw_toolbar(&mut canvas, current)?;
-                self.draw_pointer_feedback(&mut canvas)?;
+                capture.draw_toolbar(canvas, current)?;
+                self.draw_pointer_feedback(canvas)?;
                 if let Some(picker) = &self.capture.picker {
-                    picker.draw(&mut canvas)?;
+                    picker.draw(canvas)?;
                 }
             }
-            self.native.draw_dimensions(&self.capture, &mut canvas)?;
+            self.native.draw_dimensions(&self.capture, canvas)?;
             capture.draw_hover_hint(
-                &mut canvas,
+                canvas,
                 std::time::Instant::now(),
                 self.native.dimensions.is_some(),
             )?;
         }
-        capture.draw_selection_hint(&mut canvas, self.pointer_monitor())
+        capture.draw_selection_hint(canvas, self.pointer_monitor())
     }
 
     fn draw_pointer_feedback(&self, canvas: &mut crate::render::D2dCanvas) -> Result<()> {

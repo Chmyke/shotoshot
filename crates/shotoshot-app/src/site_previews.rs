@@ -887,6 +887,7 @@ fn desktop_notes_film(desktop: &NotesDesktop, folder: &Path) -> Result<()> {
         Some(icons.clone()),
         Gathered::default(),
         screens.to_vec(),
+        folder.to_path_buf(),
     )?;
     // PITFALL: a Board session lays its tools out on this machine's monitors, at their scale.
     // The film's frame is its own screen, at 100 %.

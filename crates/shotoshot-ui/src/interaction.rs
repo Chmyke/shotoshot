@@ -16,6 +16,16 @@ impl Capture {
         self.pointer = p;
         self.adopt_scale();
         self.width_preview = false;
+        if self.panning() {
+            return Ok(None);
+        }
+        if self.space_held() && self.begin_pan(p) {
+            host.capture_pointer();
+            return Ok(None);
+        }
+        // Buttons, panels and badges live in screen coordinates; the document in frame ones.
+        self.gesture_view = self.view_index(p);
+        let f = self.drag_frame(p);
         if host.dimension_pointer_down(self, p)? {
             return Ok(None);
         }
@@ -36,7 +46,7 @@ impl Capture {
             return Ok(None);
         }
         if self.eyedropper {
-            let rgb = self.sample_color(p);
+            let rgb = self.sample_color(f);
             self.eyedropper = false;
             self.accept_custom_color(host, rgb);
             host.focus_text();
@@ -73,7 +83,7 @@ impl Capture {
             host.begin_dimensions(self)?;
             return Ok(None);
         }
-        if host.text_pointer_down(p)? {
+        if host.text_pointer_down(f)? {
             return Ok(None);
         }
         if host.text_active() {
@@ -83,21 +93,21 @@ impl Capture {
             && !self.bucket
             && self
                 .rotation_handle()
-                .is_some_and(|h| (h - p).length() <= 9.)
+                .is_some_and(|h| (h - f).length() <= 9. * self.pick_scale())
         {
-            self.editor.begin_rotation(p);
+            self.editor.begin_rotation(f);
             host.capture_pointer();
             return Ok(None);
         }
         if self.selecting {
             self.region_before = self.region;
-            self.region_origin = Some(p);
-            self.region = Rect::new(p, p);
+            self.region_origin = Some(f);
+            self.region = Rect::new(f, f);
             host.capture_pointer();
             return Ok(None);
         }
         if let Some(region) = self.region
-            && let Some(index) = self.region_handle(p)
+            && let Some(index) = self.region_handle(f)
         {
             self.region_before = self.region;
             self.region_origin = Some(region.min);
@@ -108,19 +118,19 @@ impl Capture {
         }
         if self.bucket {
             // The bucket stays in hand, zone after zone, until another action puts it down.
-            if self.region.is_some_and(|r| r.contains(p)) {
-                self.editor.fill_at(p, modifiers.alt);
+            if self.region.is_some_and(|r| r.contains(f)) {
+                self.editor.fill_at(f, modifiers.alt);
             }
             return Ok(None);
         }
         // The crop limits export, not manipulation of existing annotations.
-        if self.editor.tool != Tool::Select && !self.region.is_some_and(|r| r.contains(p)) {
+        if self.editor.tool != Tool::Select && !self.region.is_some_and(|r| r.contains(f)) {
             return Ok(None);
         }
         if self.editor.tool == Tool::Text {
-            host.begin_text(self, p)?;
+            host.begin_text(self, f)?;
         } else {
-            self.editor.begin(p, modifiers);
+            self.editor.begin(f, modifiers);
             host.capture_pointer();
         }
         Ok(None)
@@ -129,6 +139,11 @@ impl Capture {
         let p = self.clamp(p);
         self.pointer = p;
         self.adopt_scale();
+        if self.panning() {
+            self.pan_to(p);
+            return;
+        }
+        let f = self.drag_frame(p);
         if host.dimensions_active() {
             host.dimension_pointer_move(p);
             return;
@@ -137,7 +152,7 @@ impl Capture {
             picker.pointer_move(p);
             return;
         }
-        if host.text_pointer_move(p) {
+        if host.text_pointer_move(f) {
             return;
         }
         if let Some(origin) = self.region_origin {
@@ -145,27 +160,33 @@ impl Capture {
                 let mut min = before.min;
                 let mut max = before.max;
                 if [0, 6, 7].contains(&index) {
-                    min.x = p.x;
+                    min.x = f.x;
                 }
                 if [2, 3, 4].contains(&index) {
-                    max.x = p.x;
+                    max.x = f.x;
                 }
                 if [0, 1, 2].contains(&index) {
-                    min.y = p.y;
+                    min.y = f.y;
                 }
                 if [4, 5, 6].contains(&index) {
-                    max.y = p.y;
+                    max.y = f.y;
                 }
                 self.region = Rect::new(min, max);
             } else {
-                self.region = Rect::new(origin, p);
+                self.region = Rect::new(origin, f);
             }
         } else {
-            self.editor.update_with_modifiers(p, modifiers);
+            self.editor.update_with_modifiers(f, modifiers);
         }
     }
     pub fn pointer_up<H: Host>(&mut self, host: &mut H, p: Point, modifiers: Modifiers) {
         self.pointer_move(host, p, modifiers);
+        self.gesture_view = None;
+        if self.panning() {
+            self.end_pan();
+            host.release_pointer();
+            return;
+        }
         if host.dimension_pointer_up() {
             return;
         }

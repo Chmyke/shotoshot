@@ -107,9 +107,93 @@ impl Canvas for Recorder {
     ) -> Result<(), ()> {
         self.push("raster", &rect(dst), format!("{key} {version} {size:?}"))
     }
-    fn annotations(&mut self, _: &[Object], _: Option<u64>) -> Result<(), ()> {
-        self.push("annotations", &[], String::new())
+    fn annotations(&mut self, objects: &[Object], _: Option<u64>) -> Result<(), ()> {
+        self.push("annotations", &[], objects.len().to_string())
     }
+    fn annotations_fading(
+        &mut self,
+        objects: &[Object],
+        _: Option<u64>,
+        fading: &[u64],
+    ) -> Result<(), ()> {
+        let fixed = format!("{} objects, {} fading", objects.len(), fading.len());
+        self.push("annotations_fading", &[], fixed)
+    }
+}
+
+#[test]
+fn swept_objects_are_drawn_faded_apart_from_the_rest() {
+    let mut c = Capture::new(Image::solid(400, 300, [0, 0, 0, 255]));
+    c.region = Rect::new(Point::default(), Point { x: 400., y: 300. });
+    c.selecting = false;
+    let mut host = FakeHost::default();
+    for x in [50., 150.] {
+        c.action(&mut host, Action::Tool(Tool::Line));
+        c.pointer_down(&mut host, Point { x, y: 10. }, Modifiers::default())
+            .unwrap();
+        c.pointer_up(&mut host, Point { x, y: 200. }, Modifiers::default());
+    }
+    c.action(&mut host, Action::Tool(Tool::Eraser));
+    c.pointer_down(&mut host, Point { x: 0., y: 100. }, Modifiers::default())
+        .unwrap();
+    c.pointer_move(&mut host, Point { x: 100., y: 100. }, Modifiers::default());
+    let mut recorder = Recorder {
+        size: Point { x: 400., y: 300. },
+        ops: Vec::new(),
+    };
+    c.draw_annotations(&mut recorder, None).unwrap();
+    let drawn: Vec<(&str, &str)> = recorder
+        .ops
+        .iter()
+        .map(|o| (o.name, o.fixed.as_str()))
+        .collect();
+    assert_eq!(
+        drawn,
+        [("annotations_fading", "2 objects, 1 fading")],
+        "the whole pile goes in one call, the swept line named as fading"
+    );
+    c.pointer_up(&mut host, Point { x: 100., y: 100. }, Modifiers::default());
+    recorder.ops.clear();
+    c.draw_annotations(&mut recorder, None).unwrap();
+    assert_eq!(
+        recorder.ops.iter().map(|o| o.name).collect::<Vec<_>>(),
+        ["annotations"],
+        "nothing fades once the sweep is over"
+    );
+}
+
+#[test]
+fn the_loupe_swatch_shows_the_frame_pixel_under_a_zoomed_pointer() {
+    let mut c = Capture::new(Image::solid(800, 300, [0, 0, 0, 255]));
+    c.region = Rect::new(Point::default(), Point { x: 800., y: 300. });
+    c.selecting = false;
+    c.monitors = vec![
+        Monitor::from(Rect::new(Point::default(), Point { x: 400., y: 300. }).unwrap()),
+        Monitor::from(Rect::new(Point { x: 400., y: 0. }, Point { x: 800., y: 300. }).unwrap()),
+    ];
+    c.board = true;
+    c.enable_views();
+    let at = |x: usize, y: usize| (y * 800 + x) * 4;
+    c.image.pixels[at(100, 100)..at(100, 100) + 4].copy_from_slice(&[0, 0, 255, 255]);
+    c.views[0].zoom = 2.;
+    c.pointer = Point { x: 200., y: 200. };
+    c.eyedropper = true;
+    let mut recorder = Recorder {
+        size: Point { x: 800., y: 300. },
+        ops: Vec::new(),
+    };
+    c.draw_magnifier(&mut recorder).unwrap();
+    // The swatch is the one 16 px square; the cells are 10 px.
+    let swatch = recorder
+        .ops
+        .iter()
+        .find(|o| o.name == "fill_rect" && (o.lengths[2] - o.lengths[0] - 16.).abs() < 1e-9)
+        .expect("the colour swatch");
+    assert!(
+        swatch.fixed.contains("[255, 0, 0]"),
+        "the swatch shows frame (100, 100), red, not screen (200, 200): {}",
+        swatch.fixed
+    );
 }
 
 /// Every interface drawing of one editing scene, on a single screen at `scale`.

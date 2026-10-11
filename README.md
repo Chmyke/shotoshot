@@ -100,6 +100,7 @@ drawn keep theirs. Ctrl+Z undoes the whole stroke.
 | A | Arrow; Shift constrains to 45°; holding Ctrl or Alt snaps its ends to closed shapes, which then carry it along |
 | P / H | Pencil / highlighter; Shift draws a straight line in 45° steps |
 | T | Text; click an existing text with this tool to edit it |
+| E | Eraser: click an object, or sweep across several, to remove them whole; Ctrl+Z brings them back |
 | I | Eyedropper: pick a color and copy its hex code |
 | G | Bucket: each click recolors the stroke or outline under it, fills the rectangle or circle, or else the whole capture; Alt+click clears a fill |
 | F | Whole screen / back to the previous selection |
@@ -259,6 +260,12 @@ wallpaper of each screen. With a text box open, the first Esc commits the text a
 ends the session. Alt+F4 and a change of display end it the same way, and **Ctrl+C** or **Ctrl+S**
 copy or save the picture and also end the session.
 
+- **Zoom** a screen with **Ctrl+wheel** (up to 8×) around the pointer; move around it by
+  dragging with the middle button or with **Space** held; **Ctrl+0** puts that screen back at
+  1:1. Each screen zooms on its own, the toolbar keeps its size, and the view is for editing
+  only: the picture, the notes and the wallpaper ignore it.
+- Signing out of Windows, or shutting it down, while a session is open saves the notes; the
+  wallpaper shows them at the next start.
 - **Show board** in the tray menu is a switch, checked while the notes are shown: turning it off
   gives your own background back at once, turning it on bakes the notes again in the background.
   The notes stay on the desktop when Shotoshot is not running.
@@ -277,7 +284,7 @@ copy or save the picture and also end the session.
   `%LOCALAPPDATA%/Shotoshot/board`.
 - Limits: a slideshow or Spotlight background is replaced by a still picture, and hiding gives back
   the picture that was shown when the Board was first used; the Tile and Span positions are drawn
-  like Fill; signing out of Windows during a session loses the notes drawn since it opened. Windows
+  like Fill. Windows
   only.
 
 ## Presenting live, without capturing

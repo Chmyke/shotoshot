@@ -35,6 +35,31 @@ mod tests {
     }
 
     #[test]
+    fn a_swept_object_pales_on_screen_and_goes_on_release() -> Result<()> {
+        let _com = ComApartment::new()?;
+        let mut s = Session::new(Image::solid(300, 200, [0, 0, 0, 255]))?;
+        s.capture.region = Rect::new(Point::default(), p(300., 200.));
+        s.capture.selecting = false;
+        s.capture.toolbar_visible = false;
+        s.capture.editor.style.color = [255, 255, 255];
+        s.capture.editor.style.width = 10.;
+        draw(&mut s, Tool::Line, p(100., 20.), p(100., 180.));
+        let at = |image: &Image, x: usize, y: usize| image.pixels[(y * 300 + x) * 4];
+        let plain = crate::paint_image(300, 200, |dc| s.paint(dc))?;
+        assert_eq!(at(&plain, 100, 100), 255, "white line");
+        s.action(HWND::default(), Action::Tool(Tool::Eraser));
+        s.mouse_down(HWND::default(), p(50., 100.))?;
+        s.mouse_move(HWND::default(), p(150., 100.));
+        let faded = crate::paint_image(300, 200, |dc| s.paint(dc))?;
+        let value = at(&faded, 100, 100);
+        assert!((60..=95).contains(&value), "faded to about 30 %: {value}");
+        s.mouse_up(HWND::default(), p(150., 100.));
+        let gone = crate::paint_image(300, 200, |dc| s.paint(dc))?;
+        assert_eq!(at(&gone, 100, 100), 0, "the line is gone");
+        Ok(())
+    }
+
+    #[test]
     fn slate_is_the_same_on_screen_and_in_the_export_and_follows_the_region() {
         let _com = ComApartment::new().unwrap();
         let mut s = session();

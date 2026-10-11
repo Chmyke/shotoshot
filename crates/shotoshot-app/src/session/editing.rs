@@ -63,6 +63,27 @@ impl Session {
         let (capture, mut host) = self.host(hwnd);
         capture.wheel(&mut host, delta)
     }
+    /// Ctrl+wheel: zooms the pointed screen of a board; false for a capture.
+    pub fn zoom_wheel(&mut self, delta: i16) -> bool {
+        self.capture.zoom_wheel(delta)
+    }
+    /// Middle button down: the view under `p` follows the pointer until `pan_end`. False
+    /// for a capture, or while a native field has the pointer.
+    pub fn pan_begin(&mut self, hwnd: HWND, p: Point) -> bool {
+        let (capture, mut host) = self.host(hwnd);
+        if host.text_active() || host.dimensions_active() || !capture.begin_pan(p) {
+            return false;
+        }
+        host.capture_pointer();
+        true
+    }
+    pub fn pan_end(&mut self, hwnd: HWND) {
+        let (capture, mut host) = self.host(hwnd);
+        if capture.panning() {
+            capture.end_pan();
+            host.release_pointer();
+        }
+    }
 }
 
 #[cfg(test)]

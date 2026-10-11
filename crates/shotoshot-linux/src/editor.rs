@@ -10,8 +10,8 @@ pub use document::{PROBE, SAVED_EDITABLE, open};
 use shotoshot_core::{Modifiers, Point, settings::Settings};
 use shotoshot_raster::{Raster, pixmap_from_bgra};
 use shotoshot_ui::{
-    Canvas, Capture, CursorKind, DimensionFields, DimensionKey, FieldKey, Host, Image, Monitor,
-    TextField, draw_notice, keys::KeyOutcome, notice_size, toolbar::Action, top_center, wheel,
+    Capture, CursorKind, DimensionFields, DimensionKey, FieldKey, Host, Image, Monitor, TextField,
+    draw_notice, keys::KeyOutcome, notice_size, toolbar::Action, top_center, wheel,
 };
 use std::{
     error::Error,
@@ -377,8 +377,8 @@ impl Editor {
         capture.draw_underlay(&mut canvas).map_err(|e| e.0)?;
         if capture.region.is_some() {
             let editing = native.field.as_ref().and_then(|f| f.object);
-            canvas
-                .annotations(capture.editor.objects(), editing)
+            capture
+                .draw_annotations(&mut canvas, editing)
                 .map_err(|e| e.0)?;
             if let Some(field) = &native.field {
                 field.draw(&mut canvas, true).map_err(|e| e.0)?;

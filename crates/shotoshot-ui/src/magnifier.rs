@@ -41,8 +41,9 @@ impl Capture {
         let zoom = ZOOM * s;
         canvas.fill_round_rect(bounds, 6. * s, dark)?;
         let origin = at(8., 8.);
-        let cx = self.pointer.x.clamp(0., (self.image.width - 1) as f64) as i32;
-        let cy = self.pointer.y.clamp(0., (self.image.height - 1) as f64) as i32;
+        let center = self.loupe_center();
+        let cx = center.x.clamp(0., (self.image.width - 1) as f64) as i32;
+        let cy = center.y.clamp(0., (self.image.height - 1) as f64) as i32;
         for row in 0..CELLS {
             for col in 0..CELLS {
                 let x = cx + col - CELLS / 2;
@@ -73,7 +74,7 @@ impl Capture {
         };
         canvas.stroke_rect(selected.expanded(s), dark, 3. * s)?;
         canvas.stroke_rect(selected, Ink::solid([250, 250, 250]), s)?;
-        let rgb = self.sample_color(self.pointer);
+        let rgb = self.sample_color(self.loupe_center());
         canvas.fill_rect(
             Rect {
                 min: at(8., 126.),

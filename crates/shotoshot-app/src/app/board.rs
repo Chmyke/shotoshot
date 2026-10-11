@@ -104,7 +104,10 @@ impl App {
         for object in &mut gathered.objects {
             object.translate(shift);
         }
-        self.enter(hwnd, Session::board(frame, icons, gathered, screens)?)
+        self.enter(
+            hwnd,
+            Session::board(frame, icons, gathered, screens, folder)?,
+        )
     }
     /// Writes the notes, the text being typed included, to the screens the session opened
     /// on. Until this succeeds the session must stay open.
@@ -112,11 +115,12 @@ impl App {
         let Some(session) = &mut self.session else {
             return Ok(());
         };
-        let Some(screens) = &session.board else {
+        let Some(board) = &session.board else {
             return Ok(());
         };
+        let (screens, folder) = (board.screens.clone(), board.folder.clone());
         session.native.finish_text(&mut session.capture, hwnd, true);
-        write_document(&crate::board::folder()?, session, screens)
+        write_document(&folder, session, &screens)
     }
     /// Bakes the saved notes, sets the wallpaper and remembers that the board is shown. Returns
     /// once Windows shows the new pictures at the pixels the bake changed (at least 95 % of up to
@@ -178,8 +182,14 @@ mod tests {
         }];
         let mut frame = crate::Image::solid(300, 100, [0, 0, 0, 255]);
         frame.left = -100;
-        let mut session =
-            Session::board(frame, None, Gathered::default(), screens.clone()).unwrap();
+        let mut session = Session::board(
+            frame,
+            None,
+            Gathered::default(),
+            screens.clone(),
+            folder.clone(),
+        )
+        .unwrap();
         session.capture.editor.tool = shotoshot_core::Tool::Rectangle;
         session
             .capture

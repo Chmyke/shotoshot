@@ -92,7 +92,7 @@ pub const COLORS: [[u8; 3]; 6] = [
     [28, 31, 40],
 ];
 // One source for toolbar hints and keyboard dispatch. Native text fields handle their own keys.
-const SHORTCUTS: [(&str, Action, u32, bool, bool); 24] = [
+const SHORTCUTS: [(&str, Action, u32, bool, bool); 25] = [
     (
         "Select · V · Page Up/Down forward or back",
         Action::Tool(Tool::Select),
@@ -119,6 +119,7 @@ const SHORTCUTS: [(&str, Action, u32, bool, bool); 24] = [
         false,
     ),
     ("Text · T", Action::Tool(Tool::Text), 84, false, false),
+    ("Eraser · E", Action::Tool(Tool::Eraser), 69, false, false),
     (
         "Live capture · F2 · refresh on copy or save",
         Action::Live,
@@ -490,6 +491,37 @@ fn draw_panel<C: Canvas>(
 mod tests {
     use super::*;
     #[test]
+    fn e_selects_the_eraser_and_its_button_follows_text_in_every_layout() {
+        assert_eq!(
+            shortcut_action(69, false, false, false),
+            Some(Action::Tool(Tool::Eraser))
+        );
+        assert_eq!(
+            shortcut_action(69, true, false, false),
+            None,
+            "Ctrl+E is nobody's"
+        );
+        let region = Rect::new(Point { x: 100., y: 100. }, Point { x: 400., y: 300. }).unwrap();
+        let screen = Rect::new(Point::default(), Point { x: 1920., y: 1080. }).unwrap();
+        for board in [false, true] {
+            let buttons = buttons_in(region, screen, 1., board);
+            let tools: Vec<Tool> = buttons
+                .iter()
+                .filter_map(|b| match b.action {
+                    Action::Tool(t) => Some(t),
+                    _ => None,
+                })
+                .collect();
+            let text = tools.iter().position(|t| *t == Tool::Text).unwrap();
+            assert_eq!(tools.get(text + 1), Some(&Tool::Eraser), "board {board}");
+            let eraser = buttons
+                .iter()
+                .find(|b| b.action == Action::Tool(Tool::Eraser))
+                .unwrap();
+            assert_eq!(eraser.label, "Eraser · E");
+        }
+    }
+    #[test]
     fn hover_delay_fade_and_timer_stop() {
         let now = std::time::Instant::now();
         let bounds = Rect {
@@ -701,7 +733,7 @@ mod tests {
                 .unwrap(),
             ] {
                 let buttons = buttons(r, w, h);
-                assert_eq!(buttons.len(), 24);
+                assert_eq!(buttons.len(), 25);
                 let panels = panels(&buttons, 1.);
                 let screen = Rect {
                     min: Point::default(),

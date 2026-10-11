@@ -5,6 +5,7 @@ use crate::{Capture, Host, toolbar::Action};
 use shotoshot_core::{Modifiers, Point};
 
 pub const KEY_TAB: u32 = 9;
+pub const KEY_SPACE: u32 = 32;
 pub const KEY_ENTER: u32 = 13;
 pub const KEY_ESCAPE: u32 = 27;
 pub const KEY_PAGE_UP: u32 = 33;
@@ -14,6 +15,8 @@ pub const KEY_UP: u32 = 38;
 pub const KEY_RIGHT: u32 = 39;
 pub const KEY_DOWN: u32 = 40;
 pub const KEY_DELETE: u32 = 46;
+const KEY_0: u32 = 48;
+const KEY_NUMPAD_0: u32 = 96;
 const KEY_C: u32 = 67;
 const KEY_V: u32 = 86;
 
@@ -78,6 +81,15 @@ impl Capture {
                 KeyOutcome::Close
             };
         }
+        if key == KEY_SPACE && !self.views.is_empty() {
+            self.hold_space(true);
+            return KeyOutcome::Handled;
+        }
+        if m.ctrl && !m.alt && !m.shift && matches!(key, KEY_0 | KEY_NUMPAD_0) && self.reset_view()
+        {
+            self.adopt_scale();
+            return KeyOutcome::Handled;
+        }
         if m.ctrl {
             let plain = !m.alt && !m.shift;
             return if plain && key == KEY_C {
@@ -108,6 +120,12 @@ impl Capture {
             _ => {}
         }
         KeyOutcome::Handled
+    }
+    /// A key released; only Space matters, which ends the pan modifier.
+    pub fn key_up(&mut self, key: u32) {
+        if key == KEY_SPACE {
+            self.hold_space(false);
+        }
     }
 }
 

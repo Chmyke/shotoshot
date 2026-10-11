@@ -72,6 +72,16 @@ pub struct Capture {
     /// A board session: the region spans every screen, so the toolbar stays on the screen under
     /// the pointer, where the hand is, and offers `Clear board`.
     pub board: bool,
+    /// One view per monitor while a session may zoom (a board); empty elsewhere, where screen
+    /// and frame coordinates coincide.
+    pub views: Vec<crate::View>,
+    /// A drag of the view in progress: the screen it moves and the last pointer position.
+    pub(crate) pan: Option<(usize, Point)>,
+    /// Space held: the next left drag moves the view instead of drawing.
+    pub(crate) space_held: bool,
+    /// The view a press began in: the drag that follows stays in it, whatever screen the
+    /// pointer crosses, and never reaches past what it shows.
+    pub(crate) gesture_view: Option<usize>,
 }
 impl Capture {
     pub fn new(image: Image) -> Self {
@@ -105,6 +115,10 @@ impl Capture {
             style_scale: 1.,
             screen_toggle: None,
             board: false,
+            views: Vec::new(),
+            pan: None,
+            space_held: false,
+            gesture_view: None,
         }
     }
     /// Interface scale: that of the screen under the region, or under the pointer before a
@@ -121,7 +135,7 @@ impl Capture {
     /// current stroke width and text size, so an annotation looks the same at every scale.
     pub(crate) fn adopt_scale(&mut self) {
         let scale = self.ui_scale();
-        self.editor.ui_scale = scale;
+        self.editor.ui_scale = scale / self.zoom_at_pointer();
         if scale == self.style_scale {
             return;
         }
@@ -420,8 +434,12 @@ impl Capture {
         if self.eyedropper {
             return CursorKind::Cross;
         }
-        let (grip, reach) = (9. * self.ui_scale(), 7. * self.ui_scale());
-        if let Some(index) = self.region_handle(p) {
+        if self.panning() || self.space_held() {
+            return CursorKind::Move;
+        }
+        let f = self.to_frame(p);
+        let (grip, reach) = (9. * self.pick_scale(), 7. * self.pick_scale());
+        if let Some(index) = self.region_handle(f) {
             return match index {
                 0 | 4 => CursorKind::ResizeNwse,
                 2 | 6 => CursorKind::ResizeNesw,
@@ -440,7 +458,7 @@ impl Capture {
         }
         if self
             .rotation_handle()
-            .is_some_and(|h| (h - p).length() <= grip)
+            .is_some_and(|h| (h - f).length() <= grip)
         {
             return CursorKind::Hand;
         }
@@ -451,7 +469,7 @@ impl Capture {
                 .iter()
                 .find(|o| o.id == self.editor.selected[0])
             && let Some((a, b)) = arrow_points(object, self.editor.objects())
-            && ((p - a).length() < grip || (p - b).length() < grip)
+            && ((f - a).length() < grip || (f - b).length() < grip)
         {
             return CursorKind::Move;
         }
@@ -459,7 +477,7 @@ impl Capture {
             && let Some(i) = frame
                 .corners()
                 .iter()
-                .position(|c| (*c - p).length() < grip)
+                .position(|c| (*c - f).length() < grip)
         {
             return if i % 2 == 0 {
                 CursorKind::ResizeNwse
@@ -471,7 +489,7 @@ impl Capture {
             .editor
             .objects()
             .iter()
-            .any(|o| o.hit(p, reach, self.editor.objects()))
+            .any(|o| o.hit(f, reach, self.editor.objects()))
         {
             return CursorKind::Move;
         }
@@ -627,7 +645,7 @@ mod tests {
             c.region = Rect::new(point(800., 600.), point(2400., 1500.));
             let region = c.region.unwrap();
             let buttons = c.buttons();
-            assert_eq!(buttons.len(), 24);
+            assert_eq!(buttons.len(), 25);
             for b in &buttons {
                 let size = b.bounds.size();
                 assert!(

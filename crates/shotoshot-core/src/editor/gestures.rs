@@ -9,6 +9,11 @@ impl Editor {
         let before = self.objects.clone();
         let kind = if self.tool == Tool::Select {
             self.selection_gesture(p, modifiers)
+        } else if self.tool == Tool::Eraser {
+            self.selected.clear();
+            GestureKind::Erase {
+                touched: erase::touched(&self.objects, self.ui_scale, p, p),
+            }
         } else {
             self.next_id += 1;
             let shape = match self.tool {
@@ -129,8 +134,19 @@ impl Editor {
         let Some(g) = &mut self.gesture else {
             return;
         };
+        let last = g.current;
         g.current = p;
+        if let GestureKind::Erase { touched } = &mut g.kind {
+            // Field borrows only: `g` holds `self.gesture`, the pile is read beside it.
+            for id in erase::touched(&self.objects, self.ui_scale, last, p) {
+                if !touched.contains(&id) {
+                    touched.push(id);
+                }
+            }
+            return;
+        }
         match g.kind {
+            GestureKind::Erase { .. } => {}
             GestureKind::Draw => {
                 let p = if g.modifiers.shift
                     && matches!(
@@ -313,6 +329,10 @@ impl Editor {
                         self.selected.push(o.id);
                     }
                 }
+            }
+        } else if let GestureKind::Erase { touched } = &g.kind {
+            if !touched.is_empty() {
+                self.remove_objects(touched);
             }
         } else if matches!(g.kind, GestureKind::Draw)
             && self

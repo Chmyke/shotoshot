@@ -183,6 +183,13 @@ pub fn glyph<C: Canvas>(
             g.line((3., 3.), (3., 6.))?;
             g.line((17., 3.), (17., 6.))?;
         }
+        // An eraser block seen from above: the tilted block, the band of its sleeve, the line
+        // it rubs along.
+        Action::Tool(Tool::Eraser) => {
+            g.path(&[(3., 13.), (11., 3.), (17., 9.), (9., 17.), (3., 13.)])?;
+            g.line((7., 8.), (12., 13.))?;
+            g.line((2., 19.), (18., 19.))?;
+        }
         Action::Eyedropper => {
             // Narrow glass stem, cross guard and rubber bulb distinguish it from a pencil.
             g.path(&[

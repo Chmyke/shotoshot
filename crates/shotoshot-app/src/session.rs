@@ -21,7 +21,7 @@ use crate::{
     *,
 };
 use shotoshot_core::*;
-use shotoshot_ui::{Canvas, Capture, CursorKind, Face, Host, keys::KeyOutcome};
+use shotoshot_ui::{Capture, CursorKind, Face, Host, keys::KeyOutcome};
 use windows::{
     Win32::{
         Foundation::*,
@@ -68,7 +68,7 @@ pub struct Session {
     pub document: Option<std::path::PathBuf>,
     /// For a board session, the screens its frame covers: the notes go back to them when it
     /// ends, even if the display changed meanwhile.
-    pub board: Option<Vec<shotoshot_core::board::Screen>>,
+    pub board: Option<board::BoardSession>,
 }
 impl Session {
     pub fn new(image: Image) -> Result<Self> {
@@ -244,11 +244,15 @@ impl Session {
         }
     }
     fn paint_once(&self, hdc: HDC) -> Result<()> {
-        self.native.renderer.begin(
-            hdc,
+        let (width, height) = (
             self.capture.image.width as i32,
             self.capture.image.height as i32,
-        )?;
+        );
+        if self.capture.zoomed() {
+            self.native.renderer.begin_blank(hdc, width, height)?;
+        } else {
+            self.native.renderer.begin(hdc, width, height)?;
+        }
         let draw = self.paint_contents();
         let end = self.native.renderer.end();
         draw?;

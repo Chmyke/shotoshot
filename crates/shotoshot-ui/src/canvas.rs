@@ -88,4 +88,14 @@ pub trait Canvas {
     /// Annotation objects exactly as they appear in the exported image, except `skip`
     /// (an object whose text is being edited in place).
     fn annotations(&mut self, objects: &[Object], skip: Option<u64>) -> Result<(), Self::Error>;
+    /// `annotations` with the objects of `fading` (those a sweep is about to erase) drawn
+    /// faded, in their place in the pile, where the platform can; plainly otherwise.
+    fn annotations_fading(
+        &mut self,
+        objects: &[Object],
+        skip: Option<u64>,
+        _fading: &[u64],
+    ) -> Result<(), Self::Error> {
+        self.annotations(objects, skip)
+    }
 }

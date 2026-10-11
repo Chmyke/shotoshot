@@ -1,6 +1,10 @@
 use super::*;
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 
+/// The Ctrl flag in the key state of `WM_MOUSEWHEEL` (`MK_CONTROL`, whose module is not among
+/// the enabled features).
+pub(super) const MK_CONTROL: usize = 0x0008;
+
 impl App {
     pub(super) fn handle(
         &mut self,
@@ -153,6 +157,7 @@ impl App {
             WM_KEYUP | WM_SYSKEYUP => {
                 if let Some(s) = &mut self.session {
                     s.capture.editor.update_modifiers(modifiers());
+                    s.capture.key_up(w.0 as u32);
                     invalidate(hwnd);
                 } else if self.setup && self.setup_ui.recording {
                     self.setup_ui.held = input::held_modifiers();
@@ -258,16 +263,46 @@ impl App {
             }
             WM_MOUSEWHEEL => {
                 if let Some(s) = &mut self.session {
-                    s.wheel(hwnd, (w.0 >> 16) as u16 as i16)?;
+                    let delta = (w.0 >> 16) as u16 as i16;
+                    if w.0 & MK_CONTROL != 0 && s.zoom_wheel(delta) {
+                        // The pointer did not move, but what lies under it did.
+                        let pointer = s.capture.pointer;
+                        s.mouse_move(hwnd, pointer);
+                    } else {
+                        s.wheel(hwnd, delta)?;
+                    }
+                    invalidate(hwnd);
+                }
+            }
+            WM_MBUTTONDOWN => {
+                if let Some(s) = &mut self.session
+                    && s.pan_begin(hwnd, point)
+                {
+                    invalidate(hwnd);
+                }
+            }
+            WM_MBUTTONUP => {
+                if let Some(s) = &mut self.session {
+                    s.pan_end(hwnd);
                     invalidate(hwnd);
                 }
             }
             WM_CAPTURECHANGED => {
                 if let Some(s) = &mut self.session {
                     s.cancel_gesture(hwnd);
+                    s.capture.end_pan();
+                    s.capture.hold_space(false);
                     if unsafe { GetForegroundWindow() } == hwnd {
                         s.focus_text();
                     }
+                    invalidate(hwnd);
+                }
+            }
+            WM_ACTIVATE if w.0 & 0xffff == WA_INACTIVE as usize => {
+                // Space may be released over another window: forget it now.
+                if let Some(s) = &mut self.session {
+                    s.capture.hold_space(false);
+                    s.capture.end_pan();
                     invalidate(hwnd);
                 }
             }
@@ -350,6 +385,16 @@ impl App {
                 if matches!(l.0 as u32, WM_LBUTTONUP | WM_RBUTTONUP) {
                     self.menu(hwnd)?;
                 }
+            }
+            WM_QUERYENDSESSION => {
+                // Windows is logging off or shutting down: the notes go to disk now, the
+                // wallpaper waits for the resident's next start. Never a message box here.
+                if self.session.as_ref().is_some_and(|s| s.board.is_some())
+                    && let Err(error) = self.save_board(hwnd)
+                {
+                    eprintln!("The board could not be saved before the session ends: {error}");
+                }
+                return Ok(Some(LRESULT(1)));
             }
             WM_CLOSE => {
                 if self.session.is_some() {

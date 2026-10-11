@@ -1260,3 +1260,243 @@ fn history_buttons_follow_commit_undo_redo_and_new_branch() {
         .add_text(Point { x: 30., y: 30. }, "New branch".into());
     assert_eq!(states(&s), (true, false));
 }
+
+/// A test window of its own class around an app holding `session`, as the resident creates
+/// one; the caller destroys it. Preferences are never persisted.
+unsafe fn app_window(class: PCWSTR, session: Session) -> (Box<RefCell<App>>, HWND) {
+    unsafe {
+        let instance = GetModuleHandleW(None).unwrap();
+        let class_info = WNDCLASSW {
+            lpfnWndProc: Some(window_proc),
+            hInstance: instance.into(),
+            lpszClassName: class,
+            ..Default::default()
+        };
+        assert_ne!(RegisterClassW(&class_info), 0);
+        let state = Box::new(RefCell::new(App {
+            settings: Settings::default(),
+            session: Some(session),
+            setup: false,
+            hotkey: crate::hotkey::Hotkey::new(HWND::default()),
+            instant: instant::InstantCapture::new(HWND::default()),
+            board_hotkey: crate::hotkey::Hotkey::with_id(HWND::default(), 5),
+            tray: NOTIFYICONDATAW::default(),
+            quit_after_capture: false,
+            persist_preferences: false,
+            pending_stroke_width: None,
+            worker: None,
+            prepared: None,
+            notification_owner: None,
+            google_search: None,
+            first_frame: None,
+            toast: None,
+            presentation: None,
+            board_rebake_forced: false,
+            setup_ui: setup::Setup::default(),
+        }));
+        let hwnd = CreateWindowExW(
+            WS_EX_TOOLWINDOW,
+            class,
+            w!("Test"),
+            WS_POPUP,
+            -32000,
+            -32000,
+            1000,
+            700,
+            None,
+            None,
+            Some(instance.into()),
+            Some((&*state as *const RefCell<App>).cast()),
+        )
+        .unwrap();
+        (state, hwnd)
+    }
+}
+
+#[test]
+fn board_window_messages_zoom_pan_and_reset_the_pointed_screen() {
+    let _com = ComApartment::new().unwrap();
+    unsafe {
+        let screens = vec![shotoshot_core::board::Screen {
+            id: "one".into(),
+            bounds: Rect::new(Point::default(), Point { x: 1000., y: 700. }).unwrap(),
+        }];
+        let session = Session::board(
+            Image::solid(1000, 700, [230, 230, 230, 255]),
+            None,
+            Default::default(),
+            screens,
+            std::env::temp_dir(),
+        )
+        .unwrap();
+        let (state, hwnd) = app_window(w!("Shotoshot.Test.BoardView"), session);
+        let views = || {
+            state
+                .borrow()
+                .session
+                .as_ref()
+                .unwrap()
+                .capture
+                .views
+                .clone()
+        };
+        send(hwnd, WM_MOUSEMOVE, 0, 100, 100);
+        SendMessageW(
+            hwnd,
+            WM_MOUSEWHEEL,
+            Some(WPARAM((120usize << 16) | events::MK_CONTROL)),
+            Some(packed(100, 100)),
+        );
+        assert_eq!(views()[0].zoom, 1.25, "Ctrl+wheel zooms the pointed screen");
+        assert_eq!(
+            state
+                .borrow()
+                .session
+                .as_ref()
+                .unwrap()
+                .capture
+                .editor
+                .style
+                .width,
+            3.,
+            "the stroke width is not what Ctrl+wheel changes"
+        );
+        let origin = views()[0].origin;
+        send(hwnd, WM_MBUTTONDOWN, 0, 500, 300);
+        send(hwnd, WM_MOUSEMOVE, 0, 450, 280);
+        send(hwnd, WM_MBUTTONUP, 0, 450, 280);
+        assert_ne!(views()[0].origin, origin, "the middle button pans");
+        assert!(
+            !state.borrow().session.as_ref().unwrap().capture.panning(),
+            "released"
+        );
+        // Ctrl+0 through the capture: the keyboard state of a synthetic message is isolated.
+        {
+            let mut app = state.borrow_mut();
+            let (capture, mut host) = app.session.as_mut().unwrap().host(hwnd);
+            let outcome = capture.key(
+                &mut host,
+                48,
+                shotoshot_core::Modifiers {
+                    ctrl: true,
+                    ..Default::default()
+                },
+            );
+            assert_eq!(outcome, shotoshot_ui::keys::KeyOutcome::Handled);
+        }
+        assert_eq!(views()[0].zoom, 1., "Ctrl+0 resets");
+        state.borrow_mut().session = None;
+        DestroyWindow(hwnd).unwrap();
+        UnregisterClassW(
+            w!("Shotoshot.Test.BoardView"),
+            Some(GetModuleHandleW(None).unwrap().into()),
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn windows_ending_its_session_writes_the_board_and_keeps_it_open() {
+    let _com = ComApartment::new().unwrap();
+    let folder =
+        std::env::temp_dir().join(format!("shotoshot-board-endsession-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    unsafe {
+        let screens = vec![shotoshot_core::board::Screen {
+            id: "one".into(),
+            bounds: Rect::new(Point::default(), Point { x: 1000., y: 700. }).unwrap(),
+        }];
+        let session = Session::board(
+            Image::solid(1000, 700, [230, 230, 230, 255]),
+            None,
+            Default::default(),
+            screens,
+            folder.clone(),
+        )
+        .unwrap();
+        let (state, hwnd) = app_window(w!("Shotoshot.Test.EndSession"), session);
+        // A note drawn, then a text being typed: both must reach the document.
+        send(hwnd, WM_KEYDOWN, 82, 0, 0);
+        send(hwnd, WM_LBUTTONDOWN, 0, 100, 100);
+        send(hwnd, WM_MOUSEMOVE, 0, 300, 200);
+        send(hwnd, WM_LBUTTONUP, 0, 300, 200);
+        send(hwnd, WM_KEYDOWN, 84, 0, 0);
+        send(hwnd, WM_LBUTTONDOWN, 0, 500, 500);
+        send(hwnd, WM_LBUTTONUP, 0, 500, 500);
+        let input = state
+            .borrow()
+            .session
+            .as_ref()
+            .unwrap()
+            .native
+            .text
+            .as_ref()
+            .expect("the text field is open")
+            .window;
+        SetWindowTextW(input, w!("Buy milk")).unwrap();
+        let answer = SendMessageW(hwnd, WM_QUERYENDSESSION, Some(WPARAM(0)), Some(LPARAM(0)));
+        assert_eq!(answer.0, 1, "Windows may go on");
+        assert!(state.borrow().session.is_some(), "the session stays open");
+        let board = crate::board::bake::read_board(&folder).unwrap();
+        let scene = &board.screens[0].scene;
+        assert_eq!(scene.objects.len(), 2);
+        assert!(scene.objects.iter().any(
+            |o| matches!(&o.shape, shotoshot_core::Shape::Text { text, .. } if text == "Buy milk")
+        ));
+        state.borrow_mut().session = None;
+        DestroyWindow(hwnd).unwrap();
+        UnregisterClassW(
+            w!("Shotoshot.Test.EndSession"),
+            Some(GetModuleHandleW(None).unwrap().into()),
+        )
+        .unwrap();
+    }
+    std::fs::remove_dir_all(folder).unwrap();
+}
+
+#[test]
+fn space_pan_modifier_lets_go_when_the_window_loses_the_pointer_or_the_foreground() {
+    let _com = ComApartment::new().unwrap();
+    unsafe {
+        let screens = vec![shotoshot_core::board::Screen {
+            id: "one".into(),
+            bounds: Rect::new(Point::default(), Point { x: 1000., y: 700. }).unwrap(),
+        }];
+        let session = Session::board(
+            Image::solid(1000, 700, [230, 230, 230, 255]),
+            None,
+            Default::default(),
+            screens,
+            std::env::temp_dir(),
+        )
+        .unwrap();
+        let (state, hwnd) = app_window(w!("Shotoshot.Test.SpacePan"), session);
+        let held = || {
+            state
+                .borrow()
+                .session
+                .as_ref()
+                .unwrap()
+                .capture
+                .space_held()
+        };
+        send(hwnd, WM_KEYDOWN, 32, 0, 0);
+        assert!(held(), "Space held");
+        send(hwnd, WM_CAPTURECHANGED, 0, 0, 0);
+        assert!(!held(), "the pointer went elsewhere: Space is forgotten");
+        send(hwnd, WM_KEYDOWN, 32, 0, 0);
+        assert!(held());
+        send(hwnd, WM_ACTIVATE, WA_INACTIVE as usize, 0, 0);
+        assert!(
+            !held(),
+            "another window came to the front: Space is forgotten"
+        );
+        state.borrow_mut().session = None;
+        DestroyWindow(hwnd).unwrap();
+        UnregisterClassW(
+            w!("Shotoshot.Test.SpacePan"),
+            Some(GetModuleHandleW(None).unwrap().into()),
+        )
+        .unwrap();
+    }
+}

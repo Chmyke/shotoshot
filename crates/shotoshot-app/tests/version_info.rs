@@ -36,3 +36,17 @@ fn executable_identifies_its_publisher_and_version() {
         format!("{}.0", env!("CARGO_PKG_VERSION"))
     );
 }
+
+/// The side-by-side manifest is written by hand: it must name the workspace version.
+#[test]
+fn manifest_identity_follows_the_package_version() {
+    let manifest = include_str!("../app.manifest");
+    let identity = format!(
+        "<assemblyIdentity version=\"{}.0\"",
+        env!("CARGO_PKG_VERSION")
+    );
+    assert!(
+        manifest.contains(&identity),
+        "app.manifest lacks {identity}"
+    );
+}

@@ -70,16 +70,40 @@ impl Capture {
         }
         Ok(())
     }
+    /// The objects as exported, except `skip`, with those a sweep touched drawn faded in
+    /// their place so the hand sees what the release will remove.
+    pub fn draw_annotations<C: Canvas>(
+        &self,
+        canvas: &mut C,
+        skip: Option<u64>,
+    ) -> Result<(), C::Error> {
+        let erasing = self.editor.erasing();
+        if erasing.is_empty() {
+            canvas.annotations(self.editor.objects(), skip)
+        } else {
+            canvas.annotations_fading(self.editor.objects(), skip, erasing)
+        }
+    }
     /// Region border and handles, then the object selection unless text is being edited.
     pub fn draw_frame<C: Canvas>(
         &self,
         canvas: &mut C,
         show_selection: bool,
     ) -> Result<(), C::Error> {
+        self.draw_frame_scaled(canvas, show_selection, self.ui_scale())
+    }
+    /// `draw_frame` with handle and line sizes at `scale` frame pixels per interface pixel:
+    /// under a zoomed view, the interface scale over the zoom keeps them their size on screen.
+    pub fn draw_frame_scaled<C: Canvas>(
+        &self,
+        canvas: &mut C,
+        show_selection: bool,
+        scale: f64,
+    ) -> Result<(), C::Error> {
         let Some(r) = self.region else {
             return Ok(());
         };
-        let s = self.ui_scale();
+        let s = scale;
         canvas.stroke_rect(r, ACCENT, s)?;
         for p in region_handles(r) {
             canvas.fill_rect(square(p, 4. * s), Ink::solid([250, 250, 250]))?;

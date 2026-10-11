@@ -2,7 +2,7 @@
 //! OWNER: Each capture owns one renderer; no rendering exists while resident.
 use crate::{Image, ImageExt};
 use shotoshot_core::{Object, Point, Rect, Shape, paths};
-use shotoshot_ui::{Canvas, Ink};
+use shotoshot_ui::{Canvas, Ink, View};
 use windows::{
     Win32::{
         Graphics::{
@@ -16,6 +16,9 @@ use windows_numerics::{Matrix3x2, Vector2};
 
 pub(crate) mod annotation_font;
 mod scene;
+
+/// Opacity of the objects a sweep is about to erase: the highlighter's, already in the eye.
+const FADING: f32 = 0.3;
 #[cfg(test)]
 mod scene_tests;
 #[cfg(test)]
@@ -86,12 +89,20 @@ pub fn color(rgb: [u8; 3], alpha: f32) -> D2D1_COLOR_F {
 }
 /// Draws `bitmap` whole at the target's origin, pixel for pixel.
 fn draw_bitmap(target: &ID2D1RenderTarget, bitmap: &ID2D1Bitmap) {
+    draw_bitmap_with(target, bitmap, false)
+}
+/// `smooth` interpolates linearly: a magnified desktop stays legible rather than blocky.
+fn draw_bitmap_with(target: &ID2D1RenderTarget, bitmap: &ID2D1Bitmap, smooth: bool) {
     unsafe {
         target.DrawBitmap(
             bitmap,
             None,
             1.,
-            D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
+            if smooth {
+                D2D1_BITMAP_INTERPOLATION_MODE_LINEAR
+            } else {
+                D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR
+            },
             None,
         );
     }
@@ -250,10 +261,41 @@ impl Renderer {
     pub fn overlay(&self) -> Option<&Image> {
         self.overlay.as_ref().map(|(image, _)| image)
     }
-    /// Draws the overlay on this renderer's target, at the frame's origin.
-    pub fn paint_overlay(&self) {
+    /// Draws the overlay on this renderer's target, at the frame's origin, through the
+    /// current transform; `smooth` for a magnified view.
+    pub fn paint_overlay(&self, smooth: bool) {
         if let Some((_, bitmap)) = &self.overlay {
-            draw_bitmap(&self.dc, bitmap);
+            draw_bitmap_with(&self.dc, bitmap, smooth);
+        }
+    }
+    /// The capture under everything, through the current transform; `smooth` for a
+    /// magnified view.
+    pub fn paint_backdrop(&self, smooth: bool) {
+        if let Some(bitmap) = &self.backdrop {
+            draw_bitmap_with(&self.dc, bitmap, smooth);
+        }
+    }
+    /// Draws what follows through `view`: scaled by its zoom from its origin, clipped to its
+    /// screen. `pop_view` undoes both.
+    pub fn push_view(&self, view: &View) {
+        let zoom = view.zoom as f32;
+        unsafe {
+            self.dc
+                .PushAxisAlignedClip(&rect(view.screen), D2D1_ANTIALIAS_MODE_ALIASED);
+            self.dc.SetTransform(&Matrix3x2 {
+                M11: zoom,
+                M12: 0.,
+                M21: 0.,
+                M22: zoom,
+                M31: (view.screen.min.x - view.origin.x * view.zoom) as f32,
+                M32: (view.screen.min.y - view.origin.y * view.zoom) as f32,
+            });
+        }
+    }
+    pub fn pop_view(&self) {
+        unsafe {
+            self.dc.SetTransform(&Matrix3x2::identity());
+            self.dc.PopAxisAlignedClip();
         }
     }
     fn alpha_bitmap(&self, target: &ID2D1RenderTarget, image: &Image) -> Result<ID2D1Bitmap> {
@@ -451,6 +493,13 @@ impl Renderer {
         }
     }
     pub fn begin(&self, hdc: HDC, width: i32, height: i32) -> Result<()> {
+        self.start(hdc, width, height, true)
+    }
+    /// `begin` without the backdrop: the caller paints it view by view.
+    pub fn begin_blank(&self, hdc: HDC, width: i32, height: i32) -> Result<()> {
+        self.start(hdc, width, height, false)
+    }
+    fn start(&self, hdc: HDC, width: i32, height: i32, backdrop: bool) -> Result<()> {
         unsafe {
             self.dc.BindDC(
                 hdc,
@@ -466,17 +515,11 @@ impl Renderer {
             // Alpha 1/255 is visually negligible but keeps mouse input on the
             // annotation overlay instead of passing through to underlying apps.
             self.dc.Clear(Some(&color([0, 0, 0], 1. / 255.)));
-            if let Some(bitmap) = &self.backdrop {
-                self.dc.DrawBitmap(
-                    bitmap,
-                    None,
-                    1.,
-                    D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
-                    None,
-                );
-            }
-            Ok(())
         }
+        if backdrop {
+            self.paint_backdrop(false);
+        }
+        Ok(())
     }
     pub fn end(&self) -> Result<()> {
         unsafe { self.dc.EndDraw(None, None) }
@@ -570,6 +613,13 @@ impl<'a> D2dCanvas<'a> {
             brush,
             underlay: Some(Vec::new()),
         })
+    }
+    /// A canvas that never records a checkpoint: for drawing under a transform, where the
+    /// scene cache does not apply.
+    pub fn direct(renderer: &'a Renderer, target: &'a ID2D1RenderTarget) -> Result<Self> {
+        let mut canvas = Self::new(renderer, target)?;
+        canvas.underlay = None;
+        Ok(canvas)
     }
     fn ink(&self, ink: Ink) -> &ID2D1SolidColorBrush {
         unsafe { self.brush.SetColor(&color(ink.rgb, ink.alpha)) };
@@ -731,6 +781,49 @@ impl Canvas for D2dCanvas<'_> {
                 None,
             )
         };
+        Ok(())
+    }
+    fn annotations_fading(
+        &mut self,
+        objects: &[Object],
+        skip: Option<u64>,
+        fading: &[u64],
+    ) -> Result<()> {
+        // One retention for the whole pile: a run drawn apart must not evict the others.
+        self.renderer.strokes.borrow_mut().retain_present(objects);
+        let parameters = D2D1_LAYER_PARAMETERS {
+            contentBounds: D2D_RECT_F {
+                left: f32::MIN,
+                top: f32::MIN,
+                right: f32::MAX,
+                bottom: f32::MAX,
+            },
+            geometricMask: std::mem::ManuallyDrop::new(None),
+            maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+            maskTransform: Matrix3x2::identity(),
+            opacity: FADING,
+            opacityBrush: std::mem::ManuallyDrop::new(None),
+            layerOptions: D2D1_LAYER_OPTIONS_NONE,
+        };
+        let mut start = 0;
+        while start < objects.len() {
+            let fades = fading.contains(&objects[start].id);
+            let mut end = start + 1;
+            while end < objects.len() && fading.contains(&objects[end].id) == fades {
+                end += 1;
+            }
+            if fades {
+                unsafe { self.target.PushLayer(&parameters, None) };
+            }
+            let result = self
+                .renderer
+                .annotation_range(self.target, objects, skip, start..end);
+            if fades {
+                unsafe { self.target.PopLayer() };
+            }
+            result?;
+            start = end;
+        }
         Ok(())
     }
     fn annotations(&mut self, objects: &[Object], skip: Option<u64>) -> Result<()> {

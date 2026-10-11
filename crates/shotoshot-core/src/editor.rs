@@ -1,6 +1,7 @@
 //! ROLE: Owns the editable document and reversible gesture transactions.
 //! OWNER: One capture session; no operating system resources.
 //! INVARIANTS: A gesture commits once; image pixels never enter undo history.
+mod erase;
 mod fill;
 mod gestures;
 mod history;
@@ -18,6 +19,8 @@ pub enum Tool {
     Pen,
     Highlight,
     Text,
+    /// Removes whole objects under the pointer or along a sweep.
+    Eraser,
 }
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Modifiers {
@@ -76,6 +79,10 @@ enum GestureKind {
     Endpoint {
         index: usize,
         start: bool,
+    },
+    /// Objects swept so far, in pile order; removed together on release.
+    Erase {
+        touched: Vec<u64>,
     },
 }
 
