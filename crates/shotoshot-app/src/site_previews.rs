@@ -1,7 +1,7 @@
 //! ROLE: Website previews: the real capture UI, presentation aids and Board session over supplied
 //! desktop pictures. The pictures come from the site repository; coordinates below match its
 //! fictional desktops.
-use crate::board::{bake, rendering};
+use crate::board::bake;
 use crate::*;
 use shotoshot_core::board::{Gathered, Screen};
 use shotoshot_core::*;
@@ -779,36 +779,56 @@ fn support_heart_film(folder: &Path) -> Result<()> {
 }
 
 /// The desktop of the desktop-notes film, as Windows stacks it. The three pictures share one
-/// wallpaper and one size.
+/// size.
 struct NotesDesktop {
     /// The user's own wallpaper: what the notes are baked into.
     wallpaper: Image,
-    /// Explorer's rendering, the wallpaper under its icons and no window: a session opens on it.
-    explorer: Image,
-    /// The screen at rest: the same under the taskbar.
+    /// What Explorer draws over the wallpaper, icons and labels alone: premultiplied, with
+    /// their own alpha.
+    icons: Image,
+    /// The screen at rest: the wallpaper under its icons and its taskbar.
     screen: Image,
 }
 
-/// The zone is drawn around the loose group of four icons, under the column.
-const ZONE: Rect = Rect {
-    min: Point { x: 12., y: 250. },
-    max: Point { x: 176., y: 414. },
-};
-/// A free spot between those four icons, where the bucket fills the zone.
-const ZONE_GAP: Point = Point { x: 91., y: 331. };
+/// A zone of the tidy desktop: drawn around one group of icons, filled, titled over them.
+struct Zone {
+    area: Rect,
+    /// A free spot between the group's icons, where the bucket fills the zone.
+    gap: Point,
+    title: &'static str,
+    title_at: Point,
+}
+const ZONES: [Zone; 2] = [
+    Zone {
+        area: Rect {
+            min: Point { x: 106., y: 14. },
+            max: Point { x: 284., y: 214. },
+        },
+        gap: Point { x: 195., y: 128. },
+        title: "PERSONAL",
+        title_at: Point { x: 118., y: 18. },
+    },
+    Zone {
+        area: Rect {
+            min: Point { x: 306., y: 14. },
+            max: Point { x: 484., y: 214. },
+        },
+        gap: Point { x: 395., y: 128. },
+        title: "WORK",
+        title_at: Point { x: 318., y: 18. },
+    },
+];
 const TODO: &str = "Today\n- send the build\n- call Sam at 3";
-const TODO_AT: Point = Point { x: 300., y: 130. };
-const HINT: &str = "zip first";
-/// Above the arrow's path, clear of it.
-const HINT_AT: Point = Point { x: 130., y: 126. };
+const TODO_AT: Point = Point { x: 560., y: 30. };
 /// The step the pointer takes off a note it has just opened: the first letter shows.
 const ASIDE: Point = Point { x: -26., y: 30. };
-/// The arrow leaves the to-do's second line for the right edge of the Builds folder.
-const ARROW_FROM: Point = Point { x: 288., y: 172. };
-const ARROW_TO: Point = Point { x: 82., y: 196. };
-/// Where the pointer waits on the first and on the last frame: the loop has no jump.
+/// The arrow leaves the to-do's second line for the right edge of the Builds folder, in the
+/// work zone.
+const ARROW_FROM: Point = Point { x: 550., y: 84. };
+const ARROW_TO: Point = Point { x: 462., y: 78. };
+/// Where the pointer waits on the first frame and once the notes are drawn.
 const REST: Point = Point { x: 620., y: 360. };
-const DESKTOP_NOTE_SIZE: f32 = 28.;
+const DESKTOP_NOTE_SIZE: f32 = 26.;
 /// Icon pixels that must lie over a note, about half of one icon: fewer would not read as an
 /// icon in front of what was drawn.
 const MIN_ICON_PIXELS: usize = 500;
@@ -817,52 +837,93 @@ fn bgra(image: &Image) -> &[[u8; 4]] {
     image.pixels.as_chunks::<4>().0
 }
 
-/// Pixels of `area` that `a` and `b`, two pictures of one size, do not share.
-fn differing(a: &Image, b: &Image, area: Rect) -> usize {
-    let (width, height) = (a.width as usize, a.height as usize);
+/// Indices of the pixels of `area` in a picture of `width` by `height`, clipped to it.
+fn pixels_in(area: Rect, width: u32, height: u32) -> impl Iterator<Item = usize> {
+    let (width, height) = (width as usize, height as usize);
     let span = |from: f64, to: f64, limit: usize| {
         from.clamp(0., limit as f64) as usize..to.ceil().clamp(0., limit as f64) as usize
     };
     let columns = span(area.min.x, area.max.x, width);
     span(area.min.y, area.max.y, height)
-        .map(|y| {
-            let row = y * width + columns.start..y * width + columns.end;
-            bgra(a)[row.clone()]
-                .iter()
-                .zip(&bgra(b)[row])
-                .filter(|(ours, theirs)| ours[..3] != theirs[..3])
-                .count()
-        })
-        .sum()
+        .flat_map(move |y| y * width + columns.start..y * width + columns.end)
 }
 
-/// Pixels where `frame` shows `icons`, the opaque layer the desktop lays over its wallpaper,
-/// although a note is drawn there: `baked` holds the notes, `wallpaper` does not.
+/// Pixels of `area` that `a` and `b`, two pictures of one size, do not share.
+fn differing(a: &Image, b: &Image, area: Rect) -> usize {
+    pixels_in(area, a.width, a.height)
+        .filter(|&at| bgra(a)[at][..3] != bgra(b)[at][..3])
+        .count()
+}
+
+/// Pixels of `area` that `layer` covers whole.
+fn opaque(layer: &Image, area: Rect) -> usize {
+    pixels_in(area, layer.width, layer.height)
+        .filter(|&at| bgra(layer)[at][3] == 255)
+        .count()
+}
+
+/// Straight BGRA, as a PNG is read, to the premultiplied BGRA a renderer lays over its notes.
+fn premultiplied(mut image: Image) -> Image {
+    for pixel in image.pixels.as_chunks_mut::<4>().0 {
+        let alpha = pixel[3] as u32;
+        for channel in &mut pixel[..3] {
+            *channel = ((*channel as u32 * alpha + 127) / 255) as u8;
+        }
+    }
+    image
+}
+
+/// `base`, opaque, under the premultiplied `layer` of the same size.
+fn under(base: &Image, layer: &Image) -> Image {
+    let mut out = base.clone();
+    for (pixel, over) in out
+        .pixels
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .zip(bgra(layer))
+    {
+        let rest = 255 - over[3] as u32;
+        for (channel, ink) in pixel[..3].iter_mut().zip(over) {
+            *channel = (*ink as u32 + (*channel as u32 * rest + 127) / 255).min(255) as u8;
+        }
+    }
+    out
+}
+
+/// Pixels where `frame` shows `icons` whole although a note is drawn there: `baked` holds the
+/// notes, `wallpaper` does not.
 fn kept_in_front(frame: &Image, icons: &Image, baked: &Image, wallpaper: &Image) -> usize {
     bgra(frame)
         .iter()
         .zip(bgra(icons))
         .zip(bgra(baked).iter().zip(bgra(wallpaper)))
         .filter(|((shown, icon), (note, bare))| {
-            icon[3] != 0 && note[..3] != bare[..3] && shown[..3] == icon[..3]
+            icon[3] == 255 && note[..3] != bare[..3] && shown[..3] == icon[..3]
         })
         .count()
 }
 
 /// The Board, Shotoshot's notes on the desktop: from a calm screen, a session opens on Explorer's
-/// rendering (the taskbar is a window: it goes), a zone is drawn around four icons and filled, a
-/// to-do is typed, a hint is typed and turned yellow, an arrow points at a folder. Escape ends
-/// the session and the notes stay on the desktop, under its icons.
-/// INVARIANTS: every note is made by the session's own gestures; the closed desktop is the
-/// bake's picture under what the screen lays over its wallpaper, icons and taskbar.
+/// rendering (the taskbar is a window: it goes), two zones are drawn around groups of icons,
+/// filled and titled, a to-do is typed and an arrow points from it at a folder. Escape ends the
+/// session; `baked.png` is the wallpaper Shotoshot then hands Windows, notes included. What the
+/// closed desktop does over it (icons, taskbar, a window, an icon dragged across the notes) is
+/// the site's to stack: it owns that fiction.
+/// INVARIANTS: every note is made by the session's own gestures; `baked.png` is the bake's own
+/// picture.
+/// PITFALL: a session lifts the icons off the screen, opaque. The film hands it the drawn
+/// desktop's own layer instead, with its alpha: lifted, the soft rim of those icons keeps the
+/// dark wallpaper it was blended with and rings them on a light zone, which the shadowed labels
+/// of a real desktop do not show.
 fn desktop_notes_film(desktop: &NotesDesktop, folder: &Path) -> Result<()> {
     let NotesDesktop {
         wallpaper,
-        explorer,
+        icons,
         screen,
     } = desktop;
     let size = |image: &Image| (image.width, image.height);
-    if size(wallpaper) != size(screen) || size(explorer) != size(screen) {
+    if size(wallpaper) != size(screen) || size(icons) != size(screen) {
         return Err(fail("the desktop's three pictures differ in size"));
     }
     let whole = Rect {
@@ -873,17 +934,16 @@ fn desktop_notes_film(desktop: &NotesDesktop, folder: &Path) -> Result<()> {
         id: "film".into(),
         bounds: whole,
     }];
-    // What Explorer lays over the wallpaper, lifted as an opening session lifts it.
-    let Some(icons) = rendering::icons_over(explorer, wallpaper, &screens) else {
-        return Err(fail("the desktop shows no icon over its wallpaper"));
-    };
-    if differing(explorer, wallpaper, ZONE) < MIN_ICON_PIXELS {
-        return Err(fail("the zone is drawn around no icon"));
+    if ZONES
+        .iter()
+        .any(|zone| opaque(icons, zone.area) < MIN_ICON_PIXELS)
+    {
+        return Err(fail("a zone is drawn around no icon"));
     }
     std::fs::create_dir_all(folder).map_err(|e| fail(&e.to_string()))?;
     let owner = text_owner(screen)?;
     let mut session = session::Session::board(
-        explorer.clone(),
+        under(wallpaper, icons),
         Some(icons.clone()),
         Gathered::default(),
         screens.to_vec(),
@@ -910,33 +970,38 @@ fn desktop_notes_film(desktop: &NotesDesktop, folder: &Path) -> Result<()> {
     film.still(screen, REST, 30)?;
     film.shoot(REST)?;
     film.hold(12)?;
-    // The zone: the rectangle is the tool in hand when a session opens, the bucket fills it.
-    film.glide(ZONE.min, 12, none)?;
-    film.down(none)?;
-    film.glide(ZONE.max, 16, none)?;
-    film.up(none);
-    film.hold(4)?;
+    // The zones: the rectangle is the tool in hand when a session opens.
+    for zone in &ZONES {
+        film.glide(zone.area.min, 12, none)?;
+        film.down(none)?;
+        film.glide(zone.area.max, 14, none)?;
+        film.up(none);
+        film.hold(4)?;
+    }
+    // The bucket stays in hand from one zone to the next.
     film.pick(Action::Fill)?;
-    film.glide(ZONE_GAP, 10, none)?;
-    film.click()?;
-    film.hold(8)?;
-    // The to-do, in white. Picking the text tool puts the bucket down.
+    for zone in &ZONES {
+        film.glide(zone.gap, 10, none)?;
+        film.click()?;
+        film.hold(6)?;
+    }
+    // Titles and to-do, in white. Picking the text tool puts the bucket down; a click elsewhere
+    // settles the note being typed and opens the next.
     film.pick(Action::Tool(Tool::Text))?;
     film.pick(Action::Color(WHITE))?;
-    film.glide(TODO_AT, 12, none)?;
-    film.click()?;
-    film.glide(TODO_AT + ASIDE, 5, none)?;
-    // Return breaks the line in the text field, as on the keyboard.
-    film.type_text(&TODO.replace('\n', "\r"), 2)?;
-    film.hold(6)?;
-    // A click elsewhere settles the to-do and opens the hint; a colour recolours what is typed.
-    film.glide(HINT_AT, 12, none)?;
-    film.click()?;
-    film.glide(HINT_AT + ASIDE, 5, none)?;
-    film.type_text(HINT, 2)?;
-    film.hold(4)?;
-    film.pick(Action::Color(YELLOW))?;
-    // Picking the arrow settles the hint. ORDER: the arrow comes last, so that nothing is
+    let written = ZONES
+        .iter()
+        .map(|zone| (zone.title_at, zone.title))
+        .chain([(TODO_AT, TODO)]);
+    for (at, text) in written {
+        film.glide(at, 12, none)?;
+        film.click()?;
+        film.glide(at + ASIDE, 5, none)?;
+        // Return breaks the line in the text field, as on the keyboard.
+        film.type_text(&text.replace('\n', "\r"), 2)?;
+        film.hold(6)?;
+    }
+    // Picking the arrow settles the to-do. ORDER: the arrow comes last, so that nothing is
     // pending and one Escape ends the session.
     film.pick(Action::Tool(Tool::Arrow))?;
     film.glide(ARROW_FROM, 12, none)?;
@@ -959,11 +1024,14 @@ fn desktop_notes_film(desktop: &NotesDesktop, folder: &Path) -> Result<()> {
         .iter()
         .filter_map(typed)
         .map(|t| t.replace('\r', ""));
-    if texts.ne([TODO, HINT]) || objects.len() != 4 {
-        return Err(fail("the notes are not the four the film draws"));
+    if texts.ne(ZONES.iter().map(|zone| zone.title).chain([TODO])) || objects.len() != 6 {
+        return Err(fail("the notes are not the six the film draws"));
     }
-    if objects[0].fill.is_none() {
-        return Err(fail("the bucket did not fill the zone"));
+    if objects[..ZONES.len()]
+        .iter()
+        .any(|zone| zone.fill.is_none())
+    {
+        return Err(fail("the bucket did not fill a zone"));
     }
     // Both panels of the tools show whole and clear of every note.
     let panels = shotoshot_ui::toolbar::panels(&film.session.capture.buttons(), 1.);
@@ -979,7 +1047,7 @@ fn desktop_notes_film(desktop: &NotesDesktop, folder: &Path) -> Result<()> {
     }
     let editing = paint_image(screen.width, screen.height, |hdc| film.session.paint(hdc))?;
     // Escape as the window forwards it, then what the session's owner does: the notes are baked
-    // into the wallpaper, and the screen shows it under its icons and taskbar.
+    // into the wallpaper.
     let (capture, mut host) = film.session.host(film.window);
     if capture.key(&mut host, 27, none) != KeyOutcome::Close {
         return Err(fail("Escape did not end the session"));
@@ -990,28 +1058,24 @@ fn desktop_notes_film(desktop: &NotesDesktop, folder: &Path) -> Result<()> {
         last_id: editor.last_id(),
         background: editor.background(),
     };
-    let mut renderer = Renderer::with(Backend::Software, false)?;
+    let renderer = Renderer::with(Backend::Software, false)?;
     let baked = bake::render_screens(&renderer, wallpaper, &notes, &screens)?
         .pop()
         .map(|(_, picture)| picture)
         .ok_or_else(|| fail("nothing was baked"))?;
-    renderer.set_overlay(rendering::icons_over(screen, wallpaper, &screens))?;
-    let closed = renderer.export(&baked, None, &[], whole)?;
-    // The film's point, read in its own frames: icons lie over a note while it is edited and
-    // once the session is over, and every note is still on the screen without the toolbar.
-    for (frame, when) in [(&editing, "in the session"), (&closed, "on the desktop")] {
-        if kept_in_front(frame, &icons, &baked, wallpaper) < MIN_ICON_PIXELS {
-            return Err(fail(&format!("no icon lies over a note {when}")));
-        }
+    // The film's point, read in its own pictures: icons lie over a note while it is edited,
+    // and every note is in the wallpaper the session leaves.
+    if kept_in_front(&editing, icons, &baked, wallpaper) < MIN_ICON_PIXELS {
+        return Err(fail("no icon lies over a note in the session"));
     }
     if notes
         .objects
         .iter()
-        .any(|o| differing(&closed, screen, o.resolved_bounds(&notes.objects)) == 0)
+        .any(|o| differing(&baked, wallpaper, o.resolved_bounds(&notes.objects)) == 0)
     {
-        return Err(fail("a note did not stay on the desktop"));
+        return Err(fail("a note did not reach the wallpaper"));
     }
-    film.still(&closed, REST, 100)?;
+    save_png(&baked, &folder.join("baked.png"))?;
     film.write_pointers()
 }
 
@@ -1042,7 +1106,7 @@ pub fn render(backdrops: &Path, out: &Path) -> Result<()> {
     let layer = |name: &str| load_png(&backdrops.join(format!("desktop-board-{name}.png")));
     let notes = NotesDesktop {
         wallpaper: layer("wallpaper")?,
-        explorer: layer("icons")?,
+        icons: premultiplied(layer("icons")?),
         screen: layer("screen")?,
     };
     desktop_notes_film(&notes, &out.join("board-frames"))
@@ -1172,35 +1236,84 @@ mod tests {
         );
     }
 
-    /// A plain desktop of the site's size under a taskbar, one icon in its column at `top`.
-    fn notes_desktop(top: usize) -> NotesDesktop {
+    #[test]
+    fn a_layer_is_premultiplied_then_laid_over_its_base() {
+        let base = Image::solid(3, 1, [200, 100, 0, 255]);
+        let mut layer = Image::solid(3, 1, [0, 0, 0, 0]);
+        block(&mut layer, 1..2, 0..1, [100, 200, 50, 128]);
+        block(&mut layer, 2..3, 0..1, [10, 20, 30, 255]);
+        let layer = premultiplied(layer);
+        assert_eq!(
+            bgra(&layer),
+            [[0; 4], [50, 100, 25, 128], [10, 20, 30, 255]]
+        );
+        let shown = under(&base, &layer);
+        assert_eq!(
+            bgra(&shown),
+            [[200, 100, 0, 255], [150, 150, 25, 255], [10, 20, 30, 255]],
+            "bare, half and half, covered"
+        );
+        let all = Rect {
+            min: p(0., 0.),
+            max: p(3., 1.),
+        };
+        assert_eq!(
+            opaque(&layer, all),
+            1,
+            "half an icon is not an icon in front"
+        );
+    }
+
+    /// A plain desktop of the site's size under a taskbar, one icon at `top` in each of the
+    /// columns `lefts`.
+    fn notes_desktop(lefts: &[usize], top: usize) -> NotesDesktop {
         let wallpaper = Image::solid(960, 540, [58, 22, 8, 255]);
-        let mut explorer = wallpaper.clone();
-        block(&mut explorer, 30..70, top..top + 40, [92, 208, 255, 255]);
-        let mut screen = explorer.clone();
+        let mut icons = Image::solid(960, 540, [0, 0, 0, 0]);
+        for &left in lefts {
+            block(
+                &mut icons,
+                left..left + 40,
+                top..top + 40,
+                [92, 208, 255, 255],
+            );
+        }
+        let mut screen = under(&wallpaper, &icons);
         block(&mut screen, 0..960, 496..540, [38, 28, 24, 255]);
         NotesDesktop {
             wallpaper,
-            explorer,
+            icons,
             screen,
         }
     }
 
-    /// The desktop-notes film checks its picture too: an icon over a note in the session and on
-    /// the closed desktop, every note still there. An icon the zone misses is refused unfilmed.
+    /// The desktop-notes film checks its pictures too: an icon over a note in the session,
+    /// every note in the wallpaper it leaves. A zone drawn around no icon is refused unfilmed.
     #[test]
-    fn desktop_notes_film_keeps_an_icon_over_its_zone_and_refuses_a_zone_without_one() -> Result<()>
+    fn desktop_notes_film_keeps_an_icon_over_each_zone_and_refuses_a_zone_without_one() -> Result<()>
     {
         let _com = ComApartment::new()?;
         let folder =
             std::env::temp_dir().join(format!("shotoshot-desktop-notes-{}", std::process::id()));
-        assert!(desktop_notes_film(&notes_desktop(14), &folder).is_err());
+        // An icon in the first zone alone.
+        assert!(desktop_notes_film(&notes_desktop(&[134], 56), &folder).is_err());
         assert!(!folder.exists(), "a refused film writes nothing");
-        let filmed = desktop_notes_film(&notes_desktop(260), &folder);
+        let filmed = desktop_notes_film(&notes_desktop(&[134, 334], 56), &folder);
         let frames = std::fs::read_dir(&folder).map_or(0, |entries| entries.count());
+        let baked = load_png(&folder.join("baked.png"));
         let _ = std::fs::remove_dir_all(&folder);
         filmed?;
-        assert!(frames > 300, "only {frames} files for a six-second film");
+        assert!(
+            frames > 300,
+            "only {frames} files for a seven-second session"
+        );
+        let (baked, wallpaper) = (baked?, Image::solid(960, 540, [58, 22, 8, 255]));
+        for zone in &ZONES {
+            assert!(
+                differing(&baked, &wallpaper, zone.area) > 20_000,
+                "the wallpaper the session leaves holds the filled zone {}",
+                zone.title
+            );
+        }
         Ok(())
     }
 }

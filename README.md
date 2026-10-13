@@ -256,7 +256,7 @@ opens full screen on it, a smaller one in a window of its size.
 
 ## Board: notes under the icons
 
-![The Board on a desktop: a zone is filled behind icons that stay in front, a to-do is typed, a note and an arrow point at a folder, then the notes stay on the desktop.](https://shotoshot.com/assets/board.gif)
+![The Board on a desktop: two zones are drawn, filled and titled behind groups of icons that stay in front, a to-do is typed and an arrow points at a folder. After Esc the notes are part of the wallpaper: a window opens over them and closes, and an icon is dragged across them.](https://shotoshot.com/assets/board.gif)
 
 **Board** keeps notes, drawn or typed, on your desktop, below the icons. Press **Alt+B** (the
 **Board** row of the Shortcuts group changes it; it needs Ctrl or Alt) or choose **Edit board**
