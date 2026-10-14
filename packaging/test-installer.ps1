@@ -6,6 +6,8 @@
 #    remove the old folder and shortcuts, keep "start with Windows" under the new name, and
 #    the uninstaller must leave nothing. Uses -OldSetup, else the newest
 #    out/Shot-Shot-Setup-*.exe; skipped (and said) when none exists.
+# No task page and no desktop shortcut offered (2026-10-15); scenario 2 checks the old
+# shortcut is carried over under the new name all the same.
 # Refuses to run if Shotoshot or Shot Shot is already installed for this user, so a real
 # installation is never touched. A development build running from target/ is
 # left alone; while it runs, the launched copy shows "already open" for ~3 s.

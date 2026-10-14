@@ -3,7 +3,7 @@
 ; Test:  powershell -NoProfile -ExecutionPolicy Bypass -File packaging\test-installer.ps1
 ; RULE: keep AppVersion equal to [workspace.package] version in Cargo.toml (checked by the build script).
 
-#define AppVersion "0.3.1"
+#define AppVersion "0.3.2"
 #define AppName "Shotoshot"
 #define AppExeName "shotoshot.exe"
 #define AppPublisher "Mickaël Mancini"
@@ -54,9 +54,6 @@ ChangesAssociations=yes
 Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 
-[Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-
 [Files]
 Source: "..\target\release\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
@@ -72,7 +69,9 @@ Type: files; Name: "{autodesktop}\{#OldAppName}.lnk"
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
+; No desktop shortcut is offered (Mickael, 2026-10-15: no task page, the Start menu is enough).
+; Only a pre-0.2.0 "Shot Shot" desktop shortcut is carried over under the new name.
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Check: KeepsOldDesktopLink
 
 ; A double-click on an editable ".shoto" image reopens it in Shotoshot. Per-user keys, removed
 ; with the application. The file is a PNG, so it is declared as an image.
@@ -113,6 +112,9 @@ const
   RunKey = 'Software\Microsoft\Windows\CurrentVersion\Run';
   RunValue = 'Shotoshot';
   OldRunValue = 'Shotshot';
+
+var
+  HadOldDesktopLink: Boolean;
 
 function FindWindowEx(Parent, ChildAfter: HWND; ClassName: String; WindowName: Cardinal): HWND;
   external 'FindWindowExW@user32.dll stdcall';
@@ -215,8 +217,15 @@ begin
   CloseApp('{#OldExeName}', OldExePath, OldWindowClass);
 end;
 
+{ Read before [InstallDelete] removes the old shortcut. }
+function KeepsOldDesktopLink: Boolean;
+begin
+  Result := HadOldDesktopLink;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
+  HadOldDesktopLink := FileExists(ExpandConstant('{autodesktop}\{#OldAppName}.lnk'));
   CloseInstalledApp;
   Result := '';
 end;

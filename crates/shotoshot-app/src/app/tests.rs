@@ -123,6 +123,28 @@ fn the_uninstaller_runs_exactly_the_restores_the_app_offers() {
     assert_eq!(run, runtime::UNINSTALL_RESTORES);
 }
 
+/// Updating is downloading the installer again and running it (2026-10-15): no task page to
+/// answer, no desktop shortcut offered. Only a pre-0.2.0 one is carried over.
+#[test]
+fn the_installer_asks_nothing_and_offers_no_desktop_shortcut() {
+    let script = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../packaging/shotoshot.iss"
+    ))
+    .unwrap();
+    assert!(!script.contains("[Tasks]"), "a task page is back");
+    let desktop: Vec<&str> = script
+        .lines()
+        .filter(|line| line.starts_with("Name: \"{autodesktop}"))
+        .collect();
+    assert_eq!(
+        desktop,
+        [
+            "Name: \"{autodesktop}\\{#AppName}\"; Filename: \"{app}\\{#AppExeName}\"; Check: KeepsOldDesktopLink"
+        ]
+    );
+}
+
 #[test]
 fn a_restore_run_by_the_uninstaller_fails_without_a_message_box() {
     let on_stderr =
