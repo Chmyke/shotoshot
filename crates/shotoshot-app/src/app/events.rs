@@ -60,18 +60,8 @@ impl App {
                         s.capture.searching = false;
                     }
                     match receiver.try_recv() {
-                        Ok(Ok(url)) => {
-                            let opened = unsafe {
-                                ShellExecuteW(
-                                    Some(hwnd),
-                                    w!("open"),
-                                    &HSTRING::from(url),
-                                    None,
-                                    None,
-                                    SW_SHOWNORMAL,
-                                )
-                            };
-                            if opened.0 as isize <= 32 {
+                        Ok(Ok(page)) => {
+                            if !crate::google_search::open(hwnd, std::path::Path::new(&page)) {
                                 message(
                                     hwnd,
                                     "Could not open the browser. Your capture is still open.",

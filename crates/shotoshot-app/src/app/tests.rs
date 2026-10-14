@@ -135,6 +135,10 @@ fn a_restore_run_by_the_uninstaller_fails_without_a_message_box() {
     }
     assert!(on_stderr(&["shotoshot.exe", "--board-diagnostic"]));
     assert!(
+        on_stderr(&["shotoshot.exe", "--forget-lens-page", "lens-1-2.html"]),
+        "the page forgetter runs after its editor has gone"
+    );
+    assert!(
         !on_stderr(&["shotoshot.exe"]),
         "the resident shows its errors"
     );

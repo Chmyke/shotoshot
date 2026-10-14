@@ -1,152 +1,281 @@
-//! Explicit image search only: annotated crop -> Google Lens -> default browser.
-//! No clipboard mutation, temporary image file, third-party host or idle network activity.
+//! Explicit image search only: annotated crop -> local page -> default browser -> Google Lens.
+//! The browser sends the image itself, as Chrome's own Lens form does (`lens_form.ts`): Google
+//! binds a visual search to the client that uploaded it, so a search uploaded by Shotoshot and
+//! opened in the browser showed "Expired visual search" (2026-10-14). Shotoshot itself makes no
+//! network request and leaves the clipboard alone; the page lives a minute in the temp folder.
+//! PITFALL: Google refuses the form from another site's origin (HTTP 403), and a local server is
+//! one; a page opened from a file posts with the origin `null`, which it accepts.
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use windows::{
-    Win32::{Foundation::*, Networking::WinHttp::*},
+    Win32::{
+        Foundation::*,
+        UI::{Shell::*, WindowsAndMessaging::SW_SHOWNORMAL},
+    },
     core::*,
 };
-const BOUNDARY: &str = "Shotoshot-Lens-7bf973acd8024d91";
-struct Handle(*mut std::ffi::c_void);
-impl Handle {
-    fn new(value: *mut std::ffi::c_void) -> Result<Self> {
-        if value.is_null() {
-            Err(Error::from_thread())
-        } else {
-            Ok(Self(value))
+
+const FORM_ACTION: &str = "https://lens.google.com/v3/upload?ep=cntpubb&hl=en";
+const PAGE_PREFIX: &str = "lens-";
+const PAGE_EXTENSION: &str = "html";
+/// Started by `open`: waits `PAGE_LIFETIME`, then deletes the page it was given.
+pub(crate) const FORGET_PAGE: &str = "--forget-lens-page";
+/// Long enough for a browser started cold to read the page.
+const PAGE_LIFETIME: Duration = Duration::from_secs(60);
+
+fn io(error: std::io::Error) -> Error {
+    Error::new(E_FAIL, error.to_string())
+}
+
+fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n = chunk
+            .iter()
+            .enumerate()
+            .fold(0u32, |n, (i, &b)| n | u32::from(b) << (16 - 8 * i));
+        for i in 0..4 {
+            out.push(if i <= chunk.len() {
+                ALPHABET[(n >> (18 - 6 * i) & 63) as usize] as char
+            } else {
+                '='
+            });
+        }
+    }
+    out
+}
+
+/// A page that hands `png` to Google Lens as soon as it opens, with the fields of Chrome's form.
+fn page(png: &[u8], start_ms: u128) -> String {
+    let action = format!("{FORM_ACTION}&st={start_ms}").replace('&', "&amp;");
+    let image = base64(png);
+    format!(
+        r#"<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Google Lens</title>
+<body style="background:#202124;color:#e8eaed;font:15px 'Segoe UI',sans-serif;margin:40px">
+<p>Sending the capture to Google Lens...</p>
+<noscript><p>JavaScript is needed to send the capture.</p></noscript>
+<form id="lens" method="post" enctype="multipart/form-data" action="{action}">
+<input id="image" type="file" name="encoded_image" accept="image/png" hidden>
+</form>
+<script>
+const text = atob("{image}");
+const bytes = new Uint8Array(text.length);
+for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
+const files = new DataTransfer();
+files.items.add(new File([bytes], "capture.png", {{ type: "image/png" }}));
+document.getElementById("image").files = files.files;
+document.getElementById("lens").submit();
+</script>
+"#
+    )
+}
+
+fn folder() -> PathBuf {
+    std::env::temp_dir().join("Shotoshot")
+}
+
+fn is_page(path: &Path) -> bool {
+    path.extension().is_some_and(|e| e == PAGE_EXTENSION)
+        && path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.starts_with(PAGE_PREFIX))
+}
+
+/// Deletes the pages older than their lifetime that a forgetter could not remove (shutdown,
+/// failed start). Anything else in `folder` is left alone.
+fn forget_stale(folder: &Path, now: SystemTime) {
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return;
+    };
+    for path in entries.flatten().map(|e| e.path()) {
+        let expired = std::fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .is_ok_and(|t| now.duration_since(t).unwrap_or_default() >= PAGE_LIFETIME);
+        if is_page(&path) && expired {
+            let _ = std::fs::remove_file(path);
         }
     }
 }
-impl Drop for Handle {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = WinHttpCloseHandle(self.0);
-        }
-    }
-}
-fn multipart(png: &[u8]) -> Vec<u8> {
-    let mut body = format!("--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"encoded_image\"; filename=\"capture.png\"\r\nContent-Type: image/png\r\n\r\n").into_bytes();
-    body.extend_from_slice(png);
-    body.extend_from_slice(format!("\r\n--{BOUNDARY}--\r\n").as_bytes());
-    body
-}
-fn valid_result(url: &str) -> bool {
-    (url.starts_with("https://www.google.com/search?")
-        || url.starts_with("https://lens.google.com/"))
-        && !url.chars().any(char::is_control)
-}
-pub(crate) fn upload(image: &crate::Image) -> Result<String> {
+
+/// Writes the page for `image`; nothing leaves the machine until the browser opens it.
+pub(crate) fn prepare(image: &crate::Image) -> Result<PathBuf> {
     let _com = crate::ComApartment::new()?;
     let png = crate::png_bytes(image)?;
-    let body = multipart(&png);
-    unsafe {
-        let session = Handle::new(WinHttpOpen(
-            w!("Shotoshot/0.2"),
-            WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
-            PCWSTR::null(),
-            PCWSTR::null(),
-            0,
-        ))?;
-        WinHttpSetTimeouts(session.0, 10000, 10000, 20000, 20000)?;
-        let connection = Handle::new(WinHttpConnect(session.0, w!("lens.google.com"), 443, 0))?;
-        let request = Handle::new(WinHttpOpenRequest(
-            connection.0,
-            w!("POST"),
-            w!("/v3/upload?ep=cntpubb&hl=en"),
-            PCWSTR::null(),
-            PCWSTR::null(),
-            std::ptr::null(),
-            WINHTTP_FLAG_SECURE,
-        ))?;
-        WinHttpSetOption(
-            Some(request.0),
-            WINHTTP_OPTION_DISABLE_FEATURE,
-            Some(&(WINHTTP_DISABLE_REDIRECTS | WINHTTP_DISABLE_COOKIES).to_ne_bytes()),
-        )?;
-        // Request-local compatibility cookie; no browser cookie jar is read, changed or persisted.
-        let headers: Vec<u16> = format!(
-            "Content-Type: multipart/form-data; boundary={BOUNDARY}\r\nCookie: SOCS=CAI\r\n"
+    let folder = folder();
+    std::fs::create_dir_all(&folder).map_err(io)?;
+    forget_stale(&folder, SystemTime::now());
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let path = folder.join(format!(
+        "{PAGE_PREFIX}{}-{}.{PAGE_EXTENSION}",
+        std::process::id(),
+        now.as_nanos()
+    ));
+    std::fs::write(&path, page(&png, now.as_millis())).map_err(io)?;
+    Ok(path)
+}
+
+/// The program that opens https links: the `.html` association may be an editor.
+fn browser() -> Option<PathBuf> {
+    let mut buffer = [0u16; 1024];
+    let mut size = buffer.len() as u32;
+    let found = unsafe {
+        AssocQueryStringW(
+            ASSOCF_NOTRUNCATE,
+            ASSOCSTR_EXECUTABLE,
+            w!("https"),
+            w!("open"),
+            Some(PWSTR(buffer.as_mut_ptr())),
+            &mut size,
         )
-        .encode_utf16()
-        .collect();
-        WinHttpSendRequest(
-            request.0,
-            Some(&headers),
-            Some(body.as_ptr().cast()),
-            body.len() as u32,
-            body.len() as u32,
-            0,
-        )?;
-        WinHttpReceiveResponse(request.0, std::ptr::null_mut())?;
-        let mut status = 0u32;
-        let mut size = 4;
-        WinHttpQueryHeaders(
-            request.0,
-            WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-            PCWSTR::null(),
-            Some((&mut status as *mut u32).cast()),
-            &mut size,
-            std::ptr::null_mut(),
-        )?;
-        if ![301, 302, 303, 307, 308].contains(&status) {
-            return Err(Error::new(
-                E_FAIL,
-                format!(
-                    "Google Lens did not accept the image (HTTP {status}). Your capture is preserved."
-                ),
-            ));
+    };
+    if found.is_err() {
+        return None;
+    }
+    let end = buffer.iter().position(|c| *c == 0).unwrap_or(buffer.len());
+    let path = PathBuf::from(String::from_utf16(&buffer[..end]).ok()?);
+    path.is_file().then_some(path)
+}
+
+/// Opens `page` in the default browser and schedules its deletion; false if nothing opened.
+pub(crate) fn open(owner: HWND, page: &Path) -> bool {
+    let opened = unsafe {
+        match browser() {
+            Some(browser) => ShellExecuteW(
+                Some(owner),
+                w!("open"),
+                &HSTRING::from(browser.as_os_str()),
+                &HSTRING::from(format!("\"{}\"", page.display())),
+                None,
+                SW_SHOWNORMAL,
+            ),
+            None => ShellExecuteW(
+                Some(owner),
+                w!("open"),
+                &HSTRING::from(page.as_os_str()),
+                None,
+                None,
+                SW_SHOWNORMAL,
+            ),
         }
-        let mut buffer = [0u16; 8192];
-        size = std::mem::size_of_val(&buffer) as u32;
-        WinHttpQueryHeaders(
-            request.0,
-            WINHTTP_QUERY_LOCATION,
-            PCWSTR::null(),
-            Some(buffer.as_mut_ptr().cast()),
-            &mut size,
-            std::ptr::null_mut(),
-        )?;
-        let end = buffer.iter().position(|c| *c == 0).unwrap_or(buffer.len());
-        let url = String::from_utf16(&buffer[..end])
-            .map_err(|_| Error::new(E_FAIL, "Invalid Google Lens link"))?;
-        if !valid_result(&url) {
-            return Err(Error::new(
-                E_FAIL,
-                format!(
-                    "Google Lens returned an unexpected link: {}",
-                    url.split('?').next().unwrap_or("")
-                ),
-            ));
-        }
-        Ok(url)
+    };
+    if opened.0 as isize <= 32 {
+        let _ = std::fs::remove_file(page);
+        return false;
+    }
+    // The editor ends with its session: a process of its own deletes the page later. If it
+    // cannot start, the next search removes the page.
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = std::process::Command::new(exe)
+            .arg(FORGET_PAGE)
+            .arg(page)
+            .spawn();
+    }
+    true
+}
+
+/// `--forget-lens-page <page>`: deletes a page of ours once the browser has had time to read it.
+pub(crate) fn forget_later(page: &Path) -> Result<()> {
+    if !is_page(page) || page.parent() != Some(folder().as_path()) {
+        return Err(Error::new(E_INVALIDARG, "Not a Google Lens page"));
+    }
+    std::thread::sleep(PAGE_LIFETIME);
+    match std::fs::remove_file(page) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(io(error)),
+        _ => Ok(()),
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn multipart_preserves_binary_image_and_uses_google_file_field() {
-        let png = [0, 255, 13, 10, 128];
-        let body = multipart(&png);
-        assert!(body.windows(png.len()).any(|w| w == png));
-        assert!(body.starts_with(format!("--{BOUNDARY}\r\n").as_bytes()));
-        assert!(body.ends_with(format!("\r\n--{BOUNDARY}--\r\n").as_bytes()));
-        assert!(String::from_utf8_lossy(&body).contains("name=\"encoded_image\""));
+    fn decode(text: &str) -> Vec<u8> {
+        const ALPHABET: &[u8; 64] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let digits: Vec<u32> = text
+            .bytes()
+            .filter(|&b| b != b'=')
+            .map(|b| ALPHABET.iter().position(|&a| a == b).unwrap() as u32)
+            .collect();
+        let mut out = Vec::new();
+        for group in digits.chunks(4) {
+            let n = group
+                .iter()
+                .enumerate()
+                .fold(0, |n, (i, &d)| n | d << (18 - 6 * i));
+            for i in 0..group.len() - 1 {
+                out.push((n >> (16 - 8 * i)) as u8);
+            }
+        }
+        out
     }
     #[test]
-    fn only_google_https_result_links_are_opened() {
-        assert!(valid_result("https://www.google.com/search?x=1"));
-        for url in [
-            "https://www.google.com.evil.test/search?",
-            "file:///test",
-            "http://lens.google.com/",
-            "https://lens.google.com/\n",
+    fn base64_matches_the_standard_alphabet_and_padding() {
+        assert_eq!(base64(b""), "");
+        assert_eq!(base64(b"f"), "Zg==");
+        assert_eq!(base64(b"fo"), "Zm8=");
+        assert_eq!(base64(b"foo"), "Zm9v");
+        assert_eq!(base64(b"foobar"), "Zm9vYmFy");
+        let all: Vec<u8> = (0..=255).collect();
+        assert_eq!(decode(&base64(&all)), all);
+    }
+    #[test]
+    fn page_posts_the_png_with_the_fields_of_chromes_lens_form() {
+        let png = [0x89, b'P', b'N', b'G', 0, 255, 13, 10];
+        let html = page(&png, 1234);
+        assert!(html.contains(
+            r#"action="https://lens.google.com/v3/upload?ep=cntpubb&amp;hl=en&amp;st=1234""#
+        ));
+        assert!(html.contains(r#"method="post" enctype="multipart/form-data""#));
+        assert!(html.contains(r#"name="encoded_image""#));
+        let start = html.find("atob(\"").unwrap() + 6;
+        let end = start + html[start..].find('"').unwrap();
+        assert_eq!(decode(&html[start..end]), png);
+        assert!(html.contains(".submit()"));
+    }
+    #[test]
+    fn stale_pages_are_deleted_and_nothing_else() {
+        let folder =
+            std::env::temp_dir().join(format!("shotoshot-lens-test-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let page = folder.join("lens-1-2.html");
+        let other = folder.join("notes.html");
+        std::fs::write(&page, "x").unwrap();
+        std::fs::write(&other, "x").unwrap();
+        forget_stale(&folder, SystemTime::now());
+        assert!(
+            page.exists(),
+            "a fresh page is still being read by the browser"
+        );
+        forget_stale(&folder, SystemTime::now() + PAGE_LIFETIME);
+        assert!(!page.exists());
+        assert!(other.exists());
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+    #[test]
+    fn the_forgetter_refuses_any_file_but_a_lens_page_of_ours() {
+        for path in [
+            folder().join("settings.txt"),
+            std::env::temp_dir().join("lens-1-2.html"),
+            PathBuf::from(r"C:\Windows\lens-1-2.html"),
         ] {
-            assert!(!valid_result(url));
+            assert!(forget_later(&path).is_err(), "{}", path.display());
         }
     }
     #[test]
-    fn png_encoding_stays_in_memory() {
-        let _com = crate::ComApartment::new().unwrap();
-        let png = crate::png_bytes(&crate::Image::solid(3, 2, [0, 0, 255, 255])).unwrap();
-        assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+    fn prepared_page_holds_the_capture_in_the_temp_folder() {
+        let image = crate::Image::solid(3, 2, [0, 0, 255, 255]);
+        let path = prepare(&image).unwrap();
+        assert!(is_page(&path));
+        assert_eq!(path.parent(), Some(folder().as_path()));
+        let html = std::fs::read_to_string(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        let start = html.find("atob(\"").unwrap() + 6;
+        let end = start + html[start..].find('"').unwrap();
+        assert_eq!(&decode(&html[start..end])[..8], b"\x89PNG\r\n\x1a\n");
     }
 }

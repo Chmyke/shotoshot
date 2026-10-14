@@ -8,7 +8,7 @@ is in English; the on-screen keyboard always follows the active keyboard layout.
 - **Light.** A small resident process starts one editor process per capture. That process ends
   with the session, which returns its memory to Windows, graphics caches included.
 - **Private.** No telemetry and no network request of its own. Google Lens receives a capture only
-  when you click its button.
+  when you click its button, sent by your browser.
 - **Open.** GPL-3.0, written in Rust on Direct2D, with no web engine.
 
 ![Shotoshot at work: an area is selected and widened, an arrow points at a chart, a note is typed, enlarged and rotated, and a square is drawn then moved.](https://shotoshot.com/assets/capture.gif)
@@ -211,9 +211,11 @@ behaviour, check **Live capture by default** in the notification-area menu.
 ### Google Lens
 
 The multicolored **G** button, **Search with Google Lens**, sends only the selected region with
-its annotations to Google, then opens the results in the default browser. The upload happens on
-the click, with no intermediate host and no change to the clipboard. The capture stays open if the
-upload fails; the PNG is limited to 20 MB.
+its annotations to Google, then shows the results in the default browser. Shotoshot writes a small
+local page holding the image and opens it; the browser itself sends the image to Google, as its
+own Lens button would, so the results belong to that browser. No intermediate host, no change to
+the clipboard; the page is deleted a minute later. The capture stays open if the browser does not
+start; the PNG is limited to 20 MB.
 
 ### Output
 

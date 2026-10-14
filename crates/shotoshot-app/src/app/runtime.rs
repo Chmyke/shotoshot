@@ -40,11 +40,21 @@ pub fn reports_errors_on_stderr(mut args: impl Iterator<Item = String>) -> bool 
                     | "--board-diagnostic"
                     | "--board-diagnostic-set"
                     | "--document-probe"
+                    | crate::google_search::FORGET_PAGE
             )
     })
 }
 
 pub fn run() -> Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(i) = args
+        .iter()
+        .position(|a| a == crate::google_search::FORGET_PAGE)
+    {
+        // Spawned after a Google Lens search: no window, no COM, only a delayed deletion.
+        let page = args.get(i + 1).map(String::as_str).unwrap_or_default();
+        return crate::google_search::forget_later(std::path::Path::new(page));
+    }
     if std::env::args().any(|a| a == RESTORE_PRINT_SCREEN) {
         // Called by the uninstaller: no window, no COM, errors go to stderr (see main.rs).
         // A pre-0.2.0 backup of the Print Screen option must be found under the new name.
@@ -94,17 +104,23 @@ pub fn run() -> Result<()> {
         return crate::board::probe::run_set();
     }
     if std::env::args().any(|a| a == "--google-diagnostic") {
-        // Explicit opt-in network probe: generated pixels only, never the desktop.
+        // Explicit opt-in, never run by check.ps1: generated pixels only, never the desktop, sent
+        // by the default browser as a real search would be. A person reads the result there.
         let image = crate::Image::solid(64, 64, [40, 90, 180, 255]);
-        let _ = crate::google_search::upload(&image)?;
+        let page = crate::google_search::prepare(&image)?;
+        if !crate::google_search::open(HWND::default(), &page) {
+            return Err(Error::new(
+                E_FAIL,
+                "The default browser did not open the page.",
+            ));
+        }
         std::fs::write(
             "target/google-diagnostic.txt",
-            "PASS: synthetic PNG sent to Google Lens; validated Google result redirect.",
+            "OPENED: synthetic search handed to the default browser; check that Google shows results.",
         )
         .map_err(|e| Error::new(E_FAIL, e.to_string()))?;
         return Ok(());
     }
-    let args: Vec<String> = std::env::args().collect();
     if let Some(i) = args.iter().position(|a| a == "--render-site-previews") {
         // --render-site-previews <desktop pictures folder> <output folder>
         let (Some(backdrops), Some(out)) = (args.get(i + 1), args.get(i + 2)) else {

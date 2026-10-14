@@ -653,7 +653,9 @@ impl App {
                 std::thread::Builder::new()
                     .name("Shotoshot Google Lens".into())
                     .spawn(move || {
-                        let result = crate::google_search::upload(&image).map_err(|e| e.message());
+                        let result = crate::google_search::prepare(&image)
+                            .map(|page| page.to_string_lossy().into_owned())
+                            .map_err(|e| e.message());
                         if tx.send(result).is_ok() {
                             unsafe {
                                 let _ = PostMessageW(
