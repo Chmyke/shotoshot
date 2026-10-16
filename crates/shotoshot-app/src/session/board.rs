@@ -52,6 +52,8 @@ impl Session {
         let measure = |text: &str, size: f64| renderer.measure_text(text, size as f32).ok();
         let mut capture = Capture::reopen(scene, frame, monitors, measure).ok_or_else(damaged)?;
         capture.board = true;
+        // A board is drawn in zones: it opens with the rectangle, a capture with the arrow.
+        capture.editor.tool = shotoshot_core::Tool::Rectangle;
         capture.enable_views();
         Ok(Self {
             capture,
@@ -64,6 +66,7 @@ impl Session {
                 live_sample: None,
                 back_buffer: None,
                 acceleration: None,
+                caret: Default::default(),
             },
             document: None,
             board: Some(BoardSession { screens, folder }),

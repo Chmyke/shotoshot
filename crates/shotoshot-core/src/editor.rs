@@ -11,10 +11,11 @@ use crate::*;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Tool {
     Select,
-    #[default]
     Rectangle,
     Ellipse,
     Line,
+    /// The most useful tool, so every new capture starts with it.
+    #[default]
     Arrow,
     Pen,
     Highlight,

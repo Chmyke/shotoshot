@@ -11,7 +11,7 @@ use shotoshot_core::{Modifiers, Point, settings::Settings};
 use shotoshot_raster::{Raster, pixmap_from_bgra};
 use shotoshot_ui::{
     Capture, CursorKind, DimensionFields, DimensionKey, FieldKey, Host, Image, Monitor, TextField,
-    draw_notice, keys::KeyOutcome, notice_size, toolbar::Action, top_center, wheel,
+    caret, draw_notice, keys::KeyOutcome, notice_size, toolbar::Action, top_center, wheel,
 };
 use std::{
     error::Error,
@@ -27,7 +27,7 @@ use winit::{
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::ModifiersState,
     monitor::MonitorHandle,
-    window::{CursorIcon, Fullscreen, Window, WindowId},
+    window::{Cursor, CursorIcon, CustomCursor, Fullscreen, Window, WindowId},
 };
 
 /// Native side of the Linux editor: renderer resources and the portable inline fields.
@@ -36,10 +36,27 @@ struct Native {
     field: Option<TextField>,
     dimensions: Option<DimensionFields>,
     modifiers: Modifiers,
+    /// Blink of the caret of whichever field is open; `caret_due` is its next change.
+    caret: caret::Blink<[usize; 4]>,
+    caret_due: Option<Instant>,
 }
 impl Native {
     fn measure_dimension(raster: &mut Raster, size: f64) -> impl FnMut(&str) -> Point + '_ {
         move |s| raster.measure_text(s, size)
+    }
+    /// Measures what the size badge shows, so it is as wide as its digits, and places
+    /// the open fields in it; before each frame and when the fields open.
+    fn layout_badge(&mut self, capture: &mut Capture) {
+        let raster = &mut self.raster;
+        let texts = self.dimensions.as_ref().map(DimensionFields::texts);
+        let measured = capture.measure_badge(texts, |text, size| {
+            Ok::<_, std::convert::Infallible>(raster.measure_text(text, size).x)
+        });
+        let Ok(()) = measured;
+        if let Some(fields) = &mut self.dimensions {
+            let mut measure = Self::measure_dimension(raster, fields.font_size());
+            fields.place(capture, &mut measure);
+        }
     }
 }
 impl Host for Native {
@@ -116,6 +133,7 @@ impl Host for Native {
         self.finish_text(capture, true);
         capture.editor.cancel();
         self.dimensions = DimensionFields::open(capture);
+        self.layout_badge(capture);
         Ok(())
     }
     fn finish_dimensions(&mut self, capture: &mut Capture, commit: bool) -> bool {
@@ -170,6 +188,8 @@ struct Editor {
     backdrop: Pixmap,
     frame: Pixmap,
     window: Option<Rc<Window>>,
+    /// The new-text pointer at the window's scale; made with the window and on each change.
+    new_text_cursor: Option<CustomCursor>,
     surface: Option<softbuffer::Surface<Rc<Window>, Rc<Window>>>,
     diagnostic: Option<Diagnostic>,
     /// Preferences at start; the stroke width and custom colour are stored back on exit.
@@ -215,8 +235,11 @@ fn start(
             field: None,
             dimensions: None,
             modifiers: Modifiers::default(),
+            caret: caret::Blink::new(Instant::now(), Some(caret::DEFAULT_PERIOD)),
+            caret_due: None,
         },
         window: None,
+        new_text_cursor: None,
         surface: None,
         diagnostic,
         settings,
@@ -283,11 +306,21 @@ fn area(monitor: &MonitorHandle) -> monitors::Area {
     }
 }
 
+/// The new-text pointer at the system's 32-pixel cursor size times `scale`.
+fn new_text_cursor(event_loop: &ActiveEventLoop, scale: f64) -> Option<CustomCursor> {
+    let image = shotoshot_ui::cursor_image::new_text((32. * scale).round() as u32);
+    let side = u16::try_from(image.size).ok()?;
+    let (x, y) = image.hotspot;
+    let source = CustomCursor::from_rgba(image.rgba, side, side, x as u16, y as u16).ok()?;
+    Some(event_loop.create_custom_cursor(source))
+}
+
 fn cursor_icon(kind: CursorKind) -> CursorIcon {
     match kind {
         CursorKind::Arrow => CursorIcon::Default,
         CursorKind::Cross => CursorIcon::Crosshair,
-        CursorKind::IBeam => CursorIcon::Text,
+        // Only while the drawn pointer is missing (`Editor::cursor`).
+        CursorKind::IBeam | CursorKind::NewText => CursorIcon::Text,
         CursorKind::Hand => CursorIcon::Pointer,
         CursorKind::Move => CursorIcon::Move,
         CursorKind::ResizeNwse => CursorIcon::NwseResize,
@@ -370,9 +403,22 @@ impl Editor {
         }
     }
     fn paint(&mut self) -> Result<(), Box<dyn Error>> {
+        self.native.layout_badge(&mut self.capture);
         self.frame.data_mut().copy_from_slice(self.backdrop.data());
         let capture = &self.capture;
         let native = &mut self.native;
+        // Text field first, then size fields; each its own state so a switch starts solid.
+        let state = native
+            .field
+            .as_ref()
+            .map(|f| {
+                let [a, b, c] = f.caret_state();
+                [2, a, b, c]
+            })
+            .or_else(|| native.dimensions.as_ref().map(|d| d.caret_state()));
+        let now = Instant::now();
+        let caret = state.is_some_and(|state| native.caret.follow(now, state));
+        native.caret_due = state.and_then(|_| native.caret.next_change(now));
         let mut canvas = native.raster.canvas(&mut self.frame);
         capture.draw_underlay(&mut canvas).map_err(|e| e.0)?;
         if capture.region.is_some() {
@@ -381,7 +427,9 @@ impl Editor {
                 .draw_annotations(&mut canvas, editing)
                 .map_err(|e| e.0)?;
             if let Some(field) = &native.field {
-                field.draw(&mut canvas, true).map_err(|e| e.0)?;
+                field
+                    .draw(&mut canvas, caret, capture.ui_scale())
+                    .map_err(|e| e.0)?;
             }
             capture
                 .draw_frame(&mut canvas, native.field.is_none())
@@ -418,7 +466,7 @@ impl Editor {
                 .draw_dimensions(&mut canvas, fields.is_some(), fields.and_then(|f| f.error))
                 .map_err(|e| e.0)?;
             if let Some(fields) = fields {
-                fields.draw(&mut canvas).map_err(|e| e.0)?;
+                fields.draw(&mut canvas, caret).map_err(|e| e.0)?;
             }
             capture
                 .draw_hover_hint(&mut canvas, Instant::now(), fields.is_some())
@@ -465,11 +513,25 @@ impl Editor {
                     .capture
                     .dimensions_bounds()
                     .is_some_and(|r| r.contains(p));
-            window.set_cursor(cursor_icon(if over_badge {
+            // The text being typed is not an object yet; a click in it places the caret.
+            let raster = &mut self.native.raster;
+            let over_field = self.native.field.as_ref().is_some_and(|field| {
+                let size = field.size as f64;
+                field
+                    .hit(p, &mut |s| raster.measure_annotation_text(s, size))
+                    .1
+            });
+            window.set_cursor(self.cursor(if over_badge || over_field {
                 CursorKind::IBeam
             } else {
                 self.capture.cursor(p)
             }));
+        }
+    }
+    fn cursor(&self, kind: CursorKind) -> Cursor {
+        match (kind, &self.new_text_cursor) {
+            (CursorKind::NewText, Some(drawn)) => drawn.clone().into(),
+            _ => cursor_icon(kind).into(),
         }
     }
     fn pointer_up(&mut self, p: Point) {
@@ -832,6 +894,7 @@ impl ApplicationHandler for Editor {
             return self.fail(event_loop, error);
         }
         self.set_scale(window.scale_factor());
+        self.new_text_cursor = new_text_cursor(event_loop, window.scale_factor());
         window.set_cursor(CursorIcon::Crosshair);
         self.window = Some(window);
         self.redraw();
@@ -841,6 +904,7 @@ impl ApplicationHandler for Editor {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 self.set_scale(scale_factor);
+                self.new_text_cursor = new_text_cursor(event_loop, scale_factor);
                 self.redraw();
             }
             WindowEvent::RedrawRequested => {
@@ -902,13 +966,17 @@ impl ApplicationHandler for Editor {
         }
     }
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        // Wake only for hover-hint delays and fades; otherwise sleep until input.
-        match self.capture.hover_hint.next_tick(Instant::now()) {
-            Some(ms) => {
-                event_loop.set_control_flow(ControlFlow::WaitUntil(
-                    Instant::now() + std::time::Duration::from_millis(ms as u64),
-                ));
-                self.redraw();
+        // Wake only for hover-hint delays and fades and caret blinks; otherwise sleep
+        // until input.
+        let now = Instant::now();
+        let hint = (self.capture.hover_hint.next_tick(now))
+            .map(|ms| now + std::time::Duration::from_millis(ms as u64));
+        match hint.into_iter().chain(self.native.caret_due).min() {
+            Some(at) => {
+                event_loop.set_control_flow(ControlFlow::WaitUntil(at));
+                if at <= now || hint.is_some() {
+                    self.redraw();
+                }
             }
             None => event_loop.set_control_flow(ControlFlow::Wait),
         }

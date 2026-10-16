@@ -4,6 +4,8 @@
 //! what a one-line field shows of its text is decided here, never read from the control.
 use super::*;
 use crate::render::{annotation_font, vector};
+use shotoshot_ui::caret;
+use std::{cell::Cell, time::Instant};
 use windows::Win32::{
     Graphics::{Direct2D::Common::*, DirectWrite::*},
     UI::{
@@ -123,7 +125,7 @@ pub(super) fn configure_input(hwnd: HWND, size: f32, face: Face) -> Result<HFONT
     }
 }
 
-fn value(hwnd: HWND) -> Vec<u16> {
+pub(super) fn value(hwnd: HWND) -> Vec<u16> {
     unsafe {
         let mut text = vec![0; GetWindowTextLengthW(hwnd).max(0) as usize + 1];
         let length = GetWindowTextW(hwnd, &mut text).max(0) as usize;
@@ -179,7 +181,15 @@ pub struct Scroll {
 
 impl Scroll {
     /// Follows the end of `selection` that moved, in a field `view` pixels wide.
-    fn reveal(self, layout: &IDWriteTextLayout, selection: (u32, u32), view: f32) -> Result<Self> {
+    /// `size` and `scale`, of the font and interface, set how far the caret reaches past
+    /// its boundary.
+    fn reveal(
+        self,
+        layout: &IDWriteTextLayout,
+        selection: (u32, u32),
+        view: f32,
+        (size, scale): (f32, f64),
+    ) -> Result<Self> {
         let (start, end) = selection;
         // A caret is always followed; of a selection, only the end being placed.
         let moved = if start == end || end != self.selection.1 {
@@ -202,8 +212,9 @@ impl Scroll {
         let mut content = DWRITE_TEXT_METRICS::default();
         unsafe { layout.GetMetrics(&mut content)? };
         let width = content.widthIncludingTrailingWhitespace;
+        let (left, right) = caret::reach(size as f64, scale);
         Ok(Self {
-            offset: scrolled(self.offset, caret, width, view),
+            offset: scrolled(self.offset, caret, width, view, (left as f32, right as f32)),
             selection,
         })
     }
@@ -211,13 +222,21 @@ impl Scroll {
 
 /// The smallest move of a `view`-wide window over a `content`-wide line that shows the
 /// caret at `caret`, if there is one to follow, and leaves no gap after the text. Whole
-/// pixels: the glyphs keep their rendering while the line moves.
-fn scrolled(offset: f32, caret: Option<f32>, content: f32, view: f32) -> f32 {
-    // One pixel on either side for the caret line itself.
+/// pixels: the glyphs keep their rendering while the line moves. The caret line reaches
+/// `left` and `right` pixels around its boundary.
+fn scrolled(
+    offset: f32,
+    caret: Option<f32>,
+    content: f32,
+    view: f32,
+    (left, right): (f32, f32),
+) -> f32 {
     let shown = caret.map_or(offset, |x| {
-        offset.min((x - 1.).floor()).max((x + 1. - view).ceil())
+        offset
+            .min((x - left).floor())
+            .max((x + right - view).ceil())
     });
-    shown.min((content + 1. - view).ceil()).max(0.)
+    shown.min((content + right - view).ceil()).max(0.)
 }
 
 pub(super) fn hit(input: &TextInput, point: Point) -> Result<(u32, bool)> {
@@ -244,6 +263,67 @@ pub(super) fn hit(input: &TextInput, point: Point) -> Result<(u32, bool)> {
             },
         inside.as_bool(),
     ))
+}
+
+/// Window timer that redraws the caret when its blink changes.
+pub const CARET_TIMER: usize = 0x5343;
+
+/// The blink of the one caret a capture shows, and when the next frame must come for it.
+pub struct CaretBlink {
+    blink: Cell<caret::Blink<[usize; 3]>>,
+    /// When the caret drawn in this frame changes; `arm` turns it into the timer.
+    due: Cell<Option<Instant>>,
+    armed: Cell<bool>,
+}
+
+impl Default for CaretBlink {
+    fn default() -> Self {
+        // INFINITE when the user turned blinking off.
+        let ms = unsafe { GetCaretBlinkTime() };
+        let period = (ms != u32::MAX).then(|| std::time::Duration::from_millis(ms.into()));
+        Self {
+            blink: Cell::new(caret::Blink::new(Instant::now(), period)),
+            due: Cell::new(None),
+            armed: Cell::new(false),
+        }
+    }
+}
+
+impl CaretBlink {
+    /// A caret that never blinks, for tests that compare frames.
+    #[cfg(test)]
+    pub fn steady() -> Self {
+        Self {
+            blink: Cell::new(caret::Blink::new(Instant::now(), None)),
+            ..Self::default()
+        }
+    }
+    /// Whether the caret of field window, offset and text length `state` shows now.
+    fn shown(&self, state: [usize; 3]) -> bool {
+        let now = Instant::now();
+        let mut blink = self.blink.get();
+        let shown = blink.follow(now, state);
+        self.blink.set(blink);
+        self.due.set(blink.next_change(now));
+        shown
+    }
+    /// After a frame: a one-shot timer for the next blink of the caret it drew, if any.
+    /// Nothing ticks while no caret is on screen.
+    pub fn arm(&self, hwnd: HWND) {
+        match self.due.take() {
+            Some(at) => {
+                let wait = at.saturating_duration_since(Instant::now()).as_millis();
+                // One more millisecond so the frame lands in the next phase, never before.
+                let wait = u32::try_from(wait + 1).unwrap_or(u32::MAX);
+                unsafe { SetTimer(Some(hwnd), CARET_TIMER, wait, None) };
+                self.armed.set(true);
+            }
+            None if self.armed.replace(false) => unsafe {
+                let _ = KillTimer(Some(hwnd), CARET_TIMER);
+            },
+            None => {}
+        }
+    }
 }
 
 impl Native {
@@ -312,24 +392,31 @@ impl Native {
         active
     }
 
-    pub fn draw_text_input(&self) -> Result<()> {
+    /// The text being typed, its caret at least two logical pixels thick at `scale`.
+    pub fn draw_text_input(&self, scale: f64) -> Result<()> {
         let Some(input) = &self.text else {
             return Ok(());
         };
-        self.draw_inline(input, true, None)
+        self.draw_inline(input, true, None, scale)
     }
     /// `view` is the width of a one-line field, which then scrolls to its caret; the
-    /// caller clips to it.
+    /// caller clips to it. `scale` is the interface's, for the caret's thickness.
     pub(super) fn draw_inline(
         &self,
         input: &TextInput,
         caret: bool,
         view: Option<f32>,
+        scale: f64,
     ) -> Result<()> {
-        let layout = layout(&value(input.window), input.size, input.face)?;
+        let text = value(input.window);
+        let layout = layout(&text, input.size, input.face)?;
         let (start, end) = selection(input.window);
         if let Some(view) = view {
-            let shown = input.scroll.get().reveal(&layout, (start, end), view)?;
+            let shown =
+                input
+                    .scroll
+                    .get()
+                    .reveal(&layout, (start, end), view, (input.size, scale))?;
             input.scroll.set(shown);
         }
         let target = &self.renderer.dc;
@@ -389,13 +476,25 @@ impl Native {
                     &brush,
                     D2D1_DRAW_TEXT_OPTIONS_NONE,
                 );
-                if start == end && caret {
+                if start == end
+                    && caret
+                    && self
+                        .caret
+                        .shown([input.window.0 as usize, end as usize, text.len()])
+                {
                     let (mut x, mut y) = (0., 0.);
                     let mut metrics = DWRITE_HIT_TEST_METRICS::default();
                     layout.HitTestTextPosition(end, false, &mut x, &mut y, &mut metrics)?;
+                    let size = input.size as f64;
+                    // A glyph on each side, unless a line break or the text's edge.
+                    let breaks = |unit: Option<&u16>| unit.is_none_or(|&u| u == 13 || u == 10);
+                    let place = caret::Place::of(
+                        !breaks(end.checked_sub(1).and_then(|i| text.get(i as usize))),
+                        !breaks(text.get(end as usize)),
+                    );
                     let origin = input.position
                         + Point {
-                            x: x as f64,
+                            x: caret::center(x as f64, size, scale, place),
                             y: y as f64,
                         };
                     target.DrawLine(
@@ -408,7 +507,7 @@ impl Native {
                                 },
                         ),
                         &brush,
-                        1.,
+                        caret::width(size, scale) as f32,
                         None,
                     );
                 }
@@ -604,30 +703,32 @@ mod tests {
 
     #[test]
     fn a_one_line_field_moves_its_text_only_to_keep_the_caret_in_view() {
-        let (view, content) = (43., 120.4);
+        // A 2 px caret reaches 1 px left of its boundary, and 3 px right at the line's end.
+        let (view, content, reach) = (43., 120.4, 3.);
+        let scrolled = |offset, caret, content| scrolled(offset, caret, content, view, (1., reach));
         // A text that fits never moves.
-        assert_eq!(scrolled(0., Some(30.), 30., view), 0.);
+        assert_eq!(scrolled(0., Some(30.), 30.), 0.);
         // Typing past the right edge takes the text along, caret line included.
-        let end = scrolled(0., Some(content), content, view);
-        assert_eq!(end, 79.);
+        let end = scrolled(0., Some(content), content);
+        assert_eq!(end, 81.);
         // Stepping back inside the view leaves the text where it is.
-        assert_eq!(scrolled(end, Some(100.), content, view), end);
+        assert_eq!(scrolled(end, Some(100.), content), end);
         // Past the left edge the text follows, by no more than it takes.
-        assert_eq!(scrolled(end, Some(60.3), content, view), 59.);
-        assert_eq!(scrolled(end, Some(0.), content, view), 0.);
+        assert_eq!(scrolled(end, Some(60.3), content), 59.);
+        assert_eq!(scrolled(end, Some(0.), content), 0.);
         // Deleting the tail leaves no gap after the text, caret followed or not.
-        assert_eq!(scrolled(end, Some(90.), 90., view), 48.);
-        assert_eq!(scrolled(end, None, 90., view), 48.);
-        assert_eq!(scrolled(end, None, 20., view), 0.);
+        assert_eq!(scrolled(end, Some(90.), 90.), 50.);
+        assert_eq!(scrolled(end, None, 90.), 50.);
+        assert_eq!(scrolled(end, None, 20.), 0.);
         // A selection whose ends did not move leaves the text alone.
-        assert_eq!(scrolled(end, None, content, view), end);
+        assert_eq!(scrolled(end, None, content), end);
         // Wherever the text was and wherever the caret goes, its line is whole in the view.
-        for from in [0., 40., 79.] {
+        for from in [0., 40., 81.] {
             for step in 0..=172 {
                 let caret = step as f32 * 0.7;
-                let offset = scrolled(from, Some(caret), content, view);
+                let offset = scrolled(from, Some(caret), content);
                 assert_eq!(offset, offset.round());
-                assert!(caret + 1. <= offset + view, "{from} {caret} {offset}");
+                assert!(caret + reach <= offset + view, "{from} {caret} {offset}");
                 assert!(
                     offset == 0. || caret - 1. >= offset,
                     "{from} {caret} {offset}"
@@ -850,6 +951,10 @@ mod tests {
         assert_eq!(unsafe { GetFocus() }, height);
         // Wider than the field: the control scrolls its own line, still without painting.
         stage.type_text(height, "100+10+10+10+10+10")?;
+        // The badge fits its digits: the width field is where the next frame puts it.
+        session.native.layout_badge(&mut session.capture)?;
+        let [width_field, _] = session.capture.dimension_field_bounds().expect("fields");
+        let on_width = width_field.center();
         session.mouse_down(hwnd, on_width)?;
         session.mouse_up(hwnd, on_width);
         stage.after("clicking in a field")?;

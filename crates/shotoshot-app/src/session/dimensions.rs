@@ -73,25 +73,19 @@ impl Native {
                 height: make(region.size().y)?,
                 error: None,
             });
-            let bounds = capture.dimensions_bounds().expect("capture region");
-            let field_width = ((bounds.size().x - 22. * scale) / 2.).max(1.) as i32;
+            self.layout_badge(capture)?;
+            let areas = capture.dimension_field_bounds().expect("open fields");
             let fields = self.dimensions.as_mut().expect("active fields");
-            for (index, field) in [&mut fields.width, &mut fields.height]
-                .into_iter()
-                .enumerate()
-            {
-                field.position = bounds.min
-                    + Point {
-                        x: 4. * scale + index as f64 * (field_width as f64 + 14. * scale),
-                        y: 3. * scale,
-                    };
+            for (field, area) in [&fields.width, &fields.height].into_iter().zip(areas) {
+                // Only where the text starts matters: the capture window draws and
+                // hit-tests the fields, and the controls scroll their text themselves.
                 SetWindowPos(
                     field.window,
                     None,
-                    field.position.x as i32,
-                    field.position.y as i32,
-                    field_width,
-                    (20. * scale) as i32,
+                    area.min.x as i32,
+                    area.min.y as i32,
+                    area.size().x as i32,
+                    area.size().y as i32,
                     SWP_NOZORDER | SWP_NOACTIVATE,
                 )?;
             }
@@ -102,6 +96,32 @@ impl Native {
                 Some(WPARAM(0)),
                 Some(LPARAM(-1)),
             );
+        }
+        Ok(())
+    }
+    /// Measures what the size badge shows, so it is as wide as its digits, and moves the
+    /// open fields where it puts them; before each frame and when the fields open.
+    pub(super) fn layout_badge(&mut self, capture: &mut Capture) -> Result<()> {
+        let texts = self.dimensions.as_ref().map(|fields| {
+            [&fields.width, &fields.height]
+                .map(|field| String::from_utf16_lossy(&super::text::value(field.window)))
+        });
+        let renderer = &self.renderer;
+        capture.measure_badge(
+            texts
+                .as_ref()
+                .map(|[width, height]| [width.as_str(), height.as_str()]),
+            |text, size| {
+                renderer
+                    .measure_text(text, size as f32)
+                    .map(|extent| extent.x)
+            },
+        )?;
+        if let (Some(fields), Some([width, height])) =
+            (&mut self.dimensions, capture.dimension_field_bounds())
+        {
+            fields.width.position = width.min;
+            fields.height.position = height.min;
         }
         Ok(())
     }
@@ -183,7 +203,10 @@ impl Native {
         hwnd: HWND,
         point: Point,
     ) -> Result<bool> {
-        let Some(bounds) = capture.dimensions_bounds() else {
+        let (Some(bounds), Some([width, height])) = (
+            capture.dimensions_bounds(),
+            capture.dimension_field_bounds(),
+        ) else {
             return Ok(false);
         };
         let Some(fields) = &mut self.dimensions else {
@@ -192,7 +215,7 @@ impl Native {
         if !bounds.contains(point) {
             return Ok(false);
         }
-        let field = if point.x < bounds.center().x {
+        let field = if point.x < (width.max.x + height.min.x) / 2. {
             &mut fields.width
         } else {
             &mut fields.height
@@ -256,24 +279,16 @@ impl Native {
     ) -> Result<()> {
         let error = self.dimensions.as_ref().and_then(|d| d.error);
         capture.draw_dimensions(canvas, self.dimensions.is_some(), error)?;
-        let (Some(bounds), Some(fields)) = (capture.dimensions_bounds(), &self.dimensions) else {
+        let (Some(areas), Some(fields)) = (capture.dimension_field_bounds(), &self.dimensions)
+        else {
             return Ok(());
         };
         let target = &self.renderer.dc;
-        let scale = capture.ui_scale();
-        let field_width = ((bounds.size().x - 22. * scale) / 2.).max(1.);
-        for field in [&fields.width, &fields.height] {
-            let clip = Rect {
-                min: field.position,
-                max: field.position
-                    + Point {
-                        x: field_width,
-                        y: 20. * scale,
-                    },
-            };
+        for (field, clip) in [&fields.width, &fields.height].into_iter().zip(areas) {
             unsafe { target.PushAxisAlignedClip(&rect(clip), D2D1_ANTIALIAS_MODE_ALIASED) };
             let focused = unsafe { GetFocus() } == field.window;
-            let result = self.draw_inline(field, focused, Some(field_width as f32));
+            let view = Some(clip.size().x as f32);
+            let result = self.draw_inline(field, focused, view, capture.ui_scale());
             unsafe { target.PopAxisAlignedClip() };
             result?;
         }
@@ -316,19 +331,28 @@ mod tests {
             if live {
                 session.native.renderer = Renderer::with_transparency(true)?;
             }
-            let badge_before = session.capture.dimensions_bounds();
+            let badge_before = session.capture.dimensions_bounds().unwrap();
             session
                 .native
                 .begin_dimensions(&mut session.capture, window.0)?;
-            assert_eq!(badge_before, session.capture.dimensions_bounds());
+            // The badge keeps its corner over the region: only its left edge follows the text.
+            let badge_open = session.capture.dimensions_bounds().unwrap();
+            assert_eq!(
+                (badge_before.max, badge_before.min.y),
+                (badge_open.max, badge_open.min.y)
+            );
             unsafe {
                 SetWindowTextW(
                     session.native.dimensions.as_ref().unwrap().width.window,
                     w!("400+20"),
                 )?;
             }
-            let bounds = session.capture.dimensions_bounds().unwrap();
             let image = crate::paint_image(500, 300, |dc| session.paint(dc))?;
+            let bounds = session.capture.dimensions_bounds().unwrap();
+            assert!(
+                bounds.min.x < badge_open.min.x,
+                "the badge grew with the text"
+            );
             for (x, y) in [(20, 160), (100, 240)] {
                 let index = (y * 500 + x) * 4;
                 assert_eq!(
@@ -346,7 +370,7 @@ mod tests {
             assert_eq!(crate::load_png(&path)?.pixels, image.pixels);
             let mut ink = 0;
             for y in (bounds.min.y as usize + 3)..(bounds.min.y as usize + 23) {
-                for x in (bounds.min.x as usize + 4)..(bounds.min.x as usize + 95) {
+                for x in (bounds.min.x as usize + 4)..(bounds.max.x as usize - 4) {
                     let pixel = (y * 500 + x) * 4;
                     if image.pixels[pixel..pixel + 3].iter().all(|c| *c > 160) {
                         ink += 1;
@@ -379,7 +403,7 @@ mod tests {
     #[test]
     fn an_expression_wider_than_its_field_follows_the_caret() -> Result<()> {
         let _com = ComApartment::new()?;
-        // The field grows with its screen; the caret line stays one pixel wide.
+        // The field grows with its screen, and so does the caret line.
         for scale in [1., 2.5] {
             follows_the_caret(scale)?;
         }
@@ -387,7 +411,8 @@ mod tests {
     }
 
     fn follows_the_caret(scale: f64) -> Result<()> {
-        const SIZE: (u32, u32) = (900, 500);
+        // A screen so narrow that the badge, as wide as it may be, cuts the expression.
+        let size = ((130. * scale) as u32, 500);
         let window = crate::resources::OwnedWindow(unsafe {
             CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
@@ -396,8 +421,8 @@ mod tests {
                 WS_POPUP,
                 0,
                 0,
-                SIZE.0 as i32,
-                SIZE.1 as i32,
+                size.0 as i32,
+                size.1 as i32,
                 None,
                 None,
                 None,
@@ -406,39 +431,57 @@ mod tests {
         });
         // The click below reads the modifier keys: none is held, whatever the user is typing.
         unsafe { SetKeyboardState(&[0; 256])? };
-        let mut session = Session::new(Image::solid(SIZE.0, SIZE.1, [0, 0, 0, 255]))?;
+        let mut session = Session::new(Image::solid(size.0, size.1, [0, 0, 0, 255]))?;
+        session.native.caret = super::super::text::CaretBlink::steady();
         let screen = Rect {
             min: Point::default(),
             max: Point {
-                x: SIZE.0 as f64,
-                y: SIZE.1 as f64,
+                x: size.0 as f64,
+                y: size.1 as f64,
             },
         };
         session.capture.monitors = vec![shotoshot_ui::Monitor {
             bounds: screen,
             scale,
         }];
-        session.capture.region = Rect::new(Point { x: 40., y: 200. }, Point { x: 860., y: 460. });
+        let region_right = size.0 as f64 - 10.;
+        session.capture.region = Rect::new(
+            Point { x: 10., y: 200. },
+            Point {
+                x: region_right,
+                y: 460.,
+            },
+        );
         session.capture.selecting = false;
         session
             .native
             .begin_dimensions(&mut session.capture, window.0)?;
-        let width = &session.native.dimensions.as_ref().unwrap().width;
-        let (field, origin) = (width.window, width.position);
-        let mut client = RECT::default();
-        unsafe { GetClientRect(field, &mut client)? };
-        // The field on screen, in whole pixels: left, top, right and bottom.
-        let (left, top) = (origin.x as usize, origin.y as usize);
-        let (right, bottom) = (
-            left + client.right as usize - 1,
-            top + client.bottom as usize - 1,
-        );
-        let inside = |[l, t, r, b]: [usize; 4]| l >= left && t >= top && r <= right && b <= bottom;
+        let field = session.native.dimensions.as_ref().unwrap().width.window;
         let send = |message: u32, value: usize| unsafe {
             SendMessageW(field, message, Some(WPARAM(value)), None);
         };
         let paint =
-            |session: &mut Session| crate::paint_image(SIZE.0, SIZE.1, |dc| session.paint(dc));
+            |session: &mut Session| crate::paint_image(size.0, size.1, |dc| session.paint(dc));
+
+        // The width opens selected: the expression replaces it, about three fields wide.
+        let expression = "100+100+100+100";
+        for unit in expression.encode_utf16() {
+            send(WM_CHAR, unit as usize);
+        }
+        paint(&mut session)?;
+        // The field on screen, in whole pixels: left, top, right and bottom.
+        let [area, _] = session.capture.dimension_field_bounds().unwrap();
+        let (left, top) = (area.min.x as usize, area.min.y as usize);
+        let (right, bottom) = (area.max.x as usize - 1, area.max.y as usize - 1);
+        let text = session
+            .native
+            .renderer
+            .measure_text(expression, (14. * scale) as f32)?;
+        assert!(
+            text.x > 2. * area.size().x,
+            "the expression overflows, at {scale}"
+        );
+        let inside = |[l, t, r, b]: [usize; 4]| l >= left && t >= top && r <= right && b <= bottom;
         // The caret is what the field paints with the focus and not without it.
         let caret = |session: &mut Session, after: &str| -> Result<[usize; 4]> {
             let focused = paint(session)?;
@@ -471,11 +514,6 @@ mod tests {
             Ok(end)
         };
 
-        // The width opens selected: the expression replaces it, about three fields wide.
-        let expression = "100+100+100+100";
-        for unit in expression.encode_utf16() {
-            send(WM_CHAR, unit as usize);
-        }
         let at_end = caret(&mut session, "typing")?;
         // The end of the expression is in view: changing its last digit changes the field.
         let typed = paint(&mut session)?;
@@ -501,7 +539,12 @@ mod tests {
         const LEFT: usize = 0x25;
         send(WM_KEYDOWN, HOME);
         let at_home = caret(&mut session, "Home")?;
-        assert!(at_home[0] <= left + 1, "{at_home:?} at {scale}");
+        // The caret line starts half its width after the first glyph's edge.
+        let gap = shotoshot_ui::caret::width(14. * scale, scale) / 2.;
+        assert!(
+            at_home[0] <= left + gap.ceil() as usize,
+            "{at_home:?} at {scale}"
+        );
         assert_eq!(click(&mut session, left + 1)?, 0, "at {scale}");
         send(WM_KEYDOWN, END);
         let back = caret(&mut session, "End")?;

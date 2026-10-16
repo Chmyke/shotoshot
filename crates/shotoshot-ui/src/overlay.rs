@@ -306,17 +306,24 @@ impl Capture {
             DARK
         };
         canvas.fill_round_rect(bounds, 4. * s, background)?;
-        let (label, x) = if editing {
-            ("×".to_owned(), bounds.size().x / 2. - 4. * s)
-        } else {
-            let size = region.size();
-            (format!("{} × {}", size.x as i32, size.y as i32), 8. * s)
+        // Editing, the "×" sits between the fields; else the label fills the badge.
+        let fields = self.dimension_field_bounds().filter(|_| editing);
+        let (label, x) = match fields {
+            Some([width, _]) => ("×".to_owned(), width.max.x + 3. * s),
+            None => (
+                format!("{} × {}", region.size().x as i32, region.size().y as i32),
+                bounds.min.x + 8. * s,
+            ),
         };
         let label_area = Rect {
-            min: bounds.min + Point { x, y: 4. * s },
+            min: Point {
+                x,
+                y: bounds.min.y + 4. * s,
+            },
             max: bounds.max,
         };
-        canvas.text(&label, label_area, 13. * s, Ink::solid([240, 240, 240]))?;
+        let size = crate::BADGE_LABEL_SIZE * s;
+        canvas.text(&label, label_area, size, Ink::solid([240, 240, 240]))?;
         if let Some(button) = self.screen_button_bounds() {
             self.draw_screen_button(canvas, button, button.contains(self.pointer))?;
         }

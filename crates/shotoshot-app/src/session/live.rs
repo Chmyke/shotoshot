@@ -77,6 +77,11 @@ impl Session {
         self.flatten(&self.fresh_desktop()?)
     }
     pub fn paint_window(&mut self, hwnd: HWND, hdc: HDC) -> Result<()> {
+        let painted = self.paint_window_once(hwnd, hdc);
+        self.native.caret.arm(hwnd);
+        painted
+    }
+    fn paint_window_once(&mut self, hwnd: HWND, hdc: HDC) -> Result<()> {
         if let Some(surface) = &self.native.live_surface {
             let memory = surface.dc();
             self.paint(memory)?;

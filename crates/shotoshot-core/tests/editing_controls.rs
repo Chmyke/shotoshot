@@ -4,6 +4,7 @@ fn p(x: f64, y: f64) -> Point {
 }
 fn rectangle() -> Editor {
     let mut e = Editor::default();
+    e.tool = Tool::Rectangle;
     e.begin(p(20., 40.), Modifiers::default());
     e.update(p(120., 80.));
     e.finish();

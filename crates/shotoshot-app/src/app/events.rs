@@ -33,6 +33,15 @@ impl App {
             }
             editor_process::EXITED => self.editor_exited(hwnd, w.0 as u32)?,
             WM_TIMER if w.0 == STROKE_WIDTH_TIMER => self.stroke_width_timer(hwnd)?,
+            // One-shot: the frame it asks for arms the next blink.
+            WM_TIMER if w.0 == crate::session::CARET_TIMER => {
+                unsafe {
+                    let _ = KillTimer(Some(hwnd), crate::session::CARET_TIMER);
+                }
+                if self.session.is_some() {
+                    invalidate(hwnd);
+                }
+            }
             WM_TIMER if w.0 == QUIT_TIMER => unsafe {
                 let _ = KillTimer(Some(hwnd), QUIT_TIMER);
                 PostQuitMessage(0);
@@ -166,8 +175,8 @@ impl App {
                 let cursor = s.cursor(Point {
                     x: location.x as f64,
                     y: location.y as f64,
-                });
-                SetCursor(Some(LoadCursorW(None, cursor)?));
+                })?;
+                SetCursor(Some(cursor));
                 return Ok(Some(LRESULT(1)));
             },
             WM_DPICHANGED if self.setup => unsafe {

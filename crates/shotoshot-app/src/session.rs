@@ -8,8 +8,10 @@ mod fill;
 mod hint;
 mod io;
 pub use io::Saved;
+pub use text::CARET_TIMER;
 mod live;
 mod magnifier;
+mod pointer;
 mod preparation;
 pub(crate) use preparation::Preparation;
 mod text;
@@ -60,6 +62,7 @@ pub struct Native {
     back_buffer: Option<crate::image::LiveSurface>,
     // The hardware renderer being built for `accelerate`.
     acceleration: Option<std::sync::mpsc::Receiver<Result<Prepared>>>,
+    pub caret: text::CaretBlink,
 }
 pub struct Session {
     pub capture: Capture,
@@ -93,6 +96,7 @@ impl Session {
                 live_sample: None,
                 back_buffer: None,
                 acceleration: None,
+                caret: Default::default(),
             },
             document: None,
             board: None,
@@ -201,16 +205,24 @@ impl Session {
         let (capture, mut host) = self.host(hwnd);
         capture.key(&mut host, key, modifiers())
     }
-    pub fn cursor(&self, p: Point) -> PCWSTR {
-        if !self.capture.selecting
+    /// The pointer over client point `p`.
+    pub fn cursor(&self, p: Point) -> Result<HCURSOR> {
+        let over_badge = !self.capture.selecting
             && self
                 .capture
                 .dimensions_bounds()
-                .is_some_and(|r| r.contains(p))
-        {
-            return IDC_IBEAM;
-        }
-        match self.capture.cursor(p) {
+                .is_some_and(|r| r.contains(p));
+        // The text being typed is not an object yet; a click in it places the caret.
+        let over_field = self.native.text.as_ref().is_some_and(|input| {
+            text::hit(input, self.capture.to_frame(p)).is_ok_and(|(_, inside)| inside)
+        });
+        let kind = if over_badge || over_field {
+            CursorKind::IBeam
+        } else {
+            self.capture.cursor(p)
+        };
+        let system = match kind {
+            CursorKind::NewText => return pointer::new_text(self.capture.ui_scale()),
             CursorKind::Arrow => IDC_ARROW,
             CursorKind::Cross => IDC_CROSS,
             CursorKind::IBeam => IDC_IBEAM,
@@ -220,7 +232,8 @@ impl Session {
             CursorKind::ResizeNesw => IDC_SIZENESW,
             CursorKind::ResizeNs => IDC_SIZENS,
             CursorKind::ResizeWe => IDC_SIZEWE,
-        }
+        };
+        unsafe { LoadCursorW(None, system) }
     }
     pub fn rebuild_renderer(&mut self) -> Result<()> {
         let mut replacement = Renderer::with(self.native.renderer.backend(), self.capture.live)?;
@@ -232,6 +245,7 @@ impl Session {
         Ok(())
     }
     pub fn paint(&mut self, hdc: HDC) -> Result<()> {
+        self.native.layout_badge(&mut self.capture)?;
         let result = self.paint_once(hdc);
         if result
             .as_ref()

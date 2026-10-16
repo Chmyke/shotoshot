@@ -57,6 +57,7 @@ impl Session {
                 live_sample: None,
                 back_buffer: None,
                 acceleration: None,
+                caret: Default::default(),
             },
             document: Some(path.into()),
             board: None,

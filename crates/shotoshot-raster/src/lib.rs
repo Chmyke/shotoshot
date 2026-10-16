@@ -654,7 +654,9 @@ mod tests {
         field.insert("Shotoshot");
         let mut raster = Raster::new();
         let mut frame = blank();
-        field.draw(&mut raster.canvas(&mut frame), true).unwrap();
+        field
+            .draw(&mut raster.canvas(&mut frame), true, 1.)
+            .unwrap();
         let width = raster
             .canvas(&mut blank())
             .measure_annotation_text("Shotoshot", 24.)
@@ -682,7 +684,9 @@ mod tests {
                 y: 1.,
             },
         );
-        field.draw(&mut raster.canvas(&mut selected), true).unwrap();
+        field
+            .draw(&mut raster.canvas(&mut selected), true, 1.)
+            .unwrap();
         let blue = |p: &Pixmap| {
             (40..40 + width as u32)
                 .flat_map(|x| (42..68).map(move |y| (x, y)))
@@ -696,28 +700,35 @@ mod tests {
     }
     #[test]
     fn dimension_fields_draw_inside_their_boxes() {
-        let mut capture = Capture::new(Image::solid(500, 300, [0, 0, 0, 255]));
+        // A frame too narrow for the expression, which then scrolls inside its field.
+        let mut capture = Capture::new(Image::solid(200, 300, [0, 0, 0, 255]));
         capture.selecting = false;
-        capture.region = Rect::new(Point { x: 20., y: 70. }, Point { x: 450., y: 250. });
+        capture.region = Rect::new(Point { x: 20., y: 70. }, Point { x: 190., y: 250. });
         let mut raster = Raster::new();
         let mut fields = shotoshot_ui::DimensionFields::open(&capture).unwrap();
         let size = fields.font_size();
         fields.insert("1000+200+30+4-1-1-1", &mut |s| raster.measure_text(s, size));
+        // What the editor does before each frame.
+        capture
+            .measure_badge(Some(fields.texts()), |text, size| {
+                Ok::<_, ()>(raster.measure_text(text, size).x)
+            })
+            .unwrap();
+        fields.place(&capture, &mut |s| raster.measure_text(s, size));
         let mut frame = pixmap_from_bgra(&capture.image).unwrap();
-        fields.draw(&mut raster.canvas(&mut frame)).unwrap();
-        let bounds = capture.dimensions_bounds().unwrap();
+        fields.draw(&mut raster.canvas(&mut frame), true).unwrap();
+        let [width, height] = capture.dimension_field_bounds().unwrap();
         let bright = |x: std::ops::Range<u32>| {
-            let left = bounds.min.x as u32;
-            let rows = bounds.min.y as u32..bounds.max.y as u32;
-            rows.flat_map(|y| x.clone().map(move |x| (left + x, y)))
+            let rows = width.min.y as u32..width.max.y as u32;
+            rows.flat_map(|y| x.clone().map(move |x| (x, y)))
                 .filter(|&(x, y)| frame.pixel(x, y).is_some_and(|c| c.red() > 120))
                 .count()
         };
-        // 108 px badge: width field 4..47, "×" gap, height field 61..104.
-        assert_eq!(bounds.size().x, 108.);
-        assert!(bright(4..47) > 40, "width text missing");
-        assert!(bright(61..104) > 20, "height text missing");
-        assert_eq!(bright(48..60), 0, "long text must stay inside its field");
+        let span = |r: Rect| r.min.x as u32..r.max.x as u32;
+        assert!(bright(span(width)) > 40, "width text missing");
+        assert!(bright(span(height)) > 20, "height text missing");
+        let between = width.max.x as u32 + 1..height.min.x as u32;
+        assert_eq!(bright(between), 0, "long text must stay inside its field");
     }
     #[test]
     fn notices_fit_their_text_near_the_top_of_the_screen() {
@@ -747,7 +758,9 @@ mod tests {
         field.rotation = std::f64::consts::FRAC_PI_2;
         let mut raster = Raster::new();
         let mut frame = blank();
-        field.draw(&mut raster.canvas(&mut frame), false).unwrap();
+        field
+            .draw(&mut raster.canvas(&mut frame), false, 1.)
+            .unwrap();
         let tall = inked(&frame, 0..400, 0..200);
         let horizontal_band = inked(&frame, 0..400, 90..120);
         assert!(tall > 80);

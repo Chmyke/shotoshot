@@ -159,9 +159,7 @@ unsafe extern "system" fn save_dialog_hook(
 impl Native {
     pub fn begin_text(&mut self, capture: &mut Capture, hwnd: HWND, p: Point) -> Result<()> {
         unsafe {
-            let existing = capture.editor.objects().iter().rev().find(|o| {
-                matches!(o.shape, Shape::Text { .. }) && o.hit(p, 5., capture.editor.objects())
-            });
+            let existing = capture.text_at(p);
             let (position, value, id, size, rgb, rotation) = if let Some(Object {
                 id,
                 shape:

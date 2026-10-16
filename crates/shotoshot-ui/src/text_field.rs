@@ -2,7 +2,7 @@
 //! OWNER: The platform host opens one field at a time and commits or discards it.
 //! INVARIANTS: `caret` and `anchor` are byte offsets on char boundaries of `text`;
 //! geometry comes from the caller's text measure, the same one that renders the text.
-use crate::{Canvas, Capture, Ink, keys};
+use crate::{Canvas, Capture, Ink, caret, keys};
 use shotoshot_core::{Modifiers, Object, Point, Rect, Shape, rotate_point};
 
 const KEY_BACKSPACE: u32 = 8;
@@ -48,12 +48,7 @@ pub struct TextField {
 impl TextField {
     /// A field at `p`, or over the topmost existing text hit by `p`.
     pub fn open(capture: &Capture, p: Point) -> Self {
-        let objects = capture.editor.objects();
-        let existing = objects
-            .iter()
-            .rev()
-            .find(|o| matches!(o.shape, Shape::Text { .. }) && o.hit(p, 5., objects));
-        match existing {
+        match capture.text_at(p) {
             Some(Object {
                 id,
                 shape:
@@ -123,6 +118,10 @@ impl TextField {
     /// Selected byte range, ordered.
     pub fn selection(&self) -> (usize, usize) {
         (self.caret.min(self.anchor), self.caret.max(self.anchor))
+    }
+    /// What a moved caret changes, for its blink to start over.
+    pub fn caret_state(&self) -> [usize; 3] {
+        [self.caret, self.anchor, self.text.len()]
     }
     pub fn selected_text(&self) -> &str {
         let (a, b) = self.selection();
@@ -343,8 +342,9 @@ impl TextField {
         }
     }
 
-    /// Text, selection highlight and caret, rotated like the committed text.
-    pub fn draw<C: Canvas>(&self, canvas: &mut C, caret: bool) -> Result<(), C::Error> {
+    /// Text, selection highlight and caret (unless blinked off), rotated like the
+    /// committed text; the caret keeps its thickness at interface `scale`.
+    pub fn draw<C: Canvas>(&self, canvas: &mut C, caret: bool, scale: f64) -> Result<(), C::Error> {
         let size = self.size();
         let mut measure_error = None;
         let mut measure = |s: &str| {
@@ -373,7 +373,8 @@ impl TextField {
                 marks.push((from, to, top, true));
             }
             if caret && a == b && (line_start..=line_end).contains(&self.caret) {
-                let x = x_at(self.caret, &mut measure);
+                let place = caret::Place::of(self.caret > line_start, self.caret < line_end);
+                let x = caret::center(x_at(self.caret, &mut measure), size, scale, place);
                 marks.push((x, x, top, false));
             }
             line_start = line_end + 1;
@@ -407,7 +408,7 @@ impl TextField {
                         x,
                         y: top + line_height,
                     };
-                    canvas.line(a, b, Ink::solid(self.color), 1.)?;
+                    canvas.line(a, b, Ink::solid(self.color), caret::width(size, scale))?;
                 }
             }
             Ok(())

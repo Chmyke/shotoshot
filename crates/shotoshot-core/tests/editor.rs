@@ -11,6 +11,11 @@ const BIND: Modifiers = Modifiers {
 };
 
 #[test]
+fn a_new_editor_starts_with_the_arrow() {
+    assert_eq!(Editor::default().tool, Tool::Arrow);
+}
+
+#[test]
 fn closed_freehand_loop_survives_release() {
     let mut editor = Editor::default();
     editor.tool = Tool::Pen;

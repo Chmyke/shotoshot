@@ -40,7 +40,7 @@ impl Session {
         if capture.region.is_some() {
             let editing = self.native.text.as_ref().and_then(|t| t.object);
             let result = capture.draw_annotations(canvas, editing);
-            result.and_then(|_| self.native.draw_text_input())?;
+            result.and_then(|_| self.native.draw_text_input(scale))?;
             // What the desktop lays over the notes (a board's icons) goes over them here too,
             // under the editor's own chrome.
             self.native.renderer.paint_overlay(smooth);

@@ -3,7 +3,7 @@
 ; Test:  powershell -NoProfile -ExecutionPolicy Bypass -File packaging\test-installer.ps1
 ; RULE: keep AppVersion equal to [workspace.package] version in Cargo.toml (checked by the build script).
 
-#define AppVersion "0.3.2"
+#define AppVersion "0.3.3"
 #define AppName "Shotoshot"
 #define AppExeName "shotoshot.exe"
 #define AppPublisher "Mickaël Mancini"

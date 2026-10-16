@@ -157,7 +157,9 @@ const SHORTCUTS: [(&str, Action, u32, bool, bool); 25] = [
         true,
         false,
     ),
-    ("Copy image · Ctrl+Shift+C", Action::Copy, 67, true, true),
+    // The hint names the shorter Ctrl+C, which copies the image whenever no annotation is
+    // selected (`keys`); the key read here, Ctrl+Shift+C, copies it always.
+    ("Copy image · Ctrl+C", Action::Copy, 67, true, true),
     ("Save · Ctrl+S", Action::Save, 83, true, false),
     ("Close · Esc", Action::Close, 27, false, false),
 ];

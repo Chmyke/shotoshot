@@ -248,8 +248,14 @@ fn scene(scale: f64) -> Vec<Op> {
 
     c.draw_dimensions(&mut canvas, false, Some("Too large"))
         .unwrap();
-    let fields = DimensionFields::open(&c).expect("size fields");
-    fields.draw(&mut canvas).unwrap();
+    let mut fields = DimensionFields::open(&c).expect("size fields");
+    c.measure_badge(Some(fields.texts()), |t, size| {
+        canvas.measure_text(t, size).map(|e| e.x)
+    })
+    .unwrap();
+    let size = fields.font_size();
+    fields.place(&c, &mut |t| canvas.measure_text(t, size).unwrap());
+    fields.draw(&mut canvas, true).unwrap();
 
     c.action(&mut host, Action::Tool(Tool::Pen));
     c.pointer_move(&mut host, at(450., 350.), m);

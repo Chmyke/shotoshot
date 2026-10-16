@@ -11,11 +11,11 @@ use windows::Win32::{
     Foundation::{HWND, WPARAM},
     Graphics::Gdi::{DeleteObject, HDC},
     UI::WindowsAndMessaging::{
-        CreateWindowExW, DI_NORMAL, DrawIconEx, GetIconInfo, HICON, ICONINFO, LoadCursorW,
+        CreateWindowExW, DI_NORMAL, DrawIconEx, GetIconInfo, HCURSOR, HICON, ICONINFO,
         SendMessageW, WM_CHAR, WS_EX_TOOLWINDOW, WS_POPUP,
     },
 };
-use windows::core::{Error, PCWSTR, Result, w};
+use windows::core::{Error, Result, w};
 
 const RED: [u8; 3] = shotoshot_ui::toolbar::COLORS[0];
 const YELLOW: [u8; 3] = shotoshot_ui::toolbar::COLORS[1];
@@ -168,10 +168,9 @@ fn text_owner(desktop: &Image) -> Result<crate::resources::OwnedWindow> {
     Ok(crate::resources::OwnedWindow(window))
 }
 
-fn draw_native_cursor(hdc: HDC, name: PCWSTR, pointer: Point) -> Result<()> {
+fn draw_native_cursor(hdc: HDC, cursor: HCURSOR, pointer: Point) -> Result<()> {
     // PITFALL: GetIconInfo allocates two GDI bitmaps even for a shared system cursor.
     unsafe {
-        let cursor = LoadCursorW(None, name)?;
         let icon = HICON(cursor.0);
         let mut info = ICONINFO::default();
         GetIconInfo(icon, &mut info)?;
@@ -258,11 +257,13 @@ impl Film {
         self.session.capture.pointer = pointer;
         let capture = &self.session.capture.image;
         let (width, height) = (capture.width, capture.height);
-        let cursor = self.native_cursor.then(|| self.session.cursor(pointer));
+        let cursor = (self.native_cursor)
+            .then(|| self.session.cursor(pointer))
+            .transpose()?;
         let frame = paint_image(width, height, |hdc| {
             self.session.paint(hdc)?;
-            if let Some(name) = cursor {
-                draw_native_cursor(hdc, name, pointer)?;
+            if let Some(cursor) = cursor {
+                draw_native_cursor(hdc, cursor, pointer)?;
             }
             Ok(())
         })?;
@@ -1120,11 +1121,8 @@ mod tests {
     fn native_cursor_is_painted_into_the_rendered_frame() -> Result<()> {
         let pointer = p(48., 48.);
         let image = paint_image(96, 96, |hdc| {
-            draw_native_cursor(
-                hdc,
-                windows::Win32::UI::WindowsAndMessaging::IDC_HAND,
-                pointer,
-            )
+            use windows::Win32::UI::WindowsAndMessaging::{IDC_HAND, LoadCursorW};
+            draw_native_cursor(hdc, unsafe { LoadCursorW(None, IDC_HAND)? }, pointer)
         })?;
         let changed = image
             .pixels

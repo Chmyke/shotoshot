@@ -53,6 +53,7 @@ impl Preparation {
                 live_sample: None,
                 back_buffer,
                 acceleration: None,
+                caret: Default::default(),
             },
             document: None,
             board: None,

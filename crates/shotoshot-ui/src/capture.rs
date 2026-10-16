@@ -6,9 +6,35 @@ use crate::{
     toolbar::{self, Action, Button, HoverHint},
     wheel,
 };
-use shotoshot_core::{Editor, Object, Point, Rect, Tool, arrow_points};
+use shotoshot_core::{Editor, Object, Point, Rect, Shape, Tool, arrow_points};
 
-const DIMENSIONS_BADGE_WIDTH: f64 = 108.;
+/// Margin of the size badge on each side of what it shows, in logical pixels.
+const BADGE_PADDING: f64 = 8.;
+/// Room for the "×" between the two size fields, in logical pixels.
+const BADGE_SEPARATOR: f64 = 14.;
+/// Narrowest size field, so an emptied one can still be clicked, in logical pixels.
+const BADGE_FIELD_MIN: f64 = 8.;
+/// Font size of the size badge's "W × H" label, in logical pixels.
+pub const BADGE_LABEL_SIZE: f64 = 13.;
+
+/// How wide the size badge's text is, in pixels, as the platform last measured it: the
+/// badge is exactly as wide as its digits, shown or being typed.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum BadgeText {
+    /// Before the first frame: room for two five-digit values.
+    Unmeasured,
+    /// The "W × H" label at `BADGE_LABEL_SIZE`.
+    Label(f64),
+    /// The text of the two fields being edited, at `DimensionFields::FONT_SIZE`.
+    Fields([f64; 2]),
+}
+
+/// Size badge geometry: the badge, the full-screen button and, while editing, the fields.
+struct Badges {
+    badge: Rect,
+    button: Rect,
+    fields: Option<[Rect; 2]>,
+}
 
 /// A monitor in frame coordinates with its interface scale: 1 at 96 DPI, 2.5 at 250 %.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -28,6 +54,8 @@ pub enum CursorKind {
     Arrow,
     Cross,
     IBeam,
+    /// The text tool away from any text: a click starts one (`cursor_image::new_text`).
+    NewText,
     Hand,
     Move,
     ResizeNwse,
@@ -82,6 +110,8 @@ pub struct Capture {
     /// The view a press began in: the drag that follows stays in it, whatever screen the
     /// pointer crosses, and never reaches past what it shows.
     pub(crate) gesture_view: Option<usize>,
+    /// Set by the platform before each frame with `measure_badge`.
+    pub badge_text: BadgeText,
 }
 impl Capture {
     pub fn new(image: Image) -> Self {
@@ -119,6 +149,7 @@ impl Capture {
             pan: None,
             space_held: false,
             gesture_view: None,
+            badge_text: BadgeText::Unmeasured,
         }
     }
     /// Interface scale: that of the screen under the region, or under the pointer before a
@@ -263,15 +294,58 @@ impl Capture {
                 || (self.region.is_some_and(|r| r.contains(self.pointer))
                     && matches!(self.editor.tool, Tool::Pen | Tool::Highlight)))
     }
-    /// Badge and full-screen button, side by side above the region's top-right corner.
-    fn region_badges(&self) -> Option<(Rect, Rect)> {
+    /// The size badge's "W × H" label.
+    pub fn dimensions_label(&self) -> Option<String> {
+        let size = self.region?.size();
+        Some(format!("{} × {}", size.x as i32, size.y as i32))
+    }
+    /// Records how wide the badge's text is, through `measure(text, font size)`, before
+    /// each frame: the texts of the two `fields` being edited, or else the label.
+    pub fn measure_badge<E>(
+        &mut self,
+        fields: Option<[&str; 2]>,
+        mut measure: impl FnMut(&str, f64) -> Result<f64, E>,
+    ) -> Result<(), E> {
+        let s = self.ui_scale();
+        self.badge_text = match (fields, self.dimensions_label()) {
+            (Some([width, height]), _) => {
+                let size = crate::DimensionFields::FONT_SIZE * s;
+                BadgeText::Fields([measure(width, size)?, measure(height, size)?])
+            }
+            (None, Some(label)) => BadgeText::Label(measure(&label, BADGE_LABEL_SIZE * s)?),
+            (None, None) => BadgeText::Unmeasured,
+        };
+        Ok(())
+    }
+    /// Badge and full-screen button, side by side above the region's top-right corner;
+    /// the badge as wide as its text, within the frame.
+    fn region_badges(&self) -> Option<Badges> {
         let r = self.region?;
         let s = self.ui_scale();
         let (frame_width, frame_height) = (self.image.width as f64, self.image.height as f64);
         let height = (26. * s).min(frame_height);
         let button = height;
         let gap = 4. * s;
-        let width = (DIMENSIONS_BADGE_WIDTH * s + gap + button).min(frame_width);
+        let (pad, separator) = (BADGE_PADDING * s, BADGE_SEPARATOR * s);
+        let room = (frame_width - gap - button).max(0.);
+        // Whole logical pixels, so the text never wraps and the badge scales as one piece.
+        let whole = |width: f64| (width / s).ceil() * s;
+        let mut fields = None;
+        let content = match self.badge_text {
+            BadgeText::Unmeasured => 92. * s,
+            BadgeText::Label(width) => whole(width),
+            BadgeText::Fields(widths) => {
+                let size = crate::DimensionFields::FONT_SIZE * s;
+                let (_, reach) = crate::caret::reach(size, s);
+                let [a, b] = widths.map(|w| whole((w + reach).max(BADGE_FIELD_MIN * s)));
+                let shared = share(((room - 2. * pad - separator) / s).max(0.), a / s, b / s);
+                let [a, b] = shared.map(|w| w * s);
+                fields = Some([a, b]);
+                a + separator + b
+            }
+        };
+        let badge = (content + 2. * pad).min(room);
+        let width = (badge + gap + button).min(frame_width);
         let min = Point {
             x: (r.max.x - width).clamp(0., frame_width - width),
             y: (r.min.y - height - 6. * s).clamp(0., frame_height - height),
@@ -283,19 +357,39 @@ impl Capture {
                 y: min.y + height,
             },
         };
-        let badge = (width - gap - button).max(0.);
-        Some((at(min.x, badge), at(min.x + width - button, button)))
+        let field = |x: f64, w: f64| Rect {
+            min: Point {
+                x,
+                y: min.y + 3. * s,
+            },
+            max: Point {
+                x: x + w,
+                y: min.y + 23. * s,
+            },
+        };
+        Some(Badges {
+            badge: at(min.x, badge),
+            button: at(min.x + width - button, button),
+            fields: fields.map(|[a, b]| {
+                let left = min.x + pad;
+                [field(left, a), field(left + a + separator, b)]
+            }),
+        })
+    }
+    /// The two size fields while editing, each as wide as its text and caret.
+    pub fn dimension_field_bounds(&self) -> Option<[Rect; 2]> {
+        self.region_badges()?.fields
     }
     /// Clickable crop-size badge above the region's top-right corner.
     pub fn dimensions_bounds(&self) -> Option<Rect> {
-        self.region_badges().map(|(badge, _)| badge)
+        self.region_badges().map(|b| b.badge)
     }
     /// Button extending the region to its whole screen, next to the size badge.
     pub fn screen_button_bounds(&self) -> Option<Rect> {
         if self.selecting {
             return None;
         }
-        self.region_badges().map(|(_, button)| button)
+        self.region_badges().map(|b| b.button)
     }
     /// The full-screen toggle as a button, so it shares the toolbar hints.
     pub fn screen_button(&self) -> Option<Button> {
@@ -419,6 +513,14 @@ impl Capture {
         self.screen_toggle = Some((region, screen));
         self.region = Some(screen);
     }
+    /// The topmost text a click of the text tool at frame point `p` edits.
+    pub fn text_at(&self, p: Point) -> Option<&Object> {
+        let objects = self.editor.objects();
+        objects
+            .iter()
+            .rev()
+            .find(|o| matches!(o.shape, Shape::Text { .. }) && o.hit(p, 5., objects))
+    }
     /// Pointer shape for the canvas, once the size fields are ruled out.
     pub fn cursor(&self, p: Point) -> CursorKind {
         if self.picker.is_some() {
@@ -451,7 +553,12 @@ impl Capture {
             return CursorKind::Cross;
         }
         if self.editor.tool == Tool::Text {
-            return CursorKind::IBeam;
+            // A click on a text edits it, anywhere else it starts one: two shapes to tell.
+            return if self.text_at(f).is_some() {
+                CursorKind::IBeam
+            } else {
+                CursorKind::NewText
+            };
         }
         if self.editor.tool != Tool::Select {
             return CursorKind::Cross;
@@ -497,6 +604,17 @@ impl Capture {
     }
 }
 /// Corners and edge midpoints, clockwise from the top-left corner.
+/// Widths `a` and `b` within `room`: both whole if they fit, else the narrower whole and
+/// the wider taking the rest, or half each.
+fn share(room: f64, a: f64, b: f64) -> [f64; 2] {
+    let half = (room / 2.).floor();
+    match () {
+        _ if a + b <= room => [a, b],
+        _ if a <= half => [a, room - a],
+        _ if b <= half => [room - b, b],
+        _ => [half, room - half],
+    }
+}
 pub fn region_handles(r: Rect) -> [Point; 8] {
     let mid = (r.min + r.max) * 0.5;
     [
@@ -561,6 +679,24 @@ mod tests {
         assert_eq!(c.cursor(Point { x: 600., y: 250. }), CursorKind::ResizeWe);
         assert_eq!(c.cursor(Point { x: 350., y: 400. }), CursorKind::ResizeNs);
         assert_eq!(c.cursor(Point { x: 300., y: 250. }), CursorKind::Cross);
+    }
+    #[test]
+    fn the_text_tool_shows_whether_a_click_edits_or_creates() {
+        let mut c = capture();
+        c.editor.add_text_measured(
+            Point { x: 200., y: 200. },
+            "note".into(),
+            Point { x: 60., y: 30. },
+        );
+        c.editor.tool = Tool::Text;
+        let on_text = Point { x: 230., y: 215. };
+        assert!(c.text_at(on_text).is_some());
+        assert_eq!(c.cursor(on_text), CursorKind::IBeam, "edits");
+        assert_eq!(
+            c.cursor(Point { x: 400., y: 300. }),
+            CursorKind::NewText,
+            "creates"
+        );
     }
     #[test]
     fn toolbar_hides_size_ring_and_shows_arrow() {
@@ -813,13 +949,30 @@ mod tests {
         assert!(c.hover_target(bounds.center()).is_none());
     }
     #[test]
-    fn dimensions_badge_is_compact_for_two_five_digit_values() {
-        let c = capture();
-        let badge = c.dimensions_bounds().unwrap();
+    fn dimensions_badge_is_exactly_as_wide_as_its_label() {
+        let mut c = capture();
+        // 7 px a character, measured at the label size.
+        let mut sizes = Vec::new();
+        let mut badge = |c: &mut Capture| {
+            c.measure_badge(None, |text, size| {
+                sizes.push(size);
+                Ok::<_, ()>(text.chars().count() as f64 * 7.)
+            })
+            .unwrap();
+            c.dimensions_bounds().unwrap()
+        };
+        let wide = badge(&mut c);
+        assert_eq!(c.dimensions_label().unwrap(), "500 × 300");
+        assert_eq!(wide.size().x, 8. + 9. * 7. + 8.);
         let button = c.screen_button_bounds().unwrap();
-        assert_eq!(badge.size().x, 108.);
-        assert_eq!(button.min.x - badge.max.x, 4.);
+        assert_eq!(button.min.x - wide.max.x, 4.);
         assert_eq!(button.max.x, 600.);
+        // Two digits fewer, two digits of badge fewer; the right edge stays put.
+        c.region = Rect::new(Point { x: 550., y: 370. }, Point { x: 600., y: 400. });
+        let narrow = badge(&mut c);
+        assert_eq!(narrow.size().x, wide.size().x - 2. * 7.);
+        assert_eq!(narrow.max.x, wide.max.x);
+        assert_eq!(sizes, [BADGE_LABEL_SIZE; 2]);
     }
     #[test]
     fn screen_button_expands_again_after_the_region_was_edited() {
