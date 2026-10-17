@@ -34,7 +34,8 @@ try {
     }
     cargo clippy --workspace --all-targets --locked --target x86_64-unknown-linux-gnu -- -D warnings
     if ($LASTEXITCODE -ne 0) { exit 1 }
-    cargo test --workspace --locked
+    # Every test binary runs even after a failure, so one run shows every failing test.
+    cargo test --workspace --locked --no-fail-fast
     if ($LASTEXITCODE -ne 0) { exit 1 }
     if (-not $Fast) {
         # The tests above never read the screen. The ones that need a real display are named

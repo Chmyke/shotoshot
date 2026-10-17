@@ -262,12 +262,11 @@ mod tests {
         assert!(app.toast.is_none());
         assert!(app.instant.pending.is_some());
         sender.send(Ok(())).unwrap();
-        let foreground = unsafe { GetForegroundWindow() };
         app.finish_instant_capture();
         assert!(app.instant.pending.is_none());
         assert!(app.toast.is_none(), "success is confirmed without text");
         assert!(app.instant.pulse.is_some());
-        assert_eq!(unsafe { GetForegroundWindow() }, foreground);
+        assert!(crate::app::foreground_is_elsewhere());
         let original = app.settings.instant_shortcut;
         app.settings.key = 19;
         app.save_instant_shortcut(owner.0, 0, 19).unwrap();

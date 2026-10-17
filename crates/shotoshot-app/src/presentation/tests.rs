@@ -25,7 +25,9 @@ fn live_shapes_have_soft_corners_and_independently_sized_arrowheads() {
         28.,
     );
     layer.end().unwrap();
-    assert_eq!(layer.pixel(20, 20)[3], 0, "the corner should be softened");
+    // A sharp corner would be opaque here. The GPU leaves 0; Direct2D's software rasterizer,
+    // used on machines without a GPU (GitHub Actions), spills 4 of 255 of antialiasing.
+    assert!(layer.pixel(20, 20)[3] < 16, "the corner should be softened");
     assert!(
         layer.pixel(20, 60)[3] > 200,
         "straight sides keep their full thickness"

@@ -122,7 +122,6 @@ mod tests {
     #[test]
     fn pulse_has_only_four_edges_does_not_activate_and_disappears() {
         unsafe {
-            let foreground = GetForegroundWindow();
             let bounds = RECT {
                 left: -1280,
                 top: 80,
@@ -164,7 +163,7 @@ mod tests {
             }
             assert!(!IsWindowVisible(window).as_bool());
             assert_eq!(GetWindowLongPtrW(window, GWLP_USERDATA), 16);
-            assert_eq!(GetForegroundWindow(), foreground);
+            assert!(crate::app::foreground_is_elsewhere());
             drop(pulse);
             assert!(!IsWindow(Some(window)).as_bool());
         }

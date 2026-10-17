@@ -411,7 +411,6 @@ mod tests {
             right: 0,
             bottom: 1080,
         };
-        let foreground = unsafe { GetForegroundWindow() };
         let toast = Toast::new_at("Screenshot saved", false, Some(bounds)).unwrap();
         unsafe {
             let mut rect = RECT::default();
@@ -442,7 +441,7 @@ mod tests {
                 GetWindowLongPtrW(toast.window.0, GWLP_USERDATA) & 0xffff,
                 25
             );
-            assert_eq!(GetForegroundWindow(), foreground);
+            assert!(crate::app::foreground_is_elsewhere());
             let mut affinity = 0;
             GetWindowDisplayAffinity(toast.window.0, &mut affinity).unwrap();
             assert_eq!(affinity, WDA_EXCLUDEFROMCAPTURE.0);
@@ -491,7 +490,6 @@ mod tests {
                 menu: None,
                 menu_closed_on_icon: None,
             };
-            let foreground = GetForegroundWindow();
             app.notify(Notice::Copied);
             let mut message = MSG::default();
             assert!(
@@ -499,7 +497,7 @@ mod tests {
             );
             assert_eq!(message.wParam.0, GetCurrentProcessId() as usize);
             assert_eq!(message.lParam.0, Notice::Copied as isize);
-            assert_eq!(GetForegroundWindow(), foreground);
+            assert!(crate::app::foreground_is_elsewhere());
         }
     }
     #[test]

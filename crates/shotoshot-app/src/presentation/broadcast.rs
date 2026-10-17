@@ -449,8 +449,11 @@ mod tests {
         }
     }
 
+    /// Captures its window through Windows.Graphics.Capture, which needs the compositor of an
+    /// interactive desktop: GitHub's machines refuse it ("Could not capture the given window").
     #[test]
-    fn obs_lists_the_parked_mirror_and_receives_alpha_placement_order_and_updates() {
+    #[ignore = "real desktop: captures a window through the compositor, run alone by check.ps1"]
+    fn real_desktop_obs_lists_the_parked_mirror_and_receives_alpha_placement_order_and_updates() {
         let _com = crate::ComApartment::new().unwrap();
         let owner = owner();
         let mirror = Broadcast::new(owner.0).unwrap();
