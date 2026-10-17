@@ -3,7 +3,7 @@
 ; Test:  powershell -NoProfile -ExecutionPolicy Bypass -File packaging\test-installer.ps1
 ; RULE: keep AppVersion equal to [workspace.package] version in Cargo.toml (checked by the build script).
 
-#define AppVersion "0.3.3"
+#define AppVersion "0.3.4"
 #define AppName "Shotoshot"
 #define AppExeName "shotoshot.exe"
 #define AppPublisher "Mickaël Mancini"
@@ -30,6 +30,8 @@ UsePreviousAppDir=no
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 DisableReadyPage=yes
+; Nothing left to say at the end: the app is already starting ([Run]).
+DisableFinishedPage=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 SetupIconFile=..\crates\shotoshot-app\assets\shotoshot.ico
@@ -92,7 +94,11 @@ Root: HKCU; Subkey: "Software\Classes\Shotoshot.Document\DefaultIcon"; ValueType
 Root: HKCU; Subkey: "Software\Classes\Shotoshot.Document\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""
 
 [Run]
-Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
+; Shotoshot starts by itself once installed, with no "Open Shotoshot" box (Mickael, 2026-10-17).
+; Not postinstall, so it runs as soon as the files are in place; runasoriginaluser keeps it
+; unelevated even when setup was run as administrator. Silent installs launch nothing
+; (test-installer.ps1, delivery step 6).
+Filename: "{app}\{#AppExeName}"; Flags: nowait runasoriginaluser skipifsilent
 
 ; Gives back to Windows what Shotoshot took, before the files are removed; the app owns the logic.
 ; - Print Screen goes back to the Snipping Tool if Shotoshot took it

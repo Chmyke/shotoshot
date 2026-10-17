@@ -18,17 +18,22 @@ use std::{
     num::NonZeroU32,
     path::{Path, PathBuf},
     rc::Rc,
-    time::Instant,
+    time::{Duration, Instant},
 };
 use tiny_skia::Pixmap;
 use winit::{
     application::ApplicationHandler,
+    dpi::LogicalSize,
     event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::ModifiersState,
     monitor::MonitorHandle,
     window::{Cursor, CursorIcon, CustomCursor, Fullscreen, Window, WindowId},
 };
+
+/// How long a fresh capture may wait to learn its monitor before filling whichever one
+/// the compositor picks; a shown window learns it within a few frames.
+const PLACING_LIMIT: Duration = Duration::from_secs(1);
 
 /// Native side of the Linux editor: renderer resources and the portable inline fields.
 struct Native {
@@ -199,6 +204,10 @@ struct Editor {
     /// Why the last action failed; shown at the top until the next press or key.
     notice: Option<String>,
     error: Option<Box<dyn Error>>,
+    /// Until when a fresh capture waits, in a plain window, to learn its monitor: Wayland
+    /// names it only once the window is shown, and GNOME shows a plain window (unlike a
+    /// full-screen one) on the monitor under the pointer.
+    placing: Option<Instant>,
 }
 
 /// Edits the fresh capture `image`.
@@ -246,6 +255,7 @@ fn start(
         persist,
         notice,
         error: None,
+        placing: None,
     };
     editor.prepare();
     EventLoop::new()?.run_app(&mut editor)?;
@@ -370,6 +380,30 @@ impl Editor {
         self.frame = self.backdrop.clone();
         self.capture = capture;
         self.prepare();
+        Ok(())
+    }
+    /// Once the window's monitor is known, fills it and edits only it, at 1:1. Past the
+    /// limit, fills the monitor the compositor chooses with the whole desktop, squeezed.
+    fn place(&mut self, event_loop: &ActiveEventLoop) -> Result<(), Box<dyn Error>> {
+        let (Some(limit), Some(window)) = (self.placing, self.window.clone()) else {
+            return Ok(());
+        };
+        let current = window.current_monitor();
+        if current.is_none() && Instant::now() < limit {
+            return Ok(());
+        }
+        self.placing = None;
+        window.set_fullscreen(Some(Fullscreen::Borderless(current.clone())));
+        let all: Vec<_> = event_loop.available_monitors().map(|m| area(&m)).collect();
+        let size = (self.capture.image.width, self.capture.image.height);
+        if let Some(current) = current
+            && let Some(crop) = monitors::crop_for(size, &all, area(&current))
+            && let Some(image) = monitors::crop(&self.capture.image, crop)
+        {
+            self.show(Capture::new(image))?;
+            self.set_scale(window.scale_factor());
+        }
+        self.redraw();
         Ok(())
     }
     fn redraw(&self) {
@@ -860,7 +894,9 @@ impl ApplicationHandler for Editor {
             Ok(place) => place,
             Err(error) => return self.fail(event_loop, error),
         };
-        let fresh = reopened.is_none();
+        // A diagnostic takes the path of several monitors even on one, so the Pi runs it.
+        let several = event_loop.available_monitors().nth(1).is_some();
+        let wait = reopened.is_none() && (several || self.diagnostic.is_some());
         let attributes = Window::default_attributes()
             .with_title("Shotoshot")
             .with_decorations(false);
@@ -869,6 +905,9 @@ impl ApplicationHandler for Editor {
             Some(Place::Monitor(monitor)) => {
                 attributes.with_fullscreen(Some(Fullscreen::Borderless(Some(monitor))))
             }
+            None if wait => attributes
+                .with_resizable(false)
+                .with_inner_size(LogicalSize::new(320, 180)),
             None => attributes.with_fullscreen(Some(Fullscreen::Borderless(None))),
         };
         let created = event_loop.create_window(attributes).map(Rc::new);
@@ -882,21 +921,15 @@ impl ApplicationHandler for Editor {
             Ok(surface) => self.surface = Some(surface),
             Err(error) => return self.fail(event_loop, error.into()),
         }
-        // With several monitors, edit only the one the window covers, at 1:1.
-        let all: Vec<_> = event_loop.available_monitors().map(|m| area(&m)).collect();
-        let size = (self.capture.image.width, self.capture.image.height);
-        if fresh
-            && let Some(current) = window.current_monitor()
-            && let Some(crop) = monitors::crop_for(size, &all, area(&current))
-            && let Some(image) = monitors::crop(&self.capture.image, crop)
-            && let Err(error) = self.show(Capture::new(image))
-        {
-            return self.fail(event_loop, error);
-        }
+        self.placing = wait.then(|| Instant::now() + PLACING_LIMIT);
         self.set_scale(window.scale_factor());
         self.new_text_cursor = new_text_cursor(event_loop, window.scale_factor());
         window.set_cursor(CursorIcon::Crosshair);
         self.window = Some(window);
+        // X11 knows the monitor at once; Wayland once shown (`about_to_wait`).
+        if let Err(error) = self.place(event_loop) {
+            return self.fail(event_loop, error);
+        }
         self.redraw();
     }
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
@@ -910,6 +943,10 @@ impl ApplicationHandler for Editor {
             WindowEvent::RedrawRequested => {
                 if let Err(error) = self.paint() {
                     return self.fail(event_loop, error);
+                }
+                // The script starts on the monitor's own capture.
+                if self.placing.is_some() {
+                    return;
                 }
                 if let Err(error) = self.diagnostic_step(event_loop) {
                     self.fail(event_loop, error);
@@ -966,12 +1003,17 @@ impl ApplicationHandler for Editor {
         }
     }
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        // Wake only for hover-hint delays and fades and caret blinks; otherwise sleep
-        // until input.
+        // Any Wayland event wakes the loop, the window's arrival on a monitor included.
+        if let Err(error) = self.place(event_loop) {
+            return self.fail(event_loop, error);
+        }
+        // Wake only for hover-hint delays and fades, caret blinks and the placing limit;
+        // otherwise sleep until input.
         let now = Instant::now();
         let hint = (self.capture.hover_hint.next_tick(now))
-            .map(|ms| now + std::time::Duration::from_millis(ms as u64));
-        match hint.into_iter().chain(self.native.caret_due).min() {
+            .map(|ms| now + Duration::from_millis(ms as u64));
+        let due = hint.into_iter().chain(self.native.caret_due);
+        match due.chain(self.placing).min() {
             Some(at) => {
                 event_loop.set_control_flow(ControlFlow::WaitUntil(at));
                 if at <= now || hint.is_some() {

@@ -1,6 +1,7 @@
 # End-to-end installer test, no human needed. Two scenarios:
 # 1. Fresh: silent install, checks, launch, silent uninstall (which must close the running
-#    app), checks that nothing is left.
+#    app), checks that nothing is left; then an interactive install, which must close by itself
+#    and start the app (no "Open Shotoshot" box, 2026-10-17), and its uninstall.
 # 2. Upgrade from the former name (before 0.2.0, "Shot Shot"): old setup installed with a
 #    desktop shortcut, a running shotshot.exe and its Run value; the new setup must close it,
 #    remove the old folder and shortcuts, keep "start with Windows" under the new name, and
@@ -43,6 +44,8 @@ $log = Join-Path $env:TEMP "shotoshot-installer-test-$PID.log"
 $uninstallLog = Join-Path $env:TEMP "shotoshot-uninstaller-test-$PID.log"
 $upgradeLog = Join-Path $env:TEMP "shotoshot-upgrade-test-$PID.log"
 $upgradeUninstallLog = Join-Path $env:TEMP "shotoshot-upgrade-uninstaller-test-$PID.log"
+$interactiveLog = Join-Path $env:TEMP "shotoshot-interactive-test-$PID.log"
+$interactiveUninstallLog = Join-Path $env:TEMP "shotoshot-interactive-uninstaller-test-$PID.log"
 $failures = 0
 
 function Check([bool]$ok, [string]$what) {
@@ -72,6 +75,46 @@ function Log-Contains([string]$path, [string]$text) {
 function Run-Setup([string]$path, [string[]]$extra) {
     $arguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') + $extra
     (Start-Process -FilePath $path -ArgumentList $arguments -Wait -PassThru).ExitCode
+}
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class SetupWizard {
+    delegate bool EnumProc(IntPtr hwnd, IntPtr lParam);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc proc, IntPtr lParam);
+    [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc proc, IntPtr lParam);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int max);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hwnd);
+    [DllImport("user32.dll")] static extern bool PostMessage(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
+    // Posts BM_CLICK to the visible button with this caption in a window of the process: no focus
+    // needed, so another window in front does not matter. False while the button is absent.
+    public static bool Click(uint pid, string caption) {
+        IntPtr button = IntPtr.Zero;
+        EnumWindows((top, _) => {
+            uint owner; GetWindowThreadProcessId(top, out owner);
+            if (owner != pid) return true;
+            EnumChildWindows(top, (child, __) => {
+                var text = new StringBuilder(64); GetWindowText(child, text, 64);
+                if (IsWindowVisible(child) && text.ToString().Replace("&", "") == caption) { button = child; return false; }
+                return true;
+            }, IntPtr.Zero);
+            return button == IntPtr.Zero;
+        }, IntPtr.Zero);
+        return button != IntPtr.Zero && PostMessage(button, 0x00F5, IntPtr.Zero, IntPtr.Zero);
+    }
+}
+'@
+# The wizard runs in a "<setup name>.tmp" child process that setup extracts and starts.
+function Click-Setup-Button([string]$caption, [int]$seconds) {
+    $wizardName = [System.IO.Path]::GetFileNameWithoutExtension($Setup) + '.tmp'
+    Wait-Until {
+        foreach ($wizard in @(Get-Process -Name $wizardName -ErrorAction SilentlyContinue)) {
+            if ([SetupWizard]::Click([uint32]$wizard.Id, $caption)) { return $true }
+        }
+        $false
+    } $seconds
 }
 function Uninstall-Current([string]$logPath) {
     $code = Run-Setup (Join-Path $installDir 'unins000.exe') @("/LOG=`"$logPath`"")
@@ -164,6 +207,19 @@ try {
         Check ((Run-Value) -eq $runBefore) 'foreign autostart value preserved'
     }
 
+    # Interactive install: Inno always shows one page ("Ready to Install", even with every page
+    # disabled); after Install, setup closes by itself and the app starts. /LANG skips the
+    # language dialog.
+    $interactive = Start-Process -FilePath $Setup -ArgumentList '/SUPPRESSMSGBOXES', '/NORESTART', '/LANG=english', "/LOG=`"$interactiveLog`"" -PassThru
+    Check (Click-Setup-Button 'Install' 30) 'interactive install shows Install and it is clicked'
+    Check ($interactive.WaitForExit(120000) -and $interactive.ExitCode -eq 0) "interactive install closes by itself, exit code 0 (got $($interactive.ExitCode))"
+    if (-not $interactive.HasExited) {
+        Get-Process -Name ([System.IO.Path]::GetFileNameWithoutExtension($Setup) + '.tmp') -ErrorAction SilentlyContinue | Stop-Process -Force
+        $interactive.Kill()
+    }
+    Check (Wait-Until { (Installed-Processes).Count -gt 0 } 10) 'interactive install launches the installed app'
+    Uninstall-Current $interactiveUninstallLog
+
     if (-not $OldSetup) {
         Write-Output 'SKIP  upgrade from "Shot Shot": no out/Shot-Shot-Setup-*.exe and no -OldSetup'
     } elseif ($null -ne $oldRunBefore -or $null -ne $runBefore) {
@@ -226,6 +282,6 @@ try {
     }
 }
 
-Write-Output "INFO  Logs: $log ; $uninstallLog ; $upgradeLog ; $upgradeUninstallLog"
+Write-Output "INFO  Logs: $log ; $uninstallLog ; $interactiveLog ; $interactiveUninstallLog ; $upgradeLog ; $upgradeUninstallLog"
 if ($failures -gt 0) { Write-Output "FAIL ($failures check(s))"; exit 1 }
 Write-Output 'PASS'

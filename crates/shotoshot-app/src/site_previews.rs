@@ -505,8 +505,8 @@ fn film(desktop: &Image, folder: &Path) -> Result<()> {
 }
 
 /// From a bare desktop to a finished capture: select an area, draw an arrow, type a two-line
-/// note, grow it with the wheel, recolour and turn it, draw a square and move it, then widen
-/// the area.
+/// note, grow it with the wheel, recolour and turn it, draw a square and move it, widen the area,
+/// then come back to the arrow: its tip swings onto the square and the eyedropper recolours it.
 fn capture_film(desktop: &Image, folder: &Path) -> Result<()> {
     std::fs::create_dir_all(folder).map_err(|e| fail(&e.to_string()))?;
     let owner = text_owner(desktop)?;
@@ -532,11 +532,12 @@ fn capture_film(desktop: &Image, folder: &Path) -> Result<()> {
     film.glide(p(AREA_RIGHT, 470.), 22, none)?;
     film.up(none);
     film.hold(8)?;
-    // An arrow onto the chart, between two lines of its legend.
+    // A short arrow from above the chart onto the Mobile line of its legend. Its tail stays put:
+    // the film's end swings its tip to the far side, onto the moon.
     film.pick(Action::Tool(Tool::Arrow))?;
-    film.glide(p(950., 271.), 12, none)?;
+    film.glide(ARROW_TAIL_AT, 12, none)?;
     film.down(none)?;
-    film.glide(p(680., 302.), 14, none)?;
+    film.glide(p(724., 275.), 14, none)?;
     film.up(none);
     film.hold(5)?;
     // A typed note, grown with the wheel, turned white and rotated.
@@ -611,8 +612,89 @@ fn capture_film(desktop: &Image, folder: &Path) -> Result<()> {
     film.hold(2)?;
     film.glide(p(100., 612.), 16, none)?;
     film.up(none);
+    film.hold(12)?;
+    // Back to the first arrow: only its tip handle is dragged, well past a right angle, onto the
+    // square now on the moon. The shaft lengthens; tail, thickness and head stay as drawn.
+    let drawn = arrow_of(&film)?;
+    film.glide(drawn.middle(), 14, none)?;
+    film.click()?;
+    film.hold(8)?;
+    film.glide(drawn.end, 10, none)?;
+    film.down(none)?;
+    film.hold(3)?;
+    let square = film.last_bounds()?;
+    film.glide(p(square.max.x + 9., square.center().y), 26, none)?;
+    film.up(none);
+    film.hold(10)?;
+    let aimed = arrow_of(&film)?;
+    if !aimed.reaimed_from(&drawn) {
+        return Err(fail(
+            "the arrow's tip did not swing past a right angle alone",
+        ));
+    }
+    // The eyedropper recolours the arrow still selected: picking it, unlike a tool, keeps the
+    // selection. The sample is the chart's green slice.
+    film.pick(Action::Eyedropper)?;
+    film.glide(p(532., 335.), 22, none)?;
+    film.hold(10)?;
+    film.click()?;
+    film.hold(10)?;
+    let sampled = film.session.capture.custom_color;
+    let recoloured = arrow_of(&film)?;
+    if recoloured.color != sampled || sampled == drawn.color {
+        return Err(fail("the eyedropper did not recolour the selected arrow"));
+    }
+    // A click on the bare board drops the selection: the last frames show the capture as saved.
+    film.glide(p(760., 505.), 16, none)?;
+    film.click()?;
+    if !film.session.capture.editor.selected.is_empty() {
+        return Err(fail("the closing click left something selected"));
+    }
     film.hold(45)?;
     film.write_pointers()
+}
+
+/// Where the hero film's arrow starts, above the chart, and stays.
+const ARROW_TAIL_AT: Point = Point { x: 640., y: 200. };
+
+/// The one arrow of the hero film, as its gestures read it.
+struct Aim {
+    start: Point,
+    end: Point,
+    color: [u8; 3],
+    width: f64,
+}
+impl Aim {
+    fn middle(&self) -> Point {
+        self.start + (self.end - self.start) * 0.5
+    }
+    /// Same tail and stroke, a longer shaft turned more than 90°.
+    fn reaimed_from(&self, before: &Aim) -> bool {
+        let (was, is) = (before.end - before.start, self.end - self.start);
+        let cosine = (was.x * is.x + was.y * is.y) / (was.length() * is.length());
+        self.start == before.start
+            && self.width == before.width
+            && is.length() > was.length()
+            && cosine < 0.
+    }
+}
+
+fn arrow_of(film: &Film) -> Result<Aim> {
+    film.session
+        .capture
+        .editor
+        .objects()
+        .iter()
+        .find_map(|o| match o.shape {
+            Shape::Arrow { start, end, .. } => Some(Aim {
+                start,
+                end,
+                color: o.style.color,
+                width: o.style.width,
+            }),
+            _ => None,
+        })
+        .ok_or_else(|| fail("missing arrow"))
 }
 
 /// The eyedropper wanders a few pixels around where the moon sets behind the mountain: sky, moon
@@ -1181,7 +1263,8 @@ mod tests {
     }
 
     /// The other films check theirs as well: the hero's typed note reaches its size and turns,
-    /// the editing film's note stays clear of the card's frame. Any desktop will do.
+    /// its arrow swings by its tip alone and takes the eyedropper's colour, the editing film's
+    /// note stays clear of the card's frame. Any desktop will do.
     #[test]
     fn films_of_the_board_render_their_enlarged_notes() -> Result<()> {
         let _com = ComApartment::new()?;
