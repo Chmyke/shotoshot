@@ -50,17 +50,16 @@ const BRUSH_DELAY_MS: u32 = 250;
 mod display_tests;
 #[cfg(test)]
 mod tests;
-/// "Does not activate", whatever the user does meanwhile: the foreground may move to another
-/// program during a test, never to a window of this process.
+/// "Does not activate", whatever happens meanwhile: the foreground may move to another program
+/// or to another test's window (tests run in parallel, one thread each, and some bring their
+/// capture back on purpose), never to a window of the calling test's thread.
 #[cfg(test)]
 fn foreground_is_elsewhere() -> bool {
     use windows::Win32::{
-        System::Threading::GetCurrentProcessId,
+        System::Threading::GetCurrentThreadId,
         UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId},
     };
-    let mut process = 0;
-    unsafe { GetWindowThreadProcessId(GetForegroundWindow(), Some(&mut process)) };
-    process != unsafe { GetCurrentProcessId() }
+    unsafe { GetWindowThreadProcessId(GetForegroundWindow(), None) != GetCurrentThreadId() }
 }
 struct App {
     settings: Settings,

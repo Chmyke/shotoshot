@@ -26,6 +26,8 @@ try {
     # Maintainer only, the tooling is not published: nothing private may reach the public tree.
     $export = Join-Path $PSScriptRoot 'publish/export-public.ps1'
     if (Test-Path $export) { & $export -ScanOnly }
+    $release = Join-Path $PSScriptRoot 'publish/release-github.ps1'
+    if (Test-Path $release) { & $release -SelfTest }
     cargo clippy --workspace --all-targets --locked -- -D warnings
     if ($LASTEXITCODE -ne 0) { exit 1 }
     # The portable crates and the Linux layer must keep type-checking for Linux.
@@ -63,6 +65,30 @@ try {
                     ForEach-Object { '{0} {1}' -f $_.FullName.Substring($board.Length), $_.Length }
             }
         }
+        # The probes time the real capture path, so other programs compiling or drawing on the GPU
+        # push them past their budget (2026-10-17: first frame at 245-645 ms for 200). Wait until
+        # the machine has been calm for 30 seconds, at most 15 minutes; a failure then names the load.
+        $load = {
+            $cpu = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
+            $gpu = 0
+            try {
+                $engines = Get-Counter '\GPU Engine(*engtype_3D)\Utilization Percentage' -ErrorAction Stop
+                $gpu = [int]($engines.CounterSamples | Measure-Object CookedValue -Sum).Sum
+            } catch {}
+            [pscustomobject]@{ Cpu = $cpu; Gpu = $gpu; Calm = $cpu -lt 25 -and $gpu -lt 15 }
+        }
+        $deadline = (Get-Date).AddMinutes(15)
+        $calmSince = $null
+        do {
+            $machine = & $load
+            if (-not $machine.Calm) { $calmSince = $null }
+            elseif (-not $calmSince) { $calmSince = Get-Date }
+            if ($calmSince -and ((Get-Date) - $calmSince).TotalSeconds -ge 30) { break }
+            Start-Sleep -Seconds 5
+        } while ((Get-Date) -lt $deadline)
+        $busy = if ($calmSince) { '' } else {
+            " The machine never stayed calm for 30 s in 15 min (last: CPU $($machine.Cpu) %, GPU $($machine.Gpu) %): rerun when it is."
+        }
         $before = (& $userState) -join "`n"
         foreach ($argument in @('--render-demo', '--diagnostic', '--warm-diagnostic', '--presentation-diagnostic', '--document-diagnostic', '--board-diagnostic')) {
             $probe = Start-Process -FilePath (Join-Path $PSScriptRoot 'target/release/shotoshot.exe') -ArgumentList $argument -WindowStyle Hidden -PassThru
@@ -74,7 +100,7 @@ try {
             }
             if (-not $finished) { throw "Timed out: $argument" }
             $probe.Refresh()
-            if ($probe.ExitCode -ne 0) { throw "Failed: $argument ($($probe.ExitCode))" }
+            if ($probe.ExitCode -ne 0) { throw "Failed: $argument ($($probe.ExitCode)).$busy" }
         }
         # Rendered demo images must match byte for byte; -UpdateGolden records an intended change.
         $golden = Join-Path $PSScriptRoot 'crates/shotoshot-app/tests/render-golden.sha256'

@@ -1,0 +1,7 @@
+# The one compiler of the workstation, GitHub Actions and the published builds: raise it here.
+[toolchain]
+channel = "1.99.1"
+profile = "minimal"
+components = ["clippy", "rustfmt"]
+# Linux is linted from Windows and cross-compiled for the archives and the Raspberry Pi.
+targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]

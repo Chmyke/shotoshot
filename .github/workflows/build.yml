@@ -16,8 +16,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # The compiler the maintainer builds with: raise both together.
-  RUST_TOOLCHAIN: 1.98.0
   CARGO_TERM_COLOR: always
 
 jobs:
@@ -29,11 +27,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The compiler, its components and targets come from rust-toolchain.toml, as on the workstation.
       - name: Install the Rust toolchain
         shell: powershell
-        run: |
-          rustup toolchain install $env:RUST_TOOLCHAIN --profile minimal --component clippy --component rustfmt --target x86_64-unknown-linux-gnu --no-self-update
-          rustup default $env:RUST_TOOLCHAIN
+        run: rustup toolchain install --no-self-update
       - name: Check
         shell: powershell
         run: .\check.ps1 -Fast
@@ -68,9 +65,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install the Rust toolchain
-        run: |
-          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component clippy --no-self-update
-          rustup default "$RUST_TOOLCHAIN"
+        run: rustup toolchain install --no-self-update
       - name: Lint
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Test
