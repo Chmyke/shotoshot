@@ -51,7 +51,9 @@ foreach ($probe in $probes.GetEnumerator()) {
 
 Push-Location $PSScriptRoot
 try {
-    $tree = cargo tree --workspace --target all --prefix none --format '{p}|{l}' --locked
+    # Plain text whatever the environment: CARGO_TERM_COLOR=always (GitHub Actions) colours the (*)
+    # marker, which then no longer matches below and refuses every repeated crate.
+    $tree = cargo tree --workspace --target all --prefix none --format '{p}|{l}' --locked --color never
     if ($LASTEXITCODE -ne 0) { throw 'cargo tree failed.' }
     # cargo separates the workspace members with blank lines and marks repeated crates with (*).
     $refused = foreach ($line in ($tree -replace ' \(\*\)$', '' | Where-Object { $_ } | Sort-Object -Unique)) {
