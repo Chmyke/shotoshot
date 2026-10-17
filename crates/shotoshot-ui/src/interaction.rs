@@ -251,7 +251,7 @@ impl Capture {
                 if host.text_active() {
                     host.set_text_color(c);
                 } else {
-                    self.editor.apply_style();
+                    self.editor.apply_color();
                 }
             }
             Action::Thinner | Action::Thicker => {
@@ -261,6 +261,12 @@ impl Capture {
                     // The eraser has a size of its own: the pen keeps its width.
                     self.editor.eraser_size =
                         wheel::eraser_size_after(self.editor.eraser_size, notch);
+                } else if let Some(width) = self
+                    .editor
+                    .step_selected_widths(|w| wheel::stroke_width_after(w, notch))
+                {
+                    // A selection grows from its own widths and keeps its colours.
+                    self.editor.style.width = width;
                 } else {
                     self.editor.style.width =
                         wheel::stroke_width_after(self.editor.style.width, notch);
@@ -371,6 +377,7 @@ impl Capture {
 mod tests {
     use super::*;
     use crate::{Image, Monitor, test_host::FakeHost};
+    use shotoshot_core::Style;
 
     fn p(x: f64, y: f64) -> Point {
         Point { x, y }
@@ -499,6 +506,53 @@ mod tests {
             assert_eq!(head[1], p(220., 200.));
             assert!((head[1].x - head[0].x - object.style.width * 3.84).abs() < 1e-8);
         }
+    }
+
+    #[test]
+    fn a_selection_keeps_its_colour_under_the_wheel_and_its_width_under_a_colour() {
+        const BLUE: [u8; 3] = crate::toolbar::COLORS[3];
+        let (mut c, mut host) = selected();
+        c.action(&mut host, Action::Tool(Tool::Rectangle));
+        c.action(&mut host, Action::Color(BLUE));
+        c.editor.style.width = 4.;
+        drag(&mut c, &mut host, p(150., 150.), p(250., 250.));
+        // Another colour and width are current when the square is selected again.
+        c.action(&mut host, Action::Tool(Tool::Select));
+        c.action(&mut host, Action::Color(WHITE));
+        for _ in 0..4 {
+            c.action(&mut host, Action::Thicker);
+        }
+        assert_eq!(c.editor.style.width, 8.);
+        let square = c.editor.objects()[0].id;
+        c.editor.select_only(square);
+        c.wheel(&mut host, 120).unwrap();
+        assert_eq!(
+            c.editor.objects()[0].style,
+            Style {
+                color: BLUE,
+                width: 5.
+            }
+        );
+        assert_eq!(
+            c.editor.style.width, 5.,
+            "the next notch starts from the square"
+        );
+        c.action(&mut host, Action::Color(BLACK));
+        assert_eq!(
+            c.editor.objects()[0].style,
+            Style {
+                color: BLACK,
+                width: 5.
+            }
+        );
+        c.editor.undo();
+        assert_eq!(
+            c.editor.objects()[0].style,
+            Style {
+                color: BLUE,
+                width: 5.
+            }
+        );
     }
 
     const BLACK: [u8; 3] = crate::toolbar::COLORS[5];

@@ -11,7 +11,7 @@ is in English; the on-screen keyboard always follows the active keyboard layout.
   when you click its button, sent by your browser.
 - **Open.** GPL-3.0, written in Rust on Direct2D, with no web engine.
 
-![Shotoshot at work: an area is selected and widened, an arrow points at a chart legend, a note is typed, enlarged and rotated, a square is drawn then moved, then the arrow is re-aimed by its tip alone and recoloured with the eyedropper.](https://shotoshot.com/assets/capture.gif)
+![Shotoshot at work: an area is selected and widened, an arrow points at a chart legend, a note is typed, enlarged and rotated, a square is drawn then moved, then the arrow is re-aimed by its tip alone, recoloured with the eyedropper and thickened with the wheel, and the square is widened a little.](https://shotoshot.com/assets/capture.gif)
 
 ## Install
 

@@ -360,11 +360,7 @@ impl Editor {
         true
     }
     pub fn apply_style(&mut self) {
-        if self
-            .gesture
-            .as_ref()
-            .is_some_and(|g| matches!(g.kind, GestureKind::Draw))
-        {
+        if self.drawing() {
             // Keep the drawing transaction open: all live style changes belong to
             // the same undo entry as the stroke, committed only on pointer release.
             if let Some(object) = self.objects.last_mut() {
@@ -383,5 +379,50 @@ impl Editor {
             }
         }
         self.commit(before);
+    }
+    fn drawing(&self) -> bool {
+        self.gesture
+            .as_ref()
+            .is_some_and(|g| matches!(g.kind, GestureKind::Draw))
+    }
+    /// The current colour onto the shape being drawn or the selection; widths stay.
+    pub fn apply_color(&mut self) {
+        let color = self.style.color;
+        if self.drawing() {
+            if let Some(object) = self.objects.last_mut() {
+                object.style.color = color;
+            }
+            return;
+        }
+        self.cancel();
+        let before = self.objects.clone();
+        for o in &mut self.objects {
+            if self.selected.contains(&o.id) {
+                o.style.color = color;
+            }
+        }
+        self.commit(before);
+    }
+    /// Each selected shape's own width through `step`, colours untouched, as one undo step.
+    /// Returns the first one's new width; None while drawing or with nothing selected.
+    pub fn step_selected_widths(&mut self, step: impl Fn(f64) -> f64) -> Option<f64> {
+        if self.drawing() || self.selected.is_empty() {
+            return None;
+        }
+        self.cancel();
+        let before = self.objects.clone();
+        let mut first = None;
+        for o in &mut self.objects {
+            if self.selected.contains(&o.id) {
+                let width = step(o.style.width);
+                o.style.width = width;
+                if let Shape::Stroke { widths, .. } = &mut o.shape {
+                    widths.fill(width);
+                }
+                first.get_or_insert(width);
+            }
+        }
+        self.commit(before);
+        first
     }
 }

@@ -8,6 +8,11 @@ icons="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor"
 mime="${XDG_DATA_HOME:-$HOME/.local/share}/mime"
 autostart="${XDG_CONFIG_HOME:-$HOME/.config}/autostart"
 mkdir -p "$bin" "$apps" "$autostart" "$mime/packages"
+# The program path as one quoted Exec= argument, so a home folder with a space or a quote
+# still launches. The Desktop Entry rules unescape the line once, then the quoted argument:
+# \ becomes four backslashes, " ` $ take two, and % doubles.
+exec_bin=$(printf '%s' "$bin/shotoshot" | sed -e 's/\\/\\\\\\\\/g' -e 's/["`$]/\\\\&/g' -e 's/%/%%/g')
+exec_bin="\"$exec_bin\""
 # Versions before 0.2.0 were named "shotshot": stop and remove that install.
 former=false
 if [ -e "$bin/shotshot" ]; then former=true; fi
@@ -24,7 +29,7 @@ cat > "$apps/shotoshot.desktop" <<EOF
 Type=Application
 Name=Shotoshot
 Comment=Capture, annotate and share a screen area
-Exec=$bin/shotoshot --capture
+Exec=$exec_bin --capture
 Icon=shotoshot
 Categories=Graphics;Utility;
 EOF
@@ -33,7 +38,7 @@ cat > "$autostart/shotoshot.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Shotoshot
-Exec=$bin/shotoshot
+Exec=$exec_bin
 Icon=shotoshot
 NoDisplay=true
 EOF
@@ -55,7 +60,7 @@ cat > "$apps/shotoshot-open.desktop" <<EOF
 Type=Application
 Name=Shotoshot
 Comment=Edit a Shotoshot editable image
-Exec=$bin/shotoshot %f
+Exec=$exec_bin %f
 Icon=shotoshot
 MimeType=image/x-shotoshot;
 NoDisplay=true

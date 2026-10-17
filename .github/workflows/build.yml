@@ -1,0 +1,79 @@
+# Checks and builds every change on GitHub's machines, from this public repository alone.
+# Windows runs the maintainer's own check (format, licenses, lints for Windows and Linux,
+# tests), then builds the release binary and its installer. Linux lints, tests and builds.
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The compiler the maintainer builds with: raise both together.
+  RUST_TOOLCHAIN: 1.98.0
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    name: Windows
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the Rust toolchain
+        shell: powershell
+        run: |
+          rustup toolchain install $env:RUST_TOOLCHAIN --profile minimal --component clippy --component rustfmt --target x86_64-unknown-linux-gnu --no-self-update
+          rustup default $env:RUST_TOOLCHAIN
+      - name: Check
+        shell: powershell
+        run: .\check.ps1 -Fast
+      - name: Build the release binary
+        shell: powershell
+        run: cargo build --workspace --release --locked
+      - name: Build the installer
+        shell: powershell
+        run: .\packaging\build-installer.ps1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: shotoshot-windows
+          path: |
+            packaging/out/Shotoshot-Setup-*.exe
+            target/release/shotoshot.exe
+          if-no-files-found: error
+
+  linux:
+    name: Linux (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the Rust toolchain
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component clippy --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
+      - name: Lint
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Test
+        run: cargo test --workspace --locked
+      - name: Build the release binary
+        run: cargo build --release --locked -p shotoshot-app --bin shotoshot
