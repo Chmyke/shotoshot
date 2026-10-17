@@ -89,6 +89,7 @@ impl Raster {
             raster: self,
             target,
             transform: Transform::identity(),
+            base: Transform::identity(),
         }
     }
     /// The capture flattened with its annotations, cropped to `crop`. A `background`
@@ -167,8 +168,10 @@ pub fn image_from_pixmap(pixmap: &Pixmap, left: i32, top: i32) -> Image {
 pub struct SkiaCanvas<'a> {
     raster: &'a mut Raster,
     target: &'a mut Pixmap,
-    // Rotation set by `set_rotation`, applied to every primitive.
+    // Rotation set by `set_rotation` after `base`, applied to every primitive.
     transform: Transform,
+    // Where the canvas sits in the frame: identity, or a shift for a preview layer.
+    base: Transform,
 }
 fn paint(ink: Ink) -> Paint<'static> {
     let mut paint = Paint::default();
@@ -349,6 +352,20 @@ impl Canvas for SkiaCanvas<'_> {
         self.stroke_path(polyline(&[a, b], false), ink, &stroke(width, false));
         Ok(())
     }
+    fn fill_polygon(&mut self, points: &[Point], ink: Ink) -> Result<(), RasterError> {
+        self.fill_path(polyline(points, true), ink, Transform::identity());
+        Ok(())
+    }
+    fn polyline(
+        &mut self,
+        points: &[Point],
+        closed: bool,
+        ink: Ink,
+        width: f64,
+    ) -> Result<(), RasterError> {
+        self.stroke_path(polyline(points, closed), ink, &stroke(width, true));
+        Ok(())
+    }
     fn text(&mut self, text: &str, r: Rect, size: f64, ink: Ink) -> Result<(), RasterError> {
         self.text_at(
             text,
@@ -378,13 +395,15 @@ impl Canvas for SkiaCanvas<'_> {
         Ok(())
     }
     fn set_rotation(&mut self, rotation: Option<(Point, f64)>) -> Result<(), RasterError> {
-        self.transform = rotation.map_or(Transform::identity(), |(center, radians)| {
-            Transform::from_rotate_at(
-                radians.to_degrees() as f32,
-                center.x as f32,
-                center.y as f32,
-            )
-        });
+        self.transform = rotation
+            .map_or(Transform::identity(), |(center, radians)| {
+                Transform::from_rotate_at(
+                    radians.to_degrees() as f32,
+                    center.x as f32,
+                    center.y as f32,
+                )
+            })
+            .post_concat(self.base);
         Ok(())
     }
     fn measure_text(&mut self, text: &str, size: f64) -> Result<Point, RasterError> {
@@ -447,6 +466,40 @@ impl Canvas for SkiaCanvas<'_> {
         let scale = scale.post_concat(self.transform);
         self.target
             .draw_pixmap(0, 0, source.as_ref(), &paint, scale, None);
+        Ok(())
+    }
+    fn preview(&mut self, objects: &[Object], opacity: f32) -> Result<(), RasterError> {
+        // Drawn apart on a layer the size of the objects, then laid over at `opacity`.
+        let Some(bounds) = objects
+            .iter()
+            .map(|o| o.resolved_bounds(objects).expanded(5. * o.style.width + 8.))
+            .reduce(Rect::union)
+        else {
+            return Ok(());
+        };
+        let (x, y) = (bounds.min.x.floor().max(0.), bounds.min.y.floor().max(0.));
+        let width = bounds.max.x.ceil().min(self.target.width() as f64) - x;
+        let height = bounds.max.y.ceil().min(self.target.height() as f64) - y;
+        if width < 1. || height < 1. {
+            return Ok(());
+        }
+        let Some(mut layer) = Pixmap::new(width as u32, height as u32) else {
+            return Ok(());
+        };
+        let base = self.base.pre_translate(-x as f32, -y as f32);
+        SkiaCanvas {
+            raster: &mut *self.raster,
+            target: &mut layer,
+            transform: base,
+            base,
+        }
+        .annotations(objects, None)?;
+        let paint = PixmapPaint {
+            opacity,
+            ..PixmapPaint::default()
+        };
+        self.target
+            .draw_pixmap(x as i32, y as i32, layer.as_ref(), &paint, self.base, None);
         Ok(())
     }
     fn annotations(&mut self, objects: &[Object], skip: Option<u64>) -> Result<(), RasterError> {
@@ -765,5 +818,43 @@ mod tests {
         let horizontal_band = inked(&frame, 0..400, 90..120);
         assert!(tall > 80);
         assert!(horizontal_band * 2 < tall, "text was not rotated");
+    }
+
+    #[test]
+    fn a_preview_draws_its_objects_in_place_then_lays_them_over_faded() {
+        let mut objects = filled_scene().objects().to_vec();
+        objects[0].rotation = 0.6;
+        let mut raster = Raster::new();
+        let (mut direct, mut opaque, mut faded) = (blank(), blank(), blank());
+        raster
+            .canvas(&mut direct)
+            .annotations(&objects, None)
+            .unwrap();
+        raster.canvas(&mut opaque).preview(&objects, 1.).unwrap();
+        raster.canvas(&mut faded).preview(&objects, 0.45).unwrap();
+        // Edges blended in the layer first may round one step apart; a shifted object would not.
+        let apart = direct
+            .data()
+            .iter()
+            .zip(opaque.data())
+            .map(|(a, b)| a.abs_diff(*b))
+            .max();
+        assert!(
+            apart <= Some(3),
+            "the layer keeps every object, turned or not, where the scene puts it: {apart:?}"
+        );
+        let inside = |p: &Pixmap| {
+            let c = p.pixel(90, 80).unwrap();
+            [c.red(), c.green(), c.blue()]
+        };
+        assert_eq!(inside(&direct), SLATE);
+        let blend = |s: u8| (255. - 0.45 * (255. - s as f64)) as i32;
+        for (channel, slate) in inside(&faded).into_iter().zip(SLATE) {
+            assert!(
+                (channel as i32 - blend(slate)).abs() <= 2,
+                "{channel} vs {slate}"
+            );
+        }
+        assert_eq!(inside(&blank()), PAPER);
     }
 }

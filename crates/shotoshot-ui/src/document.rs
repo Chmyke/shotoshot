@@ -74,7 +74,7 @@ impl Capture {
         let ids: Vec<u64> = all.iter().filter(inside).map(|o| o.id).collect();
         let delta = Point::default() - kept.min;
         let moved = delta != Point::default();
-        let objects = all
+        let mut objects: Vec<Object> = all
             .iter()
             .filter(inside)
             .map(|o| {
@@ -98,6 +98,8 @@ impl Capture {
                 o
             })
             .collect();
+        // Restacking and erasing leave the pile out of id order; a scene stores it in order.
+        shotoshot_core::renumber(&mut objects, 1);
         let scene = Scene {
             width: width as u32,
             height: height as u32,
@@ -299,6 +301,40 @@ mod tests {
         assert_eq!((scene.width, scene.origin), (80, (-40, 0)));
         assert_eq!(scene.region, rect(30., 5., 50., 15.));
         assert_eq!(frame.pixels, c.image.pixels);
+    }
+    #[test]
+    fn a_restacked_pile_saves_in_its_order_with_its_bindings() {
+        let mut c = two_screens();
+        c.region = Some(rect(50., 5., 78., 15.));
+        let target = draw(
+            &mut c,
+            Tool::Rectangle,
+            point(52., 6.),
+            point(60., 14.),
+            none(),
+        );
+        let bind = Modifiers {
+            ctrl: true,
+            ..none()
+        };
+        let arrow = draw(&mut c, Tool::Arrow, point(75., 10.), point(56., 10.), bind);
+        // The box goes on top: the pile no longer follows the ids.
+        c.editor.selected = vec![target];
+        c.editor.raise_selection(true);
+        let pile: Vec<u64> = c.editor.objects().iter().map(|o| o.id).collect();
+        assert_eq!(pile, [arrow, target]);
+        let (scene, _) = c.document(&c.image).unwrap();
+        assert!(scene.valid(), "a restacked capture still saves as editable");
+        assert!(matches!(scene.objects[0].shape, Shape::Arrow { .. }));
+        assert!(matches!(scene.objects[1].shape, Shape::Rectangle(_)));
+        let Shape::Arrow { end_attach, .. } = scene.objects[0].shape else {
+            panic!("arrow expected");
+        };
+        assert_eq!(
+            end_attach.map(|a| a.target),
+            Some(scene.objects[1].id),
+            "the arrow stays bound to the box under its new number"
+        );
     }
     #[test]
     fn an_arrow_bound_to_an_object_left_out_keeps_its_end_unbound() {

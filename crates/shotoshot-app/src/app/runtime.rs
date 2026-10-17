@@ -239,7 +239,7 @@ pub fn run() -> Result<()> {
             tray: NOTIFYICONDATAW::default(),
             quit_after_capture: editor_process,
             persist_preferences: persists_preferences(std::env::args()),
-            pending_stroke_width: None,
+            pending_brush: None,
             worker: None,
             prepared: None,
             notification_owner: if editor_process {
@@ -257,6 +257,8 @@ pub fn run() -> Result<()> {
             toast: None,
             presentation: None,
             board_rebake_forced: false,
+            menu: None,
+            menu_closed_on_icon: None,
             setup_ui: setup::Setup::default(),
         }));
         let hwnd = CreateWindowExW(
@@ -455,7 +457,7 @@ pub fn run() -> Result<()> {
                 && let Some(s) = &mut app.session
             {
                 s.wheel(hwnd, (msg.wParam.0 >> 16) as u16 as i16)?;
-                app.persist_stroke_width(hwnd)?;
+                app.persist_brush(hwnd)?;
                 invalidate(hwnd);
                 consumed = true;
             }

@@ -123,10 +123,8 @@ impl Capture {
             }
             return Ok(None);
         }
-        // The crop limits export, not manipulation of existing annotations.
-        if self.editor.tool != Tool::Select && !self.region.is_some_and(|r| r.contains(f)) {
-            return Ok(None);
-        }
+        // The crop limits export only: every tool but the bucket works off the region too, so
+        // a shape set down beside it joins the capture once the region grows over it.
         if self.editor.tool == Tool::Text {
             host.begin_text(self, f)?;
         } else {
@@ -259,8 +257,15 @@ impl Capture {
             Action::Thinner | Action::Thicker => {
                 let notch = if a == Action::Thicker { 1 } else { -1 };
                 self.width_preview = true;
-                self.editor.style.width = wheel::stroke_width_after(self.editor.style.width, notch);
-                self.editor.apply_style();
+                if self.editor.tool == Tool::Eraser {
+                    // The eraser has a size of its own: the pen keeps its width.
+                    self.editor.eraser_size =
+                        wheel::eraser_size_after(self.editor.eraser_size, notch);
+                } else {
+                    self.editor.style.width =
+                        wheel::stroke_width_after(self.editor.style.width, notch);
+                    self.editor.apply_style();
+                }
             }
             Action::FullScreen if !self.selecting => self.toggle_screen(),
             Action::Undo => self.editor.undo(),
@@ -727,15 +732,43 @@ mod tests {
         assert!(c.editor.objects().is_empty() && !host.captured);
     }
     #[test]
-    fn text_tool_opens_the_native_field_inside_the_region_only() {
+    fn drawing_tools_set_their_shape_down_off_the_region() {
+        let m = Modifiers::default();
+        for tool in [
+            Tool::Arrow,
+            Tool::Line,
+            Tool::Rectangle,
+            Tool::Ellipse,
+            Tool::Pen,
+            Tool::Highlight,
+        ] {
+            let (mut c, mut host) = selected();
+            c.action(&mut host, Action::Tool(tool));
+            // Left of and above the region (100, 100)–(600, 400).
+            c.pointer_down(&mut host, p(20., 20.), m).unwrap();
+            c.pointer_move(&mut host, p(80., 60.), m);
+            c.pointer_up(&mut host, p(80., 60.), m);
+            assert_eq!(c.editor.objects().len(), 1, "{tool:?} draws off the region");
+        }
         let (mut c, mut host) = selected();
         c.action(&mut host, Action::Tool(Tool::Text));
-        c.pointer_down(&mut host, p(20., 20.), Modifiers::default())
-            .unwrap();
-        assert_eq!(host.text_at, None);
-        c.pointer_down(&mut host, p(200., 200.), Modifiers::default())
-            .unwrap();
-        assert_eq!(host.text_at, Some(p(200., 200.)));
+        c.pointer_down(&mut host, p(20., 20.), m).unwrap();
+        assert_eq!(host.text_at, Some(p(20., 20.)), "text starts there too");
+    }
+    #[test]
+    fn the_eraser_takes_a_shape_by_the_part_beyond_the_region() {
+        let m = Modifiers::default();
+        let (mut c, mut host) = selected();
+        c.action(&mut host, Action::Tool(Tool::Line));
+        c.pointer_down(&mut host, p(300., 300.), m).unwrap();
+        c.pointer_move(&mut host, p(800., 500.), m);
+        c.pointer_up(&mut host, p(800., 500.), m);
+        assert_eq!(c.editor.objects().len(), 1);
+        c.action(&mut host, Action::Tool(Tool::Eraser));
+        // On the line, past the region's corner (600, 400).
+        c.pointer_down(&mut host, p(750., 480.), m).unwrap();
+        c.pointer_up(&mut host, p(750., 480.), m);
+        assert!(c.editor.objects().is_empty());
     }
     #[test]
     fn full_screen_button_press_toggles_without_drawing() {
@@ -770,6 +803,21 @@ mod tests {
         assert!(c.cancel_gesture(&mut host));
         assert_eq!(c.region, before);
         assert!(!c.selecting);
+    }
+    #[test]
+    fn the_wheel_sizes_the_eraser_and_leaves_the_stroke_width_alone() {
+        let (mut c, mut host) = selected();
+        c.editor.style.width = 8.;
+        c.action(&mut host, Action::Tool(Tool::Eraser));
+        assert_eq!(c.editor.eraser_size, shotoshot_core::ERASER_SIZE);
+        assert!(c.width_ring_visible(), "the disc shows at the pointer");
+        c.wheel(&mut host, 120).unwrap();
+        assert_eq!(c.editor.eraser_size, 16.);
+        assert!(c.width_preview);
+        c.wheel(&mut host, -360).unwrap();
+        assert_eq!(c.editor.eraser_size, 10.);
+        assert_eq!(c.editor.style.width, 8., "the pen keeps its width");
+        assert_eq!(c.eraser_size_setting(), 10);
     }
     #[test]
     fn one_wheel_notch_moves_the_stroke_width_one_rung() {

@@ -11,17 +11,18 @@ use shotoshot_core::{Modifiers, Object, Point, Rect, Tool};
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug, PartialEq)]
-struct Op {
-    name: &'static str,
+pub(crate) struct Op {
+    pub(crate) name: &'static str,
     /// Coordinates and sizes: they follow the scale.
-    lengths: Vec<f64>,
+    pub(crate) lengths: Vec<f64>,
     /// Colours, angles and raster identities: they do not.
-    fixed: String,
+    pub(crate) fixed: String,
 }
 
-struct Recorder {
-    size: Point,
-    ops: Vec<Op>,
+/// A canvas that lists what it is asked to draw.
+pub(crate) struct Recorder {
+    pub(crate) size: Point,
+    pub(crate) ops: Vec<Op>,
 }
 impl Recorder {
     fn push(&mut self, name: &'static str, lengths: &[f64], fixed: String) -> Result<(), ()> {
@@ -74,6 +75,15 @@ impl Canvas for Recorder {
     fn line(&mut self, a: Point, b: Point, ink: Ink, width: f64) -> Result<(), ()> {
         self.push("line", &[a.x, a.y, b.x, b.y, width], format!("{ink:?}"))
     }
+    fn fill_polygon(&mut self, points: &[Point], ink: Ink) -> Result<(), ()> {
+        let lengths: Vec<f64> = points.iter().flat_map(|p| [p.x, p.y]).collect();
+        self.push("fill_polygon", &lengths, format!("{ink:?}"))
+    }
+    fn polyline(&mut self, points: &[Point], closed: bool, ink: Ink, width: f64) -> Result<(), ()> {
+        let mut lengths: Vec<f64> = points.iter().flat_map(|p| [p.x, p.y]).collect();
+        lengths.push(width);
+        self.push("polyline", &lengths, format!("{ink:?} {closed}"))
+    }
     fn text(&mut self, _: &str, r: Rect, size: f64, ink: Ink) -> Result<(), ()> {
         let [a, b, c, d] = rect(r);
         self.push("text", &[a, b, c, d, size], format!("{ink:?}"))
@@ -119,6 +129,110 @@ impl Canvas for Recorder {
         let fixed = format!("{} objects, {} fading", objects.len(), fading.len());
         self.push("annotations_fading", &[], fixed)
     }
+    fn preview(&mut self, objects: &[Object], opacity: f32) -> Result<(), ()> {
+        let colours: Vec<_> = objects.iter().map(|o| (o.style.color, o.fill)).collect();
+        self.push("preview", &[], format!("{colours:?} at {opacity}"))
+    }
+}
+
+#[test]
+fn hovering_outlines_what_a_click_would_take_and_the_bucket_previews_its_colour() {
+    let mut c = Capture::new(Image::solid(400, 300, [0, 0, 0, 255]));
+    c.region = Rect::new(Point::default(), Point { x: 400., y: 300. });
+    c.selecting = false;
+    let mut host = FakeHost::default();
+    let m = Modifiers::default();
+    let at = |x, y| Point { x, y };
+    c.action(&mut host, Action::Tool(Tool::Rectangle));
+    c.pointer_down(&mut host, at(100., 100.), m).unwrap();
+    c.pointer_up(&mut host, at(200., 200.), m);
+    let red = c.editor.objects()[0].style.color;
+    // A line drawn over the rectangle, across it.
+    c.action(&mut host, Action::Tool(Tool::Line));
+    c.pointer_down(&mut host, at(120., 120.), m).unwrap();
+    c.pointer_up(&mut host, at(180., 120.), m);
+    let mut recorder = Recorder {
+        size: Point { x: 400., y: 300. },
+        ops: Vec::new(),
+    };
+    let mut frame = |c: &Capture| {
+        recorder.ops.clear();
+        c.draw_underlay(&mut recorder).unwrap();
+        c.draw_frame(&mut recorder, true).unwrap();
+        recorder.ops.clone()
+    };
+    // Dashes are short lines: 4 px at this scale, the last of a side shorter.
+    let dashes = |ops: &[Op]| {
+        ops.iter()
+            .filter(|o| o.name == "line")
+            .filter(|o| (o.lengths[2] - o.lengths[0]).hypot(o.lengths[3] - o.lengths[1]) <= 4.)
+            .count()
+    };
+
+    c.action(&mut host, Action::Tool(Tool::Select));
+    c.pointer_move(&mut host, at(250., 250.), m);
+    assert_eq!(dashes(&frame(&c)), 0, "nothing under the pointer");
+    c.pointer_move(&mut host, at(101., 150.), m);
+    let hovered = frame(&c);
+    assert!(dashes(&hovered) > 20, "a dashed frame around the rectangle");
+    assert!(
+        hovered
+            .iter()
+            .all(|o| o.name != "fill_rect" || !o.fixed.contains("[100, 170, 255]")),
+        "no selection handle before the click"
+    );
+    c.pointer_down(&mut host, at(101., 150.), m).unwrap();
+    c.pointer_up(&mut host, at(101., 150.), m);
+    assert_eq!(dashes(&frame(&c)), 0, "selected: its own frame, no dashes");
+
+    let green = [40, 200, 80];
+    c.editor.style.color = green;
+    c.action(&mut host, Action::Fill);
+    c.pointer_move(&mut host, at(150., 150.), m);
+    let fill = frame(&c);
+    let previews: Vec<_> = fill.iter().filter(|o| o.name == "preview").collect();
+    assert_eq!(previews.len(), 1);
+    assert_eq!(
+        previews[0].fixed,
+        format!("[({red:?}, Some({green:?})), ({red:?}, None)] at 0.45"),
+        "the shape as the click would fill it, at 45 %, the line above it kept on top"
+    );
+    assert_eq!(dashes(&fill), 0, "the bucket does not promise a selection");
+
+    c.pointer_move(&mut host, at(100., 150.), m);
+    let ink = frame(&c);
+    let preview = ink.iter().find(|o| o.name == "preview").unwrap();
+    assert_eq!(
+        preview.fixed,
+        format!("[({green:?}, None), ({red:?}, None)] at 0.45")
+    );
+
+    // Away from the toolbar, which sits inside a region that fills the screen.
+    let void = at(300., 40.);
+    assert!(!c.toolbar_contains(void));
+    c.pointer_move(&mut host, void, m);
+    let background = frame(&c);
+    let tint = format!("{:?}", Ink::with_alpha(green, 0.45));
+    assert!(
+        background
+            .iter()
+            .any(|o| o.name == "fill_rect" && o.fixed == tint),
+        "the capture tinted under the annotations"
+    );
+    assert!(background.iter().all(|o| o.name != "preview"));
+
+    c.pointer_down(&mut host, at(150., 150.), m).unwrap();
+    let alt = Modifiers {
+        alt: true,
+        ..Modifiers::default()
+    };
+    c.pointer_move(&mut host, at(150., 150.), alt);
+    let clearing = frame(&c);
+    assert!(
+        dashes(&clearing) > 20,
+        "a fill Alt would remove is outlined"
+    );
+    assert!(clearing.iter().all(|o| o.name != "preview"));
 }
 
 #[test]

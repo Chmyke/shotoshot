@@ -6,7 +6,7 @@ use crate::{
     toolbar::{self, Action, Button, HoverHint},
     wheel,
 };
-use shotoshot_core::{Editor, Object, Point, Rect, Shape, Tool, arrow_points};
+use shotoshot_core::{Editor, FillChange, Object, Point, Rect, Shape, Tool, arrow_points};
 
 /// Margin of the size badge on each side of what it shows, in logical pixels.
 const BADGE_PADDING: f64 = 8.;
@@ -172,12 +172,17 @@ impl Capture {
         }
         let factor = scale / self.style_scale;
         self.editor.style.width = wheel::stroke_width_scaled(self.editor.style.width, factor);
+        self.editor.eraser_size = wheel::eraser_size_scaled(self.editor.eraser_size, factor);
         self.text_size = wheel::text_size_scaled(self.text_size.into(), factor) as f32;
         self.style_scale = scale;
     }
     /// Stroke width to remember between captures: the current one as it is at 100 %.
     pub fn stroke_width_setting(&self) -> u32 {
         wheel::stroke_width_scaled(self.editor.style.width, 1. / self.style_scale) as u32
+    }
+    /// Eraser diameter to remember between captures, as `stroke_width_setting`.
+    pub fn eraser_size_setting(&self) -> u32 {
+        wheel::eraser_size_scaled(self.editor.eraser_size, 1. / self.style_scale) as u32
     }
     pub fn buttons(&self) -> Vec<Button> {
         if !self.toolbar_visible || self.selecting {
@@ -276,6 +281,15 @@ impl Capture {
             self.image.pixels[offset],
         ]
     }
+    /// The colour the pen, highlighter and bucket glyphs show: the pixel under the eyedropper
+    /// while it hovers outside the toolbar, `current` otherwise.
+    pub fn tool_tint(&self, current: [u8; 3]) -> [u8; 3] {
+        if self.eyedropper && !self.toolbar_contains(self.pointer) {
+            self.sample_color(self.loupe_center())
+        } else {
+            current
+        }
+    }
     pub fn rotation_handle(&self) -> Option<Point> {
         let margin = 8. * self.ui_scale();
         self.editor.rotation_handle().map(|p| Point {
@@ -286,13 +300,15 @@ impl Capture {
         })
     }
     /// The stroke-size ring follows the pointer on the canvas only: over the
-    /// toolbar the pointer targets buttons, so the ring is hidden, never displaced.
+    /// toolbar the pointer targets buttons, so the ring is hidden, never displaced. Off the
+    /// region too, where these tools work as well.
     pub fn width_ring_visible(&self) -> bool {
         !self.bucket
             && !self.toolbar_contains(self.pointer)
             && (self.width_preview
-                || (self.region.is_some_and(|r| r.contains(self.pointer))
-                    && matches!(self.editor.tool, Tool::Pen | Tool::Highlight)))
+                || (self.region.is_some()
+                    && !self.selecting
+                    && matches!(self.editor.tool, Tool::Pen | Tool::Highlight | Tool::Eraser)))
     }
     /// The size badge's "W × H" label.
     pub fn dimensions_label(&self) -> Option<String> {
@@ -521,6 +537,44 @@ impl Capture {
             .rev()
             .find(|o| matches!(o.shape, Shape::Text { .. }) && o.hit(p, 5., objects))
     }
+    /// Objects outlined as selectable: those the marquee being drawn would add, else the
+    /// one a Select press under the pointer would pick.
+    pub fn hovered(&self) -> Vec<u64> {
+        if self.editor.marquee().is_some() {
+            return self.editor.marquee_catch();
+        }
+        if self.bucket || !self.pointer_on_document() {
+            return Vec::new();
+        }
+        let f = self.to_frame(self.pointer);
+        self.editor.hover_at(f).into_iter().collect()
+    }
+    /// What a bucket click under the pointer would change; Alt held previews clearing.
+    pub fn bucket_preview(&self) -> Option<FillChange> {
+        if !self.bucket || !self.pointer_on_document() {
+            return None;
+        }
+        let f = self.to_frame(self.pointer);
+        if !self.region.is_some_and(|r| r.contains(f)) {
+            return None;
+        }
+        self.editor.fill_change(f, self.editor.held().alt)
+    }
+    /// The pointer rests on the document itself: no panel, button, badge, region handle or
+    /// pan between them.
+    fn pointer_on_document(&self) -> bool {
+        let p = self.pointer;
+        let over = |r: Option<Rect>| r.is_some_and(|r| r.contains(p));
+        !(self.selecting
+            || self.picker.is_some()
+            || self.eyedropper
+            || self.panning()
+            || self.space_held()
+            || self.toolbar_contains(p)
+            || over(self.screen_button_bounds())
+            || over(self.dimensions_bounds())
+            || self.region_handle(self.to_frame(p)).is_some())
+    }
     /// Pointer shape for the canvas, once the size fields are ruled out.
     pub fn cursor(&self, p: Point) -> CursorKind {
         if self.picker.is_some() {
@@ -671,6 +725,28 @@ mod tests {
         c.picker = None;
         c.eyedropper = true;
         assert_eq!(c.cursor(outside), CursorKind::Cross);
+    }
+    #[test]
+    fn tool_glyphs_take_the_colour_under_the_hovering_eyedropper() {
+        let mut c = capture();
+        let at = Point { x: 300., y: 250. };
+        let offset = (250 * 900 + 300) * 4;
+        c.image.pixels[offset..offset + 4].copy_from_slice(&[30, 140, 255, 255]);
+        c.pointer = at;
+        let red = [237, 79, 92];
+        assert_eq!(c.tool_tint(red), red, "no eyedropper: the drawing colour");
+        c.eyedropper = true;
+        assert_eq!(
+            c.tool_tint(red),
+            [255, 140, 30],
+            "the pixel under the eyedropper"
+        );
+        c.pointer = c.buttons()[0].bounds.center();
+        assert_eq!(
+            c.tool_tint(red),
+            red,
+            "over the toolbar a click picks a button"
+        );
     }
     #[test]
     fn region_handles_drive_resize_cursors() {

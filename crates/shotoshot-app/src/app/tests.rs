@@ -34,7 +34,7 @@ fn capture_shortcut_cannot_steal_a_suspended_shape_shortcut() {
         tray: NOTIFYICONDATAW::default(),
         quit_after_capture: false,
         persist_preferences: false,
-        pending_stroke_width: None,
+        pending_brush: None,
         worker: None,
         prepared: None,
         notification_owner: None,
@@ -43,6 +43,8 @@ fn capture_shortcut_cannot_steal_a_suspended_shape_shortcut() {
         toast: None,
         presentation: None,
         board_rebake_forced: false,
+        menu: None,
+        menu_closed_on_icon: None,
     };
     app.setup_activate(owner.0, 2).unwrap();
     assert!(
@@ -206,7 +208,7 @@ fn resident(owner: HWND) -> App {
         tray: NOTIFYICONDATAW::default(),
         quit_after_capture: false,
         persist_preferences: false,
-        pending_stroke_width: None,
+        pending_brush: None,
         worker: None,
         prepared: None,
         notification_owner: None,
@@ -215,6 +217,8 @@ fn resident(owner: HWND) -> App {
         toast: None,
         presentation: None,
         board_rebake_forced: false,
+        menu: None,
+        menu_closed_on_icon: None,
     }
 }
 
@@ -281,6 +285,48 @@ fn the_other_shortcuts_refuse_the_board_combination() {
 }
 
 #[test]
+fn the_menu_stays_open_for_settings_and_the_icon_closes_it() {
+    let owner = hidden_window();
+    let mut app = resident(owner.0);
+    app.setup = false;
+    let open = |app: &App| {
+        tray_menu::Popup::open(
+            owner.0,
+            RECT::default(),
+            app.menu_values().unwrap(),
+            POINT {
+                x: -32000,
+                y: -32000,
+            },
+            false,
+        )
+        .unwrap()
+    };
+    app.menu = Some(open(&app));
+    let sound = app.settings.instant_sound;
+    app.menu_command(owner.0, 7, true).unwrap();
+    assert_eq!(app.settings.instant_sound, !sound);
+    assert!(app.menu.is_some(), "a setting keeps the menu open");
+    // A click on the icon closes the open menu rather than opening another.
+    app.tray_click(owner.0).unwrap();
+    assert!(app.menu.is_none());
+    // A press on the icon closed it by taking the foreground: its release opens nothing.
+    app.menu = Some(open(&app));
+    let root = app.menu.as_ref().unwrap().root();
+    app.menu_closed(root, true);
+    assert!(app.menu.is_none());
+    app.tray_click(owner.0).unwrap();
+    assert!(app.menu.is_none() && app.menu_closed_on_icon.is_none());
+    // A late notice from an earlier menu leaves the open one alone.
+    app.menu = Some(open(&app));
+    app.menu_closed(root, false);
+    assert!(app.menu.is_some());
+    // A command closes the menu before it runs.
+    app.menu_command(owner.0, 0, false).unwrap();
+    assert!(app.menu.is_none());
+}
+
+#[test]
 fn stop_presentation_is_handled_even_while_a_menu_borrows_the_app() {
     unsafe {
         let instance = GetModuleHandleW(None).unwrap();
@@ -303,7 +349,7 @@ fn stop_presentation_is_handled_even_while_a_menu_borrows_the_app() {
             tray: NOTIFYICONDATAW::default(),
             quit_after_capture: false,
             persist_preferences: false,
-            pending_stroke_width: None,
+            pending_brush: None,
             worker: None,
             prepared: None,
             notification_owner: None,
@@ -312,6 +358,8 @@ fn stop_presentation_is_handled_even_while_a_menu_borrows_the_app() {
             toast: None,
             presentation: None,
             board_rebake_forced: false,
+            menu: None,
+            menu_closed_on_icon: None,
             setup_ui: setup::Setup::default(),
         }));
         let window = crate::resources::OwnedWindow(
@@ -429,7 +477,7 @@ fn entering_the_live_eyedropper_samples_without_mouse_movement() {
             tray: NOTIFYICONDATAW::default(),
             quit_after_capture: false,
             persist_preferences: false,
-            pending_stroke_width: None,
+            pending_brush: None,
             worker: None,
             prepared: None,
             notification_owner: None,
@@ -438,6 +486,8 @@ fn entering_the_live_eyedropper_samples_without_mouse_movement() {
             first_frame: None,
             presentation: None,
             board_rebake_forced: false,
+            menu: None,
+            menu_closed_on_icon: None,
         };
         app.action(owner.0, Action::Eyedropper).unwrap();
         assert_eq!(
@@ -514,7 +564,7 @@ fn native_window_messages_edit_export_and_recover_after_failure() {
             tray: NOTIFYICONDATAW::default(),
             quit_after_capture: false,
             persist_preferences: false,
-            pending_stroke_width: None,
+            pending_brush: None,
             worker: None,
             prepared: None,
             notification_owner: None,
@@ -523,6 +573,8 @@ fn native_window_messages_edit_export_and_recover_after_failure() {
             toast: None,
             presentation: None,
             board_rebake_forced: false,
+            menu: None,
+            menu_closed_on_icon: None,
             setup_ui: setup::Setup::default(),
         }));
         let hwnd = CreateWindowExW(
@@ -577,17 +629,17 @@ fn native_window_messages_edit_export_and_recover_after_failure() {
         send(hwnd, WM_KEYDOWN, 82, 0, 0);
         send(hwnd, WM_MOUSEWHEEL, 120usize << 16, 150, 200);
         assert!(
-            state.borrow().pending_stroke_width.is_some(),
+            state.borrow().pending_brush.is_some(),
             "a wheel change must remain pending until the end of the burst"
         );
-        let first_deadline = state.borrow().pending_stroke_width.unwrap().1;
+        let first_deadline = state.borrow().pending_brush.unwrap().1;
         send(hwnd, WM_MOUSEWHEEL, 120usize << 16, 150, 200);
-        let pending = state.borrow().pending_stroke_width.unwrap();
-        assert_eq!(pending.0, 5);
+        let pending = state.borrow().pending_brush.unwrap();
+        assert_eq!(pending.0.stroke_width, 5);
         assert!(pending.1 >= first_deadline);
-        send(hwnd, WM_TIMER, STROKE_WIDTH_TIMER, 0, 0);
+        send(hwnd, WM_TIMER, BRUSH_TIMER, 0, 0);
         assert_eq!(
-            state.borrow().pending_stroke_width,
+            state.borrow().pending_brush,
             Some(pending),
             "an early timer must not flush a newer wheel burst"
         );
@@ -604,29 +656,28 @@ fn native_window_messages_edit_export_and_recover_after_failure() {
         {
             let mut app = state.borrow_mut();
             let error = app
-                .flush_stroke_width_with(|_| Err("disk unavailable".into()))
+                .flush_brush_with(|_| Err("disk unavailable".into()))
                 .unwrap_err();
             assert!(error.to_string().contains("disk unavailable"));
             assert_eq!(
-                app.pending_stroke_width,
+                app.pending_brush,
                 Some(pending),
                 "failed writes remain dirty for the close retry"
             );
-            app.flush_stroke_width_with(|width| {
+            app.flush_brush_with(|brush| {
                 Settings::save_editor_to(
                     &path,
                     None,
-                    Some(width),
+                    Some(brush.stroke_width),
+                    Some(brush.eraser_size),
                     None,
                     shotoshot_core::settings::rename,
                 )
             })
             .unwrap();
-            assert!(app.pending_stroke_width.is_none());
-            app.flush_stroke_width_with(|_| {
-                panic!("an already flushed burst must not be written again")
-            })
-            .unwrap();
+            assert!(app.pending_brush.is_none());
+            app.flush_brush_with(|_| panic!("an already flushed burst must not be written again"))
+                .unwrap();
         }
         let stored = Settings::load_from(&path).unwrap();
         assert_eq!(stored.capture_stroke_width, 5);
@@ -1004,11 +1055,16 @@ fn native_window_messages_edit_export_and_recover_after_failure() {
         {
             let mut app = state.borrow_mut();
             app.session.as_mut().unwrap().capture.editor.style.width = 12.;
-            app.persist_stroke_width(hwnd).unwrap();
-            assert!(app.pending_stroke_width.is_some());
+            app.session.as_mut().unwrap().capture.editor.eraser_size = 40.;
+            app.persist_brush(hwnd).unwrap();
+            assert_eq!(
+                app.pending_brush.map(|(brush, _)| brush.eraser_size),
+                Some(40),
+                "the eraser size is remembered with the stroke width"
+            );
             app.close_session(hwnd);
             assert!(
-                app.pending_stroke_width.is_none(),
+                app.pending_brush.is_none(),
                 "normal close flushes before its timer expires"
             );
             assert!(app.session.is_none());
@@ -1309,7 +1365,7 @@ unsafe fn app_window(class: PCWSTR, session: Session) -> (Box<RefCell<App>>, HWN
             tray: NOTIFYICONDATAW::default(),
             quit_after_capture: false,
             persist_preferences: false,
-            pending_stroke_width: None,
+            pending_brush: None,
             worker: None,
             prepared: None,
             notification_owner: None,
@@ -1318,6 +1374,8 @@ unsafe fn app_window(class: PCWSTR, session: Session) -> (Box<RefCell<App>>, HWN
             toast: None,
             presentation: None,
             board_rebake_forced: false,
+            menu: None,
+            menu_closed_on_icon: None,
             setup_ui: setup::Setup::default(),
         }));
         let hwnd = CreateWindowExW(

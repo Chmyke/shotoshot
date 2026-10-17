@@ -60,6 +60,16 @@ pub trait Canvas {
         width: f64,
     ) -> Result<(), Self::Error>;
     fn line(&mut self, a: Point, b: Point, ink: Ink, width: f64) -> Result<(), Self::Error>;
+    /// The polygon through `points`, filled; it closes by itself.
+    fn fill_polygon(&mut self, points: &[Point], ink: Ink) -> Result<(), Self::Error>;
+    /// One line through `points` with round caps and joins, back to the first when `closed`.
+    fn polyline(
+        &mut self,
+        points: &[Point],
+        closed: bool,
+        ink: Ink,
+        width: f64,
+    ) -> Result<(), Self::Error>;
     /// Interface text clipped to `r`, top-left aligned; each newline starts a line one
     /// `measure_text("X", size).y` lower.
     fn text(&mut self, text: &str, r: Rect, size: f64, ink: Ink) -> Result<(), Self::Error>;
@@ -97,5 +107,10 @@ pub trait Canvas {
         _fading: &[u64],
     ) -> Result<(), Self::Error> {
         self.annotations(objects, skip)
+    }
+    /// `objects` laid over the scene at `opacity`: what a click would change, shown before
+    /// it. Their attachments must be resolved already; plainly where the platform cannot fade.
+    fn preview(&mut self, objects: &[Object], _opacity: f32) -> Result<(), Self::Error> {
+        self.annotations(objects, None)
     }
 }

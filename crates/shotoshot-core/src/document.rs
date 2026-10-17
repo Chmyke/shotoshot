@@ -281,6 +281,31 @@ impl Object {
         }
     }
 }
+/// Numbers `objects` `first`, `first + 1`… in pile order, the order a saved scene stores
+/// them in. An attachment follows its target's new number; one whose target is not among
+/// `objects` is dropped, so callers resolve such ends first (`prepare_transform`).
+pub fn renumber(objects: &mut [Object], first: u64) {
+    let old: Vec<u64> = objects.iter().map(|o| o.id).collect();
+    let new = |id: u64| Some(first + old.iter().position(|o| *o == id)? as u64);
+    for (index, object) in objects.iter_mut().enumerate() {
+        object.id = first + index as u64;
+        if let Shape::Arrow {
+            start_attach,
+            end_attach,
+            ..
+        } = &mut object.shape
+        {
+            for attach in [start_attach, end_attach] {
+                *attach = attach.and_then(|a| {
+                    Some(Attachment {
+                        target: new(a.target)?,
+                        ..a
+                    })
+                });
+            }
+        }
+    }
+}
 pub fn attach_at(p: Point, objects: &[Object]) -> Option<Attachment> {
     objects
         .iter()

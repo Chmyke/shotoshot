@@ -479,7 +479,7 @@ mod tests {
                 tray: NOTIFYICONDATAW::default(),
                 quit_after_capture: true,
                 persist_preferences: false,
-                pending_stroke_width: None,
+                pending_brush: None,
                 worker: None,
                 prepared: None,
                 notification_owner: Some(owner.0),
@@ -488,6 +488,8 @@ mod tests {
                 first_frame: None,
                 presentation: None,
                 board_rebake_forced: false,
+                menu: None,
+                menu_closed_on_icon: None,
             };
             let foreground = GetForegroundWindow();
             app.notify(Notice::Copied);

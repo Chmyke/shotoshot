@@ -102,7 +102,7 @@ drawn keep theirs. Ctrl+Z undoes the whole stroke.
 | A | Arrow; Shift constrains to 45°; holding Ctrl or Alt snaps its ends to closed shapes, which then carry it along |
 | P / H | Pencil / highlighter; Shift draws a straight line in 45° steps |
 | T | Text; click an existing text with this tool to edit it |
-| E | Eraser: click an object, or sweep across several, to remove them whole; Ctrl+Z brings them back |
+| E | Eraser: pen and highlighter ink goes where the disc passes, other objects go whole; the wheel sizes the disc; Ctrl+Z brings everything back |
 | I | Eyedropper: pick a color and copy its hex code |
 | G | Bucket: each click recolors the stroke or outline under it, fills the rectangle or circle, or else the whole capture; Alt+click clears a fill |
 | F | Whole screen / back to the previous selection |

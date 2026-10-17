@@ -10,6 +10,11 @@ pub const NOTCH: i16 = 120;
 const STROKE_WIDTHS: [f64; 18] = [
     1., 2., 3., 4., 5., 6., 7., 8., 10., 12., 14., 16., 20., 24., 28., 32., 36., 40.,
 ];
+// The eraser's diameter, four notches per doubling from 4 px like strokes.
+const ERASER_SIZES: [f64; 21] = [
+    4., 5., 6., 7., 8., 10., 12., 14., 16., 20., 24., 28., 32., 40., 48., 56., 64., 80., 96., 112.,
+    128.,
+];
 const TEXT_SIZES: [f64; 31] = [
     8., 10., 12., 14., 16., 18., 20., 22., 24., 28., 32., 36., 40., 44., 48., 56., 64., 72., 80.,
     88., 96., 112., 128., 144., 160., 176., 192., 224., 256., 288., 300.,
@@ -37,6 +42,10 @@ impl Notches {
 pub fn stroke_width_after(width: f64, notches: i32) -> f64 {
     walk(&STROKE_WIDTHS, width, notches)
 }
+/// Eraser diameter after `notches` (positive: larger).
+pub fn eraser_size_after(size: f64, notches: i32) -> f64 {
+    walk(&ERASER_SIZES, size, notches)
+}
 /// Text size after `notches` (positive: larger).
 pub fn text_size_after(size: f64, notches: i32) -> f64 {
     walk(&TEXT_SIZES, size, notches)
@@ -48,6 +57,12 @@ pub fn stroke_width_scaled(width: f64, factor: f64) -> f64 {
     (width * factor)
         .round()
         .clamp(STROKE_WIDTHS[0], STROKE_WIDTHS[STROKE_WIDTHS.len() - 1])
+}
+/// Eraser diameter re-proportioned by `factor`, as `stroke_width_scaled`.
+pub fn eraser_size_scaled(size: f64, factor: f64) -> f64 {
+    (size * factor)
+        .round()
+        .clamp(ERASER_SIZES[0], ERASER_SIZES[ERASER_SIZES.len() - 1])
 }
 /// Text size re-proportioned by `factor`, as `stroke_width_scaled`.
 pub fn text_size_scaled(size: f64, factor: f64) -> f64 {

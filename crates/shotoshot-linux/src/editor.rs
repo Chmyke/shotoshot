@@ -354,25 +354,29 @@ impl Editor {
         self.notice = Some(error.to_string());
         self.redraw();
     }
-    /// Stores a changed stroke width or custom colour, keeping every other preference.
+    /// Stores a changed stroke width, eraser size or custom colour, keeping every other
+    /// preference.
     fn persist_preferences(&mut self) {
         if !self.persist {
             return;
         }
         let width = self.capture.stroke_width_setting();
         let width = (width != self.settings.capture_stroke_width).then_some(width);
+        let eraser = self.capture.eraser_size_setting();
+        let eraser = (eraser != self.settings.capture_eraser_size).then_some(eraser);
         let color = self
             .capture
             .custom_color_changed
             .then_some(self.capture.custom_color);
-        if let Err(error) = settings::save_editor(width, color) {
+        if let Err(error) = settings::save_editor(width, eraser, color) {
             notice::report(&format!("Shotoshot: preferences not saved: {error}"));
         }
     }
-    /// Starts the capture with the remembered stroke width and custom colour.
+    /// Starts the capture with the remembered stroke width, eraser size and custom colour.
     fn prepare(&mut self) {
         self.capture.custom_color = self.settings.last_custom_color;
         self.capture.editor.style.width = self.settings.capture_stroke_width as f64;
+        self.capture.editor.eraser_size = self.settings.capture_eraser_size as f64;
     }
     /// Replaces the capture being edited, and the frozen frame behind it.
     fn show(&mut self, capture: Capture) -> Result<(), Box<dyn Error>> {

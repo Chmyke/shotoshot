@@ -32,7 +32,7 @@ impl App {
                 }
             }
             editor_process::EXITED => self.editor_exited(hwnd, w.0 as u32)?,
-            WM_TIMER if w.0 == STROKE_WIDTH_TIMER => self.stroke_width_timer(hwnd)?,
+            WM_TIMER if w.0 == BRUSH_TIMER => self.brush_timer(hwnd)?,
             // One-shot: the frame it asks for arms the next blink.
             WM_TIMER if w.0 == crate::session::CARET_TIMER => {
                 unsafe {
@@ -382,9 +382,11 @@ impl App {
             }
             TRAY_MESSAGE => {
                 if matches!(l.0 as u32, WM_LBUTTONUP | WM_RBUTTONUP) {
-                    self.menu(hwnd)?;
+                    self.tray_click(hwnd)?;
                 }
             }
+            tray_menu::COMMAND => self.menu_command(hwnd, w.0 as u32, l.0 != 0)?,
+            tray_menu::CLOSED => self.menu_closed(HWND(l.0 as _), w.0 != 0),
             WM_QUERYENDSESSION => {
                 // Windows is logging off or shutting down: the notes go to disk now, the
                 // wallpaper waits for the resident's next start. Never a message box here.
@@ -422,7 +424,7 @@ impl App {
                 SetTimer(Some(hwnd), crate::toolbar::HINT_TIMER, delay, None);
             }
         }
-        self.persist_stroke_width(hwnd)?;
+        self.persist_brush(hwnd)?;
         self.persist_custom_color()?;
         Ok(Some(LRESULT(0)))
     }

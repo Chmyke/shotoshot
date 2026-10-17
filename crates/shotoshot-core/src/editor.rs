@@ -7,6 +7,7 @@ mod gestures;
 mod history;
 mod stacking;
 use crate::*;
+pub use fill::FillChange;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Tool {
@@ -20,9 +21,11 @@ pub enum Tool {
     Pen,
     Highlight,
     Text,
-    /// Removes whole objects under the pointer or along a sweep.
+    /// A disc that removes the freehand ink it passes over and whole other objects.
     Eraser,
 }
+/// The eraser's diameter at 100 % until the wheel changes it, in pixels.
+pub const ERASER_SIZE: f64 = 14.;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Modifiers {
     pub shift: bool,
@@ -129,6 +132,8 @@ pub struct Editor {
     pub selected: Vec<u64>,
     /// Size factor of handles and pick tolerances: 1 at 96 DPI, 2.5 on a 250 % screen.
     pub ui_scale: f64,
+    /// Diameter of the eraser's disc, in frame pixels.
+    pub eraser_size: f64,
     objects: Vec<Object>,
     /// Solid colour replacing the captured pixels of the region, under every object.
     background: Option<[u8; 3]>,
@@ -136,6 +141,8 @@ pub struct Editor {
     redo: Vec<Change>,
     gesture: Option<Gesture>,
     next_id: u64,
+    /// Modifier keys last reported, gesture or not: the bucket's preview follows Alt.
+    held: Modifiers,
 }
 impl Default for Editor {
     fn default() -> Self {
@@ -144,12 +151,14 @@ impl Default for Editor {
             style: Style::default(),
             selected: Vec::new(),
             ui_scale: 1.,
+            eraser_size: ERASER_SIZE,
             objects: Vec::new(),
             background: None,
             undo: Vec::new(),
             redo: Vec::new(),
             gesture: None,
             next_id: 0,
+            held: Modifiers::default(),
         }
     }
 }
@@ -189,18 +198,32 @@ impl Editor {
             .reduce(|a, b| a.union(b))
     }
     pub fn selection_frame(&self) -> Option<Frame> {
-        if let [id] = self.selected[..]
-            && let Some(o) = self.objects.iter().find(|o| o.id == id)
-            && o.rotation.abs() > 1e-9
-            && arrow_points(o, &self.objects).is_none()
-        {
-            return Some(Frame {
-                bounds: o.local_bounds(),
-                angle: o.rotation,
-            });
+        if let [id] = self.selected[..] {
+            return self.frame_of(id);
         }
         self.selection_bounds()
             .map(|bounds| Frame { bounds, angle: 0. })
+    }
+    /// The frame the object would get selected alone: turned with it when it is rotated
+    /// and not an arrow.
+    pub fn frame_of(&self, id: u64) -> Option<Frame> {
+        let o = self.objects.iter().find(|o| o.id == id)?;
+        Some(
+            if o.rotation.abs() > 1e-9 && arrow_points(o, &self.objects).is_none() {
+                Frame {
+                    bounds: o.local_bounds(),
+                    angle: o.rotation,
+                }
+            } else {
+                Frame {
+                    bounds: o.resolved_bounds(&self.objects),
+                    angle: 0.,
+                }
+            },
+        )
+    }
+    pub fn held(&self) -> Modifiers {
+        self.held
     }
     pub fn rotation_handle(&self) -> Option<Point> {
         self.selection_frame().map(|f| f.handle(self.ui_scale))

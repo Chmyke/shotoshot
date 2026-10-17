@@ -73,7 +73,71 @@ impl App {
         invalidate(hwnd);
         Ok(())
     }
-    pub(super) fn menu(&mut self, hwnd: HWND) -> Result<()> {
+    /// What the menu rows show for the current settings.
+    pub(super) fn menu_values(&self) -> Result<tray_menu::Values> {
+        let (enabled, conflicts) = self
+            .presentation
+            .as_ref()
+            .map(|presentation| {
+                let presentation = presentation.borrow();
+                (presentation.enabled, presentation.shortcut_conflicts())
+            })
+            .unwrap_or_default();
+        let shapes = self.settings.presentation.shape_shortcuts;
+        Ok(tray_menu::Values {
+            capture: tray_menu::shortcut(
+                crate::settings::Shortcut {
+                    modifiers: self.settings.modifiers,
+                    key: self.settings.key,
+                },
+                !self.hotkey.active(),
+            ),
+            instant: tray_menu::shortcut(
+                self.settings.instant_shortcut,
+                !self.instant.hotkey.active(),
+            ),
+            shapes: std::array::from_fn(|index| {
+                tray_menu::shortcut(shapes[index], conflicts[index])
+            }),
+            duration_ms: self.settings.presentation.duration_ms,
+            layout: self.settings.presentation.input_layout,
+            size: self.settings.presentation.input_scale,
+            halo: enabled.halo,
+            temporary_shapes: enabled.shapes,
+            keys: enabled.keys,
+            mouse: enabled.mouse,
+            sound: self.settings.instant_sound,
+            live: self.settings.live_capture,
+            startup: crate::startup::enabled()?,
+            board: self.settings.board_visible,
+            board_shortcut: tray_menu::shortcut(
+                self.settings.board_shortcut,
+                !self.board_hotkey.active(),
+            ),
+        })
+    }
+    /// A click on the notification icon: opens the menu, or closes the open one.
+    pub(super) fn tray_click(&mut self, hwnd: HWND) -> Result<()> {
+        // The press already closed the menu by taking the foreground: this release ends there.
+        let closed_by_press = self
+            .menu_closed_on_icon
+            .take()
+            .is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(1));
+        if self.menu.take().is_some() || closed_by_press {
+            return Ok(());
+        }
+        self.menu(hwnd)
+    }
+    /// The menu window closed itself; `on_icon` when a press on the notification icon did it.
+    pub(super) fn menu_closed(&mut self, root: HWND, on_icon: bool) {
+        if self.menu.as_ref().is_some_and(|menu| menu.root() == root) {
+            self.menu = None;
+            if on_icon {
+                self.menu_closed_on_icon = Some(std::time::Instant::now());
+            }
+        }
+    }
+    fn menu(&mut self, hwnd: HWND) -> Result<()> {
         if self.persist_preferences {
             // A completed editor worker may have changed the last save folder.
             self.settings = Settings::load().map_err(|error| Error::new(E_FAIL, error))?;
@@ -84,64 +148,16 @@ impl App {
                 self.settings.presentation.clone(),
             )?);
         }
+        let values = self.menu_values()?;
         unsafe {
-            let menu = CreatePopupMenu()?;
-            let owned = crate::resources::OwnedMenu {
-                handle: menu,
-                background: CreateSolidBrush(notice::color(0x2b2b2b)),
-            };
-            let (enabled, conflicts) = self
-                .presentation
-                .as_ref()
-                .map(|presentation| {
-                    let presentation = presentation.borrow();
-                    (presentation.enabled, presentation.shortcut_conflicts())
-                })
-                .unwrap_or_default();
-            let shapes = self.settings.presentation.shape_shortcuts;
-            tray_menu::build(
-                menu,
-                &tray_menu::Values {
-                    capture: tray_menu::shortcut(
-                        crate::settings::Shortcut {
-                            modifiers: self.settings.modifiers,
-                            key: self.settings.key,
-                        },
-                        !self.hotkey.active(),
-                    ),
-                    instant: tray_menu::shortcut(
-                        self.settings.instant_shortcut,
-                        !self.instant.hotkey.active(),
-                    ),
-                    shapes: std::array::from_fn(|index| {
-                        tray_menu::shortcut(shapes[index], conflicts[index])
-                    }),
-                    duration_ms: self.settings.presentation.duration_ms,
-                    layout: self.settings.presentation.input_layout,
-                    size: self.settings.presentation.input_scale,
-                    halo: enabled.halo,
-                    temporary_shapes: enabled.shapes,
-                    keys: enabled.keys,
-                    mouse: enabled.mouse,
-                    sound: self.settings.instant_sound,
-                    live: self.settings.live_capture,
-                    startup: crate::startup::enabled()?,
-                    board: self.settings.board_visible,
-                    board_shortcut: tray_menu::shortcut(
-                        self.settings.board_shortcut,
-                        !self.board_hotkey.active(),
-                    ),
-                },
-            )?;
-            let _ = SetMenuInfo(
-                menu,
-                &MENUINFO {
-                    cbSize: std::mem::size_of::<MENUINFO>() as u32,
-                    fMask: MIM_BACKGROUND | MIM_APPLYTOSUBMENUS,
-                    hbrBack: owned.background,
-                    ..Default::default()
-                },
-            );
+            // Unknown, a press on the icon closes the menu and the release opens it again.
+            let icon = Shell_NotifyIconGetRect(&NOTIFYICONIDENTIFIER {
+                cbSize: std::mem::size_of::<NOTIFYICONIDENTIFIER>() as u32,
+                hWnd: self.tray.hWnd,
+                uID: self.tray.uID,
+                ..Default::default()
+            })
+            .unwrap_or_default();
             let mut point = POINT::default();
             GetCursorPos(&mut point)?;
             if let Some(presentation) = &self.presentation {
@@ -149,20 +165,23 @@ impl App {
                     .borrow_mut()
                     .remember_foreground(GetForegroundWindow());
             }
-            let _ = SetForegroundWindow(hwnd);
-            let painter = tray_menu::Open;
-            let chosen = TrackPopupMenu(
-                menu,
-                TPM_RETURNCMD | TPM_RIGHTBUTTON,
-                point.x,
-                point.y,
-                Some(0),
-                hwnd,
-                None,
-            )
-            .0;
-            drop(painter);
-            drop(owned);
+            self.menu = Some(tray_menu::Popup::open(hwnd, icon, values, point, true)?);
+        }
+        Ok(())
+    }
+    /// A row chosen in the menu; `stays_open` for a setting, which the menu then shows.
+    pub(super) fn menu_command(&mut self, hwnd: HWND, chosen: u32, stays_open: bool) -> Result<()> {
+        if !stays_open {
+            self.menu = None;
+        }
+        self.run_menu_command(hwnd, chosen)?;
+        if let Some(menu) = &self.menu {
+            menu.update(self.menu_values()?)?;
+        }
+        Ok(())
+    }
+    fn run_menu_command(&mut self, hwnd: HWND, chosen: u32) -> Result<()> {
+        unsafe {
             if (101..=143).contains(&chosen) && self.worker_busy() {
                 message(
                     hwnd,
@@ -180,10 +199,9 @@ impl App {
                     self.show_shortcut_setup(hwnd, target)?;
                 }
                 101..=143 => {
-                    if let Some(preferences) = crate::presentation::menu::preference(
-                        chosen as u32,
-                        &self.settings.presentation,
-                    ) {
+                    if let Some(preferences) =
+                        crate::presentation::menu::preference(chosen, &self.settings.presentation)
+                    {
                         let mut next = self.settings.clone();
                         next.presentation = preferences.clone();
                         if self.persist_preferences {
@@ -194,7 +212,7 @@ impl App {
                             presentation.borrow_mut().update_preferences(preferences)?;
                         }
                     } else if let Some(presentation) = &self.presentation {
-                        presentation.borrow_mut().command(chosen as u32)?;
+                        presentation.borrow_mut().command(chosen)?;
                     }
                 }
                 1 => {

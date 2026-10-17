@@ -31,7 +31,7 @@ impl Resident {
                 tray: NOTIFYICONDATAW::default(),
                 quit_after_capture: false,
                 persist_preferences: false,
-                pending_stroke_width: None,
+                pending_brush: None,
                 worker: None,
                 prepared: None,
                 notification_owner: None,
@@ -40,6 +40,8 @@ impl Resident {
                 toast: None,
                 presentation: None,
                 board_rebake_forced: false,
+                menu: None,
+                menu_closed_on_icon: None,
                 setup_ui: setup::Setup::default(),
             }));
             let window = crate::resources::OwnedWindow(

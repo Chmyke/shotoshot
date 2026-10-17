@@ -243,12 +243,20 @@ impl PresentationSettings {
         })
     }
 }
+/// The editor's sizes remembered between captures, at 100 %.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Brush {
+    pub stroke_width: u32,
+    pub eraser_size: u32,
+}
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     pub instant_shortcut: Shortcut,
     pub instant_sound: bool,
     pub start_with_windows: bool,
     pub capture_stroke_width: u32,
+    /// The editor eraser's diameter at 100 %, in pixels.
+    pub capture_eraser_size: u32,
     pub live_capture: bool,
     pub modifiers: u32,
     pub key: u32,
@@ -273,6 +281,7 @@ impl Default for Settings {
             instant_sound: true,
             start_with_windows: true,
             capture_stroke_width: 3,
+            capture_eraser_size: crate::ERASER_SIZE as u32,
             live_capture: false,
             modifiers: 0,
             key: 0,
@@ -302,6 +311,12 @@ fn header_version(header: &str) -> Option<&str> {
         .or_else(|| header.strip_prefix(LEGACY_HEADER))
 }
 impl Settings {
+    pub fn brush(&self) -> Brush {
+        Brush {
+            stroke_width: self.capture_stroke_width,
+            eraser_size: self.capture_eraser_size,
+        }
+    }
     pub fn load_from(path: &Path) -> std::result::Result<Self, String> {
         match std::fs::read_to_string(path) {
             Ok(text) => Self::decode(&text),
@@ -326,6 +341,7 @@ impl Settings {
             Some("12") => 24,
             Some("13") => 25,
             Some("14") => 27,
+            Some("15") => 28,
             _ => 0,
         };
         if fields.len() != expected_len {
@@ -352,7 +368,7 @@ impl Settings {
             let arrow = DEFAULT_SHAPE_SHORTCUTS[0];
             // PITFALL: every format from 11 on is listed; the next version goes here too, or
             // its users' Alt+F arrow would be migrated away on every load.
-            if !matches!(version, Some("11" | "12" | "13" | "14"))
+            if !matches!(version, Some("11" | "12" | "13" | "14" | "15"))
                 && presentation.shape_shortcuts[0] == OLD_ARROW_SHORTCUT
                 && !presentation.shape_shortcuts.contains(&arrow)
             {
@@ -462,6 +478,14 @@ impl Settings {
                     .filter(|v| (1..=40).contains(v) && v.to_string() == *value)
                     .ok_or("Invalid capture stroke width")?,
             },
+            capture_eraser_size: match fields.get(27) {
+                None => crate::ERASER_SIZE as u32,
+                Some(value) => value
+                    .parse::<u32>()
+                    .ok()
+                    .filter(|v| (4..=128).contains(v) && v.to_string() == *value)
+                    .ok_or("Invalid capture eraser size")?,
+            },
             live_capture: fields.get(5) == Some(&"1"),
             key,
             modifiers,
@@ -511,7 +535,7 @@ impl Settings {
             .join(",");
         let color = |[red, green, blue]: [u8; 3]| format!("{red:02x}{green:02x}{blue:02x}");
         format!(
-            "{HEADER}14\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{},{}\n{},{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n",
+            "{HEADER}15\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{},{}\n{},{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n",
             self.modifiers,
             self.key,
             u8::from(self.legacy_style),
@@ -544,7 +568,8 @@ impl Settings {
             self.save_format.index(),
             self.board_shortcut.modifiers,
             self.board_shortcut.key,
-            u8::from(self.board_visible)
+            u8::from(self.board_visible),
+            self.capture_eraser_size
         )
     }
     /// Changes only the editor's custom color, preserving the other stored preferences.
@@ -553,7 +578,7 @@ impl Settings {
         color: [u8; 3],
         replace: Replace,
     ) -> std::result::Result<(), String> {
-        Self::save_editor_to(path, Some(color), None, None, replace)
+        Self::save_editor_to(path, Some(color), None, None, None, replace)
     }
     /// Changes only whether the board is shown, preserving the other stored preferences.
     pub fn save_board_visible_to(
@@ -570,6 +595,7 @@ impl Settings {
         path: &Path,
         color: Option<[u8; 3]>,
         width: Option<u32>,
+        eraser: Option<u32>,
         destination: Option<(&Path, SaveFormat)>,
         replace: Replace,
     ) -> std::result::Result<(), String> {
@@ -580,6 +606,9 @@ impl Settings {
         if let Some(width) = width {
             current.capture_stroke_width = width;
         }
+        if let Some(eraser) = eraser {
+            current.capture_eraser_size = eraser;
+        }
         if let Some((folder, format)) = destination {
             current.folder = folder.to_path_buf();
             current.save_format = format;
@@ -588,8 +617,8 @@ impl Settings {
     }
     /// Writes these settings, keeping the stored custom color and stroke width unless
     /// given: editors own those two and may have saved them since this copy was loaded.
-    /// The board visibility is never taken from this copy: it is only changed by
-    /// `save_board_visible_to`.
+    /// The eraser size and the board visibility are never taken from this copy: only
+    /// `save_editor_to` and `save_board_visible_to` change them.
     pub fn save_to(
         &self,
         path: &Path,
@@ -601,6 +630,7 @@ impl Settings {
         let mut merged = self.clone();
         merged.last_custom_color = color.unwrap_or(stored.last_custom_color);
         merged.capture_stroke_width = width.unwrap_or(stored.capture_stroke_width);
+        merged.capture_eraser_size = stored.capture_eraser_size;
         merged.board_visible = stored.board_visible;
         merged.write_to(path, replace)
     }
@@ -654,13 +684,13 @@ mod tests {
             ..Default::default()
         };
         let encoded = settings.encode();
-        assert!(encoded.starts_with("shotoshot-settings-14\n"));
+        assert!(encoded.starts_with("shotoshot-settings-15\n"));
         let legacy = encoded.replacen("shotoshot-settings-", "shotshot-settings-", 1);
         assert_eq!(Settings::decode(&legacy).unwrap(), settings);
         let oldest = Settings::decode("shotshot-settings-1\n3\n65\n1\n43,3a,2f,e9\n").unwrap();
         assert_eq!((oldest.modifiers, oldest.key), (3, 65));
         assert!(Settings::decode(&encoded.replacen("shotoshot-", "other-", 1)).is_err());
-        assert!(Settings::decode(&encoded.replacen("-14\n", "-15\n", 1)).is_err());
+        assert!(Settings::decode(&encoded.replacen("-15\n", "-16\n", 1)).is_err());
     }
     #[test]
     fn board_fields_roundtrip_and_older_files_get_defaults() {
@@ -669,8 +699,8 @@ mod tests {
             .lines()
             .map(str::to_owned)
             .collect();
-        assert_eq!(fields.len(), 27);
-        assert_eq!(&fields[25..], &["1,66", "0"]);
+        assert_eq!(fields.len(), 28);
+        assert_eq!(&fields[25..27], &["1,66", "0"]);
         let mut old = fields[..25].to_vec();
         old[0] = "shotoshot-settings-13".into();
         let migrated = Settings::decode(&old.join("\n")).unwrap();
@@ -772,7 +802,7 @@ mod tests {
             "a resident save keeps the board shown"
         );
         assert_eq!(stored.key, 65, "the resident's own fields are still saved");
-        Settings::save_editor_to(&path, Some([1, 2, 3]), Some(7), None, rename).unwrap();
+        Settings::save_editor_to(&path, Some([1, 2, 3]), Some(7), None, None, rename).unwrap();
         let stored = Settings::load_from(&path).unwrap();
         assert!(stored.board_visible, "an editor save keeps the board shown");
         assert_eq!(stored.capture_stroke_width, 7);
@@ -858,7 +888,7 @@ mod tests {
         old[0] = "shotoshot-settings-9".into();
         let migrated = Settings::decode(&old.join("\n")).unwrap().encode();
         let fields: Vec<_> = migrated.lines().collect();
-        assert_eq!(fields[0], "shotoshot-settings-14");
+        assert_eq!(fields[0], "shotoshot-settings-15");
         assert_eq!(&fields[20..22], &["0,145", "1"]);
         let mut custom: Vec<_> = fields.iter().map(|v| v.to_string()).collect();
         custom[20] = "6,122".into();
@@ -901,7 +931,7 @@ mod tests {
             .take(18)
             .collect::<Vec<_>>()
             .join("\n")
-            .replacen("settings-14", "settings-8", 1);
+            .replacen("settings-15", "settings-8", 1);
         assert!(Settings::decode(&old).unwrap().start_with_windows);
     }
     #[test]
@@ -927,6 +957,39 @@ mod tests {
         }
     }
     #[test]
+    fn the_eraser_size_is_kept_across_saves_and_read_back_from_format_15_only() {
+        let path =
+            std::env::temp_dir().join(format!("shotoshot-eraser-{}.txt", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        Settings::save_editor_to(&path, None, None, Some(32), None, rename).unwrap();
+        assert_eq!(Settings::load_from(&path).unwrap().capture_eraser_size, 32);
+        // A full save from a copy loaded before keeps the editor's size.
+        Settings::default()
+            .save_to(&path, None, Some(5), rename)
+            .unwrap();
+        let stored = Settings::load_from(&path).unwrap();
+        assert_eq!(
+            (stored.capture_eraser_size, stored.capture_stroke_width),
+            (32, 5)
+        );
+        std::fs::remove_file(&path).unwrap();
+        // Older formats have no size: the default.
+        let older = Settings::default()
+            .encode()
+            .replacen("settings-15", "settings-14", 1);
+        let older = older.lines().take(27).collect::<Vec<_>>().join("\n") + "\n";
+        assert_eq!(
+            Settings::decode(&older).unwrap().capture_eraser_size,
+            crate::ERASER_SIZE as u32
+        );
+        let encoded = Settings::default().encode();
+        for invalid in ["0", "3", "129", "014", "x", ""] {
+            let mut fields: Vec<_> = encoded.lines().collect();
+            fields[27] = invalid;
+            assert!(Settings::decode(&(fields.join("\n") + "\n")).is_err());
+        }
+    }
+    #[test]
     fn editor_field_merge_keeps_current_resident_preferences_and_reports_failure() {
         let path =
             std::env::temp_dir().join(format!("shotoshot-editor-merge-{}.txt", std::process::id()));
@@ -939,7 +1002,8 @@ mod tests {
         resident.save_to(&path, None, Some(9), rename).unwrap();
         let folder = std::env::temp_dir().join("editor-last-folder");
         let destination = Some((folder.as_path(), SaveFormat::Jpeg));
-        Settings::save_editor_to(&path, Some([10, 20, 30]), None, destination, rename).unwrap();
+        Settings::save_editor_to(&path, Some([10, 20, 30]), None, None, destination, rename)
+            .unwrap();
         let stored = Settings::load_from(&path).unwrap();
         assert_eq!(stored.save_format, SaveFormat::Jpeg);
         assert_eq!(stored.key, 77);
@@ -949,13 +1013,13 @@ mod tests {
         assert_eq!(stored.last_custom_color, [10, 20, 30]);
         assert_eq!(stored.folder, folder);
         let before = std::fs::read(&path).unwrap();
-        let failed = Settings::save_editor_to(&path, None, Some(17), None, |_, _| {
+        let failed = Settings::save_editor_to(&path, None, Some(17), None, None, |_, _| {
             Err("replace failed".into())
         });
         assert_eq!(failed.unwrap_err(), "replace failed");
         assert_eq!(std::fs::read(&path).unwrap(), before);
         std::fs::write(&path, "damaged settings").unwrap();
-        assert!(Settings::save_editor_to(&path, None, Some(17), None, rename).is_err());
+        assert!(Settings::save_editor_to(&path, None, Some(17), None, None, rename).is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "damaged settings");
         std::fs::remove_file(path.with_extension(format!("{}.tmp", std::process::id()))).unwrap();
         std::fs::remove_file(path).unwrap();
@@ -1120,11 +1184,12 @@ mod tests {
             fields[10] = arrow.into();
             fields[11] = rectangle.into();
             // Formats 10 and 11 end before the input layout and size, 12 before the save
-            // format, 13 before the board shortcut and visibility.
+            // format, 13 before the board shortcut and visibility, 14 before the eraser size.
             match version {
                 "10" | "11" => fields.truncate(22),
                 "12" => fields.truncate(24),
                 "13" => fields.truncate(25),
+                "14" => fields.truncate(27),
                 _ => {}
             }
             let settings = Settings::decode(&(fields.join("\n") + "\n")).unwrap();
@@ -1229,7 +1294,7 @@ mod tests {
             assert_eq!(
                 settings.encode(),
                 format!(
-                    "shotoshot-settings-14\n3\n65\n1\n43,3a,2f,e9\n{live_capture}\n3000\nffd340\ned4f5c\n4\n1,65\n1,82\n1,67\n5\n28\n-\n0\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n"
+                    "shotoshot-settings-15\n3\n65\n1\n43,3a,2f,e9\n{live_capture}\n3000\nffd340\ned4f5c\n4\n1,65\n1,82\n1,67\n5\n28\n-\n0\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\n"
                 )
             );
         }
@@ -1244,7 +1309,7 @@ mod tests {
             assert_eq!(
                 settings.encode(),
                 format!(
-                    "shotoshot-settings-14\n3\n65\n0\n43,3a,2f,e9\n1\n{duration}\n00aaff\nff0001\n4\n1,65\n1,82\n1,67\n5\n28\n-\n0\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n"
+                    "shotoshot-settings-15\n3\n65\n0\n43,3a,2f,e9\n1\n{duration}\n00aaff\nff0001\n4\n1,65\n1,82\n1,67\n5\n28\n-\n0\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\n"
                 )
             );
         }
@@ -1291,6 +1356,7 @@ mod tests {
             instant_sound: true,
             start_with_windows: true,
             capture_stroke_width: 3,
+            capture_eraser_size: 24,
             live_capture: true,
             modifiers: 3,
             key: 65,

@@ -12,7 +12,7 @@ impl Editor {
         } else if self.tool == Tool::Eraser {
             self.selected.clear();
             GestureKind::Erase {
-                touched: erase::touched(&self.objects, self.ui_scale, p, p),
+                touched: Vec::new(),
             }
         } else {
             self.next_id += 1;
@@ -52,75 +52,118 @@ impl Editor {
             modifiers,
             kind,
         });
+        if self.tool == Tool::Eraser {
+            self.erase_along(p, p);
+        }
     }
     pub(super) fn selection_gesture(&mut self, p: Point, m: Modifiers) -> GestureKind {
-        // Grab zones follow the handles, which are drawn larger on denser screens.
-        let (grip, reach) = (9. * self.ui_scale, 7. * self.ui_scale);
-        if self
-            .rotation_handle()
-            .is_some_and(|h| (p - h).length() < grip)
-            && let Some(frame) = self.selection_frame()
-        {
-            return GestureKind::Rotate {
-                center: frame.bounds.center(),
-            };
+        if let Some(kind) = self.handle_at(p) {
+            return kind;
         }
-        if self.selected.len() == 1
-            && let Some(index) = self.objects.iter().position(|o| o.id == self.selected[0])
-            && let Some((a, b)) = arrow_points(&self.objects[index], &self.objects)
-        {
-            if (p - a).length() < grip {
-                return GestureKind::Endpoint { index, start: true };
-            }
-            if (p - b).length() < grip {
-                return GestureKind::Endpoint {
-                    index,
-                    start: false,
-                };
-            }
-        }
-        if let (Some(frame), Some(bounds)) = (self.selection_frame(), self.selection_bounds()) {
-            let corners = frame.corners();
-            for (i, c) in corners.iter().enumerate() {
-                if (p - *c).length() < grip {
-                    return GestureKind::Resize {
-                        opposite: corners[(i + 2) % 4],
-                        corner: *c,
-                        bounds,
-                    };
-                }
-            }
-        }
-        if let Some(id) = self
-            .objects
-            .iter()
-            .rev()
-            .find(|o| o.hit(p, reach, &self.objects))
-            .map(|o| o.id)
-        {
-            if m.shift && self.selected.contains(&id) {
+        // Shift, or Ctrl as in Windows lists, adds or removes one object.
+        let toggle = m.shift || m.ctrl;
+        if let Some(id) = self.object_at(p) {
+            if toggle && self.selected.contains(&id) {
                 self.selected.retain(|i| *i != id);
             } else if !self.selected.contains(&id) {
-                if !m.shift {
+                if !toggle {
                     self.selected.clear();
                 }
                 self.selected.push(id);
             }
             GestureKind::Move
         } else {
-            if !m.shift {
+            if !toggle {
                 self.selected.clear();
             }
             GestureKind::Marquee
         }
     }
+    /// The object a Select press at `p` would add to the selection: what hovering
+    /// outlines. None over a handle of the selection, which the press would grab instead.
+    pub fn hover_at(&self, p: Point) -> Option<u64> {
+        if self.tool != Tool::Select || self.gesture.is_some() || !p.finite() {
+            return None;
+        }
+        if self.handle_at(p).is_some() {
+            return None;
+        }
+        self.object_at(p).filter(|id| !self.selected.contains(id))
+    }
+    /// Objects the marquee being drawn would add on release.
+    pub fn marquee_catch(&self) -> Vec<u64> {
+        self.marquee().map_or_else(Vec::new, |r| self.caught_by(r))
+    }
+    /// Unselected objects lying wholly inside `r`.
+    fn caught_by(&self, r: Rect) -> Vec<u64> {
+        self.objects
+            .iter()
+            .filter(|o| {
+                r.contains_rect(o.resolved_bounds(&self.objects)) && !self.selected.contains(&o.id)
+            })
+            .map(|o| o.id)
+            .collect()
+    }
+    /// Topmost object within the selection reach of `p`.
+    fn object_at(&self, p: Point) -> Option<u64> {
+        let reach = 7. * self.ui_scale;
+        self.objects
+            .iter()
+            .rev()
+            .find(|o| o.hit(p, reach, &self.objects))
+            .map(|o| o.id)
+    }
+    /// The selection handle under `p` and the gesture a press there starts, checked before
+    /// any object: rotation, then a lone arrow's ends, then the frame corners.
+    fn handle_at(&self, p: Point) -> Option<GestureKind> {
+        // Grab zones follow the handles, which are drawn larger on denser screens.
+        let grip = 9. * self.ui_scale;
+        if self
+            .rotation_handle()
+            .is_some_and(|h| (p - h).length() < grip)
+            && let Some(frame) = self.selection_frame()
+        {
+            return Some(GestureKind::Rotate {
+                center: frame.bounds.center(),
+            });
+        }
+        if self.selected.len() == 1
+            && let Some(index) = self.objects.iter().position(|o| o.id == self.selected[0])
+            && let Some((a, b)) = arrow_points(&self.objects[index], &self.objects)
+        {
+            if (p - a).length() < grip {
+                return Some(GestureKind::Endpoint { index, start: true });
+            }
+            if (p - b).length() < grip {
+                return Some(GestureKind::Endpoint {
+                    index,
+                    start: false,
+                });
+            }
+        }
+        if let (Some(frame), Some(bounds)) = (self.selection_frame(), self.selection_bounds()) {
+            let corners = frame.corners();
+            for (i, c) in corners.iter().enumerate() {
+                if (p - *c).length() < grip {
+                    return Some(GestureKind::Resize {
+                        opposite: corners[(i + 2) % 4],
+                        corner: *c,
+                        bounds,
+                    });
+                }
+            }
+        }
+        None
+    }
     pub fn update_with_modifiers(&mut self, p: Point, modifiers: Modifiers) {
+        self.held = modifiers;
         if let Some(g) = &mut self.gesture {
             g.modifiers = modifiers;
         }
         self.update(p);
     }
     pub fn update_modifiers(&mut self, modifiers: Modifiers) {
+        self.held = modifiers;
         if let Some(g) = &mut self.gesture {
             g.modifiers = modifiers;
             let p = g.current;
@@ -136,13 +179,8 @@ impl Editor {
         };
         let last = g.current;
         g.current = p;
-        if let GestureKind::Erase { touched } = &mut g.kind {
-            // Field borrows only: `g` holds `self.gesture`, the pile is read beside it.
-            for id in erase::touched(&self.objects, self.ui_scale, last, p) {
-                if !touched.contains(&id) {
-                    touched.push(id);
-                }
-            }
+        if matches!(g.kind, GestureKind::Erase { .. }) {
+            self.erase_along(last, p);
             return;
         }
         match g.kind {
@@ -322,18 +360,13 @@ impl Editor {
         };
         if matches!(g.kind, GestureKind::Marquee) {
             if let Some(r) = Rect::new(g.origin, g.current) {
-                for o in &self.objects {
-                    if r.contains_rect(o.resolved_bounds(&self.objects))
-                        && !self.selected.contains(&o.id)
-                    {
-                        self.selected.push(o.id);
-                    }
-                }
+                let caught = self.caught_by(r);
+                self.selected.extend(caught);
             }
         } else if let GestureKind::Erase { touched } = &g.kind {
-            if !touched.is_empty() {
-                self.remove_objects(touched);
-            }
+            // Ink cut along the way and whole objects marked by it go as one step.
+            self.drop_objects(touched);
+            self.commit(g.before);
         } else if matches!(g.kind, GestureKind::Draw)
             && self
                 .objects

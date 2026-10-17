@@ -625,6 +625,27 @@ impl<'a> D2dCanvas<'a> {
         unsafe { self.brush.SetColor(&color(ink.rgb, ink.alpha)) };
         &self.brush
     }
+    /// The figure through `points`, closed when `closed`; None without points.
+    fn figure(&self, points: &[Point], closed: bool) -> Result<Option<ID2D1PathGeometry>> {
+        let Some((first, rest)) = points.split_first() else {
+            return Ok(None);
+        };
+        unsafe {
+            let geometry = self.renderer.factory.CreatePathGeometry()?;
+            let sink = geometry.Open()?;
+            sink.BeginFigure(vector(*first), D2D1_FIGURE_BEGIN_FILLED);
+            for p in rest {
+                sink.AddLine(vector(*p));
+            }
+            sink.EndFigure(if closed {
+                D2D1_FIGURE_END_CLOSED
+            } else {
+                D2D1_FIGURE_END_OPEN
+            });
+            sink.Close()?;
+            Ok(Some(geometry))
+        }
+    }
 }
 fn rounded(r: Rect, radius: f64) -> D2D1_ROUNDED_RECT {
     D2D1_ROUNDED_RECT {
@@ -702,6 +723,24 @@ impl Canvas for D2dCanvas<'_> {
             self.target
                 .DrawLine(vector(a), vector(b), self.ink(ink), width as f32, None)
         };
+        Ok(())
+    }
+    fn fill_polygon(&mut self, points: &[Point], ink: Ink) -> Result<()> {
+        self.underlay = None;
+        if let Some(geometry) = self.figure(points, true)? {
+            unsafe { self.target.FillGeometry(&geometry, self.ink(ink), None) };
+        }
+        Ok(())
+    }
+    fn polyline(&mut self, points: &[Point], closed: bool, ink: Ink, width: f64) -> Result<()> {
+        self.underlay = None;
+        if let Some(geometry) = self.figure(points, closed)? {
+            let style = &self.renderer.round_stroke;
+            unsafe {
+                self.target
+                    .DrawGeometry(&geometry, self.ink(ink), width as f32, style)
+            };
+        }
         Ok(())
     }
     fn text(&mut self, text: &str, r: Rect, size: f64, ink: Ink) -> Result<()> {
@@ -791,20 +830,7 @@ impl Canvas for D2dCanvas<'_> {
     ) -> Result<()> {
         // One retention for the whole pile: a run drawn apart must not evict the others.
         self.renderer.strokes.borrow_mut().retain_present(objects);
-        let parameters = D2D1_LAYER_PARAMETERS {
-            contentBounds: D2D_RECT_F {
-                left: f32::MIN,
-                top: f32::MIN,
-                right: f32::MAX,
-                bottom: f32::MAX,
-            },
-            geometricMask: std::mem::ManuallyDrop::new(None),
-            maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
-            maskTransform: Matrix3x2::identity(),
-            opacity: FADING,
-            opacityBrush: std::mem::ManuallyDrop::new(None),
-            layerOptions: D2D1_LAYER_OPTIONS_NONE,
-        };
+        let parameters = layer(FADING);
         let mut start = 0;
         while start < objects.len() {
             let fades = fading.contains(&objects[start].id);
@@ -826,6 +852,16 @@ impl Canvas for D2dCanvas<'_> {
         }
         Ok(())
     }
+    fn preview(&mut self, objects: &[Object], opacity: f32) -> Result<()> {
+        // Over the scene, never into its checkpoints; no retention, which would evict the pile.
+        self.underlay = None;
+        unsafe { self.target.PushLayer(&layer(opacity), None) };
+        let result = self
+            .renderer
+            .annotation_range(self.target, objects, None, 0..objects.len());
+        unsafe { self.target.PopLayer() };
+        result
+    }
     fn annotations(&mut self, objects: &[Object], skip: Option<u64>) -> Result<()> {
         if let Some(underlay) = self.underlay.take()
             && self.target.as_raw() == self.renderer.dc.as_raw()
@@ -846,6 +882,24 @@ impl Canvas for D2dCanvas<'_> {
             }
         }
         self.renderer.annotations_except(self.target, objects, skip)
+    }
+}
+
+/// A layer that draws its content at `opacity`, everywhere.
+fn layer(opacity: f32) -> D2D1_LAYER_PARAMETERS {
+    D2D1_LAYER_PARAMETERS {
+        contentBounds: D2D_RECT_F {
+            left: f32::MIN,
+            top: f32::MIN,
+            right: f32::MAX,
+            bottom: f32::MAX,
+        },
+        geometricMask: std::mem::ManuallyDrop::new(None),
+        maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+        maskTransform: Matrix3x2::identity(),
+        opacity,
+        opacityBrush: std::mem::ManuallyDrop::new(None),
+        layerOptions: D2D1_LAYER_OPTIONS_NONE,
     }
 }
 

@@ -386,7 +386,7 @@ pub fn draw<C: Canvas>(
     canvas: &mut C,
     buttons: &[Button],
     tool: Tool,
-    current_color: [u8; 3],
+    colors: ([u8; 3], [u8; 3]),
     pointer: Point,
     eyedropper: bool,
     scale: f64,
@@ -394,7 +394,7 @@ pub fn draw<C: Canvas>(
     for id in [0, 1] {
         let group: Vec<_> = buttons.iter().filter(|b| b.panel == id).cloned().collect();
         let pointer = (pointer, eyedropper);
-        draw_panel(canvas, &group, tool, current_color, pointer, scale)?;
+        draw_panel(canvas, &group, tool, colors, pointer, scale)?;
     }
     Ok(())
 }
@@ -463,7 +463,7 @@ fn draw_panel<C: Canvas>(
     canvas: &mut C,
     buttons: &[Button],
     tool: Tool,
-    current_color: [u8; 3],
+    colors: ([u8; 3], [u8; 3]),
     (pointer, eyedropper): (Point, bool),
     scale: f64,
 ) -> Result<(), C::Error> {
@@ -484,7 +484,7 @@ fn draw_panel<C: Canvas>(
             [32, 32, 32]
         };
         canvas.fill_round_rect(b.bounds, 5. * scale, Ink::solid(rgb))?;
-        icons::draw(canvas, b, current_color, selected, scale)?;
+        icons::draw(canvas, b, colors, selected, scale)?;
     }
     Ok(())
 }

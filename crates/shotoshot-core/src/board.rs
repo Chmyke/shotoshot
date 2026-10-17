@@ -1,7 +1,7 @@
 //! ROLE: The Board document: desktop notes anchored to their screen, one scene per screen.
 //! INVARIANTS: `decode` gives back what `encode` wrote and accepts nothing it does not fully
 //! understand; a screen that is absent today keeps its notes untouched.
-use crate::{Attachment, Object, Point, Rect, Shape, shoto::Scene};
+use crate::{Attachment, Object, Point, Rect, Shape, renumber, shoto::Scene};
 use std::fmt::Write;
 
 pub const HEADER: &str = "shotoshot-board";
@@ -196,7 +196,8 @@ impl Board {
                     o
                 })
                 .collect();
-            objects.sort_by_key(|o| o.id);
+            // The pile's order, not its ids: restacking and erasing leave them apart.
+            renumber(&mut objects, 1);
             let stored = self.screens.iter().position(|n| n.id == screen.id);
             if stored.is_none() && objects.is_empty() && gathered.background.is_none() {
                 continue;
@@ -387,7 +388,8 @@ mod tests {
         let mut board = Board::default();
         // An editor that lost count: the object's id is above the document's last id.
         board.scatter(&desktop(vec![rectangle(9, 10., 10.)], 3), &screens);
-        assert_eq!(board.screens[0].scene.last_id, 9);
+        let scene = &board.screens[0].scene;
+        assert!(scene.objects.iter().all(|o| o.id <= scene.last_id));
         assert_eq!(Board::decode(&board.encode()), Ok(board.clone()));
         // A higher last id is kept as it is.
         board.scatter(&desktop(vec![rectangle(9, 10., 10.)], 12), &screens);
@@ -468,6 +470,31 @@ mod tests {
         // fallback point, then moved into screen b's coordinates.
         assert!((end.x - (202. - 1920.)).abs() < 1e-9 && (end.y - 125.).abs() < 1e-9);
         assert!(Board::decode(&board.encode()).is_ok());
+    }
+
+    #[test]
+    fn a_restacked_pile_is_stored_in_its_order_with_its_bindings() {
+        let screens = [screen("a", 0., 0.)];
+        let mut board = Board::default();
+        let bound = arrow(
+            3,
+            Point { x: 500., y: 30. },
+            Point { x: 50., y: 30. },
+            Some(Attachment {
+                target: 7,
+                direction: Point { x: 1., y: 0. },
+            }),
+        );
+        // The box was raised above the arrow drawn after it.
+        board.scatter(&desktop(vec![bound, rectangle(7, 0., 0.)], 7), &screens);
+        assert_eq!(Board::decode(&board.encode()), Ok(board.clone()));
+        let objects = &board.screens[0].scene.objects;
+        assert!(matches!(objects[0].shape, Shape::Arrow { .. }));
+        assert!(matches!(objects[1].shape, Shape::Rectangle(_)));
+        let Shape::Arrow { end_attach, .. } = objects[0].shape else {
+            panic!("arrow")
+        };
+        assert_eq!(end_attach.map(|a| a.target), Some(objects[1].id));
     }
 
     #[test]

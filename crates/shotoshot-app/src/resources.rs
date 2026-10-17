@@ -1,21 +1,7 @@
 use windows::Win32::{
     Foundation::*,
-    Graphics::Gdi::*,
     UI::{Shell::*, WindowsAndMessaging::*},
 };
-
-pub struct OwnedMenu {
-    pub handle: HMENU,
-    pub background: HBRUSH,
-}
-impl Drop for OwnedMenu {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = DestroyMenu(self.handle);
-            let _ = DeleteObject(self.background.into());
-        }
-    }
-}
 
 pub struct OwnedMutex(pub HANDLE);
 impl Drop for OwnedMutex {

@@ -122,9 +122,23 @@ pub fn render_demo() -> Result<()> {
     session.capture.editor = slate();
     session.capture.width_preview = false;
     session.capture.bucket = true;
-    session.capture.pointer = Point { x: 300., y: 300. };
+    // On the chalk curve, in chalk: the bucket would change nothing, so it previews nothing.
+    session.capture.pointer = Point { x: 300., y: 485. };
     let preview = paint_image(1100, 680, |hdc| session.paint(hdc))?;
     save_png(&preview, &path.with_file_name("shotoshot-slate.png"))?;
+    // What a click would take: a dashed frame with Select, the bucket's colour at 45 %.
+    session.capture.bucket = false;
+    session.capture.editor.tool = Tool::Select;
+    session.capture.pointer = Point { x: 900., y: 290. };
+    let preview = paint_image(1100, 680, |hdc| session.paint(hdc))?;
+    save_png(&preview, &path.with_file_name("shotoshot-hover.png"))?;
+    session.capture.bucket = true;
+    session.capture.editor.style.color = [250, 192, 66];
+    let preview = paint_image(1100, 680, |hdc| session.paint(hdc))?;
+    save_png(
+        &preview,
+        &path.with_file_name("shotoshot-bucket-preview.png"),
+    )?;
     let mut guidance = crate::session::Session::new(Image::solid(640, 360, [80, 85, 95, 255]))?;
     guidance.capture.pointer = Point { x: 270., y: 130. };
     let preview = paint_image(640, 360, |hdc| guidance.paint(hdc))?;

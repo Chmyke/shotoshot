@@ -38,14 +38,14 @@ const TRAY_MESSAGE: u32 = WM_APP + 1;
 const CAPTURE_MESSAGE: u32 = WM_APP + 2;
 const GOOGLE_FINISHED: u32 = WM_APP + 4;
 const RENDERER_READY: u32 = WM_APP + 7;
-const STROKE_WIDTH_TIMER: usize = 0x5357;
+const BRUSH_TIMER: usize = 0x5357;
 /// Ends a reopened document's process once its confirmation has faded.
 const QUIT_TIMER: usize = 0x5158;
 /// Looks at the wallpaper once a change has settled, to bake the board over a foreign one.
 const BOARD_TIMER: usize = 0x5342;
 /// How long the wallpaper or the displays must stay unchanged before `BOARD_TIMER` looks.
 const BOARD_SETTLE_MS: u32 = 1500;
-const STROKE_WIDTH_DELAY_MS: u32 = 250;
+const BRUSH_DELAY_MS: u32 = 250;
 #[cfg(test)]
 mod display_tests;
 #[cfg(test)]
@@ -62,7 +62,7 @@ struct App {
     tray: NOTIFYICONDATAW,
     quit_after_capture: bool,
     persist_preferences: bool,
-    pending_stroke_width: Option<(u32, std::time::Instant)>,
+    pending_brush: Option<(shotoshot_core::settings::Brush, std::time::Instant)>,
     worker: Option<editor_process::EditorProcess>,
     prepared: Option<crate::session::Preparation>,
     notification_owner: Option<HWND>,
@@ -70,6 +70,10 @@ struct App {
     google_search: Option<std::sync::mpsc::Receiver<std::result::Result<String, String>>>,
     first_frame: Option<crate::diagnostics::FirstFrame>,
     presentation: Option<Box<RefCell<crate::presentation::Presentation>>>,
+    /// The notification menu, while it is open.
+    menu: Option<tray_menu::Popup>,
+    /// When a press on the notification icon last closed the menu.
+    menu_closed_on_icon: Option<std::time::Instant>,
     /// The next `BOARD_TIMER` bakes even while every screen shows our pictures: the displays
     /// changed, and the pictures must be baked again for them.
     board_rebake_forced: bool,
@@ -118,11 +122,6 @@ unsafe extern "system" fn window_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM
             );
         }
         if let Some(result) = crate::presentation::resident_message(hwnd, msg, w, l) {
-            return result;
-        }
-        if matches!(msg, WM_MEASUREITEM | WM_DRAWITEM)
-            && let Some(result) = tray_menu::message(hwnd, msg, l)
-        {
             return result;
         }
         if msg == WM_NCCREATE {
@@ -467,13 +466,14 @@ impl App {
         session.prepare_acceleration(hwnd, RENDERER_READY)?;
         self.enter(hwnd, session)
     }
-    /// Gives `session` the user's last colour and stroke width, then shows the window over
+    /// Gives `session` the user's last colour, stroke width and eraser size, then shows the window over
     /// its frame and takes the keyboard.
     fn enter(&mut self, hwnd: HWND, mut session: Session) -> Result<()> {
         let image = &session.capture.image;
         let (left, top, width, height) = (image.left, image.top, image.width, image.height);
         session.capture.custom_color = self.settings.last_custom_color;
         session.capture.editor.style.width = self.settings.capture_stroke_width as f64;
+        session.capture.editor.eraser_size = self.settings.capture_eraser_size as f64;
         let mut pointer = POINT::default();
         if unsafe { GetCursorPos(&mut pointer) }.is_ok() {
             session.capture.pointer = Point {
@@ -499,62 +499,64 @@ impl App {
         invalidate(hwnd);
         Ok(())
     }
-    fn persist_stroke_width(&mut self, hwnd: HWND) -> Result<()> {
+    fn persist_brush(&mut self, hwnd: HWND) -> Result<()> {
         if let Some(s) = &self.session {
-            let width = s.capture.stroke_width_setting();
-            if self.settings.capture_stroke_width != width {
-                self.settings.capture_stroke_width = width;
-                self.pending_stroke_width = Some((
-                    width,
+            let brush = shotoshot_core::settings::Brush {
+                stroke_width: s.capture.stroke_width_setting(),
+                eraser_size: s.capture.eraser_size_setting(),
+            };
+            if self.settings.brush() != brush {
+                self.settings.capture_stroke_width = brush.stroke_width;
+                self.settings.capture_eraser_size = brush.eraser_size;
+                self.pending_brush = Some((
+                    brush,
                     std::time::Instant::now()
-                        + std::time::Duration::from_millis(STROKE_WIDTH_DELAY_MS as u64),
+                        + std::time::Duration::from_millis(BRUSH_DELAY_MS as u64),
                 ));
-                if unsafe { SetTimer(Some(hwnd), STROKE_WIDTH_TIMER, STROKE_WIDTH_DELAY_MS, None) }
-                    == 0
-                {
-                    self.flush_stroke_width()?;
+                if unsafe { SetTimer(Some(hwnd), BRUSH_TIMER, BRUSH_DELAY_MS, None) } == 0 {
+                    self.flush_brush()?;
                 }
             }
         }
         Ok(())
     }
-    fn flush_stroke_width(&mut self) -> Result<()> {
+    fn flush_brush(&mut self) -> Result<()> {
         let persist = self.persist_preferences;
-        self.flush_stroke_width_with(|width| {
+        self.flush_brush_with(|brush| {
             if persist {
-                Settings::save_stroke_width(width)
+                Settings::save_brush(brush)
             } else {
                 Ok(())
             }
         })
     }
-    fn flush_stroke_width_with(
+    fn flush_brush_with(
         &mut self,
-        save: impl FnOnce(u32) -> std::result::Result<(), String>,
+        save: impl FnOnce(shotoshot_core::settings::Brush) -> std::result::Result<(), String>,
     ) -> Result<()> {
-        if let Some((width, _)) = self.pending_stroke_width {
-            save(width).map_err(|error| Error::new(E_FAIL, error))?;
-            self.pending_stroke_width = None;
+        if let Some((brush, _)) = self.pending_brush {
+            save(brush).map_err(|error| Error::new(E_FAIL, error))?;
+            self.pending_brush = None;
         }
         Ok(())
     }
-    fn stroke_width_timer(&mut self, hwnd: HWND) -> Result<()> {
+    fn brush_timer(&mut self, hwnd: HWND) -> Result<()> {
         unsafe {
-            let _ = KillTimer(Some(hwnd), STROKE_WIDTH_TIMER);
+            let _ = KillTimer(Some(hwnd), BRUSH_TIMER);
         }
-        if let Some((_, deadline)) = self.pending_stroke_width {
+        if let Some((_, deadline)) = self.pending_brush {
             let remaining = deadline.saturating_duration_since(std::time::Instant::now());
             if remaining.is_zero()
                 || unsafe {
                     SetTimer(
                         Some(hwnd),
-                        STROKE_WIDTH_TIMER,
+                        BRUSH_TIMER,
                         remaining.as_millis().max(1) as u32,
                         None,
                     )
                 } == 0
             {
-                self.flush_stroke_width()?;
+                self.flush_brush()?;
             }
         }
         Ok(())
@@ -585,15 +587,12 @@ impl App {
         } else {
             None
         };
-        if let Err(error) = self
-            .persist_stroke_width(hwnd)
-            .and_then(|_| self.flush_stroke_width())
-        {
+        if let Err(error) = self.persist_brush(hwnd).and_then(|_| self.flush_brush()) {
             message(hwnd, &format!("Could not save settings: {error}"));
         }
         unsafe {
             let _ = KillTimer(Some(hwnd), crate::toolbar::HINT_TIMER);
-            let _ = KillTimer(Some(hwnd), STROKE_WIDTH_TIMER);
+            let _ = KillTimer(Some(hwnd), BRUSH_TIMER);
         }
         if let Err(error) = self.persist_custom_color() {
             message(hwnd, &error.to_string());

@@ -42,12 +42,42 @@ impl<C: Canvas> Pen<'_, C> {
     fn stroke(&mut self, a: Point, z: Point, rgb: [u8; 3], width: f64) -> Result<(), C::Error> {
         self.canvas.line(a, z, Ink::solid(rgb), width * self.scale)
     }
+    fn rect(&self, l: f64, t: f64, r: f64, b: f64) -> Rect {
+        Rect {
+            min: self.p(l, t),
+            max: self.p(r, b),
+        }
+    }
+    fn points(&self, points: &[(f64, f64)]) -> Vec<Point> {
+        points.iter().map(|(x, y)| self.p(*x, *y)).collect()
+    }
+    /// Joined line through `points` in the glyph's ink, unlike `path`'s separate segments.
+    fn outline(&mut self, points: &[(f64, f64)], closed: bool) -> Result<(), C::Error> {
+        let points = self.points(points);
+        self.canvas
+            .polyline(&points, closed, self.ink, 1.6 * self.scale)
+    }
+    fn fill(&mut self, points: &[(f64, f64)], ink: Ink) -> Result<(), C::Error> {
+        let points = self.points(points);
+        self.canvas.fill_polygon(&points, ink)
+    }
+    /// Flat-ended segment of any ink and width.
+    fn band(&mut self, a: (f64, f64), z: (f64, f64), ink: Ink, width: f64) -> Result<(), C::Error> {
+        let (a, z) = (self.p(a.0, a.1), self.p(z.0, z.1));
+        self.canvas.line(a, z, ink, width * self.scale)
+    }
+}
+
+/// A paint too close to the dark panel to show by itself: its drop keeps a light rim.
+fn faint_on_panel(rgb: [u8; 3]) -> bool {
+    let luma = |c: [u8; 3]| 0.2126 * c[0] as f64 + 0.7152 * c[1] as f64 + 0.0722 * c[2] as f64;
+    (luma(rgb) - luma([32, 32, 32])).abs() < 40.
 }
 
 pub(super) fn draw<C: Canvas>(
     canvas: &mut C,
     b: &Button,
-    current: [u8; 3],
+    (current, tint): ([u8; 3], [u8; 3]),
     selected: bool,
     scale: f64,
 ) -> Result<(), C::Error> {
@@ -68,19 +98,21 @@ pub(super) fn draw<C: Canvas>(
             },
         scale,
         foreground,
-        current,
+        (current, tint),
     )
 }
 
 /// One action's glyph with its top-left corner at `origin`: 20 px wide at scale 1.
-/// `current` is the drawing colour shown by the colour and highlighter glyphs.
+/// `current` is the drawing colour the colour swatches mark. `tint` paints the pen and
+/// highlighter tips, the highlighter's swath and the bucket's paint: the drawing colour, or the
+/// one under the eyedropper while it hovers.
 pub fn glyph<C: Canvas>(
     canvas: &mut C,
     action: Action,
     origin: Point,
     scale: f64,
     foreground: [u8; 3],
-    current: [u8; 3],
+    (current, tint): ([u8; 3], [u8; 3]),
 ) -> Result<(), C::Error> {
     let mut g = Pen {
         origin,
@@ -131,8 +163,30 @@ pub fn glyph<C: Canvas>(
                 }
             }
         }
+        // A solid pointer over a dashed frame: nothing like the arrow tool's outline. The
+        // dashes stop short of the pointer.
         Action::Tool(Tool::Select) => {
-            g.path(&[(3., 1.), (17., 10.), (10., 12.), (7., 19.), (3., 1.)])?
+            for (a, z) in [
+                ((1.5, 1.5), (5.25, 1.5)),
+                ((7.75, 1.5), (11.5, 1.5)),
+                ((14., 1.5), (14., 5.25)),
+                ((14., 7.75), (14., 9.)),
+                ((6.4, 14.), (4., 14.)),
+                ((1.5, 14.), (1.5, 10.25)),
+                ((1.5, 7.75), (1.5, 4.)),
+            ] {
+                g.line(a, z)?;
+            }
+            let pointer = [
+                (8., 7.),
+                (8., 18.),
+                (10.9, 15.3),
+                (12.8, 19.4),
+                (14.6, 18.6),
+                (12.7, 14.5),
+                (16.6, 14.5),
+            ];
+            g.fill(&pointer, g.ink)?;
         }
         Action::Tool(Tool::Rectangle) => g.box_at(2., 4., 16., 12.)?,
         Action::Tool(Tool::Ellipse) => {
@@ -160,7 +214,9 @@ pub fn glyph<C: Canvas>(
             };
             g.canvas.annotations(&[arrow], None)?;
         }
+        // The cone takes the tint.
         Action::Tool(Tool::Pen) => {
+            g.fill(&[(2., 18.), (5., 11.), (9., 15.)], Ink::solid(tint))?;
             g.path(&[
                 (2., 18.),
                 (5., 11.),
@@ -172,10 +228,17 @@ pub fn glyph<C: Canvas>(
             g.line((5., 11.), (9., 15.))?;
             g.line((12., 4.), (16., 8.))?;
         }
+        // An upright marker, unlike the slanted pen: cap, barrel, chisel tip, and the swath
+        // that starts from it.
         Action::Tool(Tool::Highlight) => {
-            g.path(&[(5., 12.), (13., 2.), (19., 7.), (11., 16.), (5., 12.)])?;
-            g.path(&[(5., 12.), (3., 17.), (8., 17.), (11., 16.)])?;
-            g.stroke(g.p(1., 20.), g.p(19., 20.), current, 2.5)?;
+            g.band((6.5, 17.), (19., 17.), Ink::with_alpha(tint, 0.6), 4.6)?;
+            let tip = [(4., 10.), (9., 10.), (9., 12.5), (6.5, 15.), (4., 15.)];
+            g.fill(&tip, Ink::solid(tint))?;
+            g.outline(&tip, true)?;
+            let barrel = g.rect(3., 1., 10., 10.);
+            g.canvas
+                .stroke_round_rect(barrel, 1.6 * scale, g.ink, 1.6 * scale)?;
+            g.outline(&[(3., 4.5), (10., 4.5)], false)?;
         }
         Action::Tool(Tool::Text) => {
             g.line((3., 3.), (17., 3.))?;
@@ -183,12 +246,25 @@ pub fn glyph<C: Canvas>(
             g.line((3., 3.), (3., 6.))?;
             g.line((17., 3.), (17., 6.))?;
         }
-        // An eraser block seen from above: the tilted block, the band of its sleeve, the line
-        // it rubs along.
+        // A tilted block, sleeve filled and rubber hollow, rubbing out a line: crumbs behind
+        // it, the line still whole ahead.
         Action::Tool(Tool::Eraser) => {
-            g.path(&[(3., 13.), (11., 3.), (17., 9.), (9., 17.), (3., 13.)])?;
-            g.line((7., 8.), (12., 13.))?;
-            g.line((2., 19.), (18., 19.))?;
+            let (l, t, r, b) = (6., 5., 19., 12.);
+            let sleeve = l + (r - l) * 0.45;
+            let radius = 1.8 * scale;
+            g.canvas
+                .set_rotation(Some((g.p(12.5, 8.5), (-45_f64).to_radians())))?;
+            g.canvas
+                .fill_round_rect(g.rect(sleeve, t, r, b), radius, g.ink)?;
+            g.canvas
+                .fill_rect(g.rect(sleeve, t, sleeve + 2.5, b), g.ink)?;
+            g.canvas
+                .stroke_round_rect(g.rect(l, t, r, b), radius, g.ink, 1.6 * scale)?;
+            g.canvas.set_rotation(None)?;
+            let crumbs = Ink::with_alpha(foreground, 0.35);
+            g.band((1., 18.5), (3., 18.5), crumbs, 1.6)?;
+            g.band((5., 18.5), (7., 18.5), crumbs, 1.6)?;
+            g.outline(&[(12., 18.5), (19., 18.5)], false)?;
         }
         Action::Eyedropper => {
             // Narrow glass stem, cross guard and rubber bulb distinguish it from a pencil.
@@ -205,13 +281,18 @@ pub fn glyph<C: Canvas>(
             g.canvas.fill_ellipse(center, radius, g.ink)?;
         }
         Action::Fill => {
-            // Tilted bucket, half full, with its handle and the drop it pours.
-            g.path(&[(2., 11.), (9., 4.), (16., 11.), (9., 18.), (2., 11.)])?;
-            g.line((2., 11.), (16., 11.))?;
-            g.line((5.5, 14.5), (12.5, 14.5))?;
-            g.line((9., 4.), (6., 1.))?;
-            let (center, radius) = (g.p(17.5, 16.5), g.r(1.7, 2.3));
-            g.canvas.fill_ellipse(center, radius, g.ink)?;
+            // Tilted bucket, half full, with its handle and the drop it pours: paint and drop
+            // take the tint.
+            let paint = Ink::solid(tint);
+            g.fill(&[(2., 11.), (16., 11.), (9., 18.)], paint)?;
+            g.outline(&[(2., 11.), (9., 4.), (16., 11.), (9., 18.)], true)?;
+            g.outline(&[(2., 11.), (16., 11.)], false)?;
+            g.outline(&[(9., 4.), (6., 1.)], false)?;
+            let (center, radius) = (g.p(17.5, 16.5), g.r(1.8, 2.4));
+            g.canvas.fill_ellipse(center, radius, paint)?;
+            if faint_on_panel(tint) {
+                g.canvas.stroke_ellipse(center, radius, g.ink, scale)?;
+            }
         }
         Action::Thinner => g.line((4., 10.), (16., 10.))?,
         Action::Thicker => {
@@ -284,4 +365,57 @@ pub fn glyph<C: Canvas>(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scale_tests::Recorder;
+
+    fn record(action: Action, colors: ([u8; 3], [u8; 3])) -> Recorder {
+        let mut canvas = Recorder {
+            size: Point { x: 30., y: 30. },
+            ops: Vec::new(),
+        };
+        glyph(&mut canvas, action, Point::default(), 1., [235; 3], colors).unwrap();
+        canvas
+    }
+
+    #[test]
+    fn tips_and_paint_take_the_tint_while_swatches_mark_the_drawing_colour() {
+        let (current, tint) = ([237, 79, 92], [255, 140, 30]);
+        let tinted = format!("{:?}", Ink::solid(tint));
+        for action in [
+            Action::Tool(Tool::Pen),
+            Action::Tool(Tool::Highlight),
+            Action::Fill,
+        ] {
+            let ops = record(action, (current, tint)).ops;
+            let painted = ops
+                .iter()
+                .any(|op| op.name == "fill_polygon" && op.fixed == tinted);
+            assert!(painted, "{action:?} shows the tint");
+        }
+        let checks = |rgb| {
+            let ops = record(Action::Color(rgb), (current, tint)).ops;
+            ops.iter().filter(|op| op.name == "line").count()
+        };
+        assert_eq!(
+            checks(current),
+            2,
+            "the drawing colour keeps its check mark"
+        );
+        assert_eq!(checks(tint), 0, "the hovered colour gets none");
+    }
+
+    #[test]
+    fn a_drop_too_dark_for_the_panel_keeps_a_rim() {
+        let rim = |rgb| {
+            let ops = record(Action::Fill, (rgb, rgb)).ops;
+            ops.iter().any(|op| op.name == "stroke_ellipse")
+        };
+        assert!(rim([28, 31, 40]), "palette black");
+        assert!(!rim([237, 79, 92]), "palette red");
+        assert!(!rim([245, 245, 248]), "palette white");
+    }
 }

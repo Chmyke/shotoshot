@@ -1,5 +1,5 @@
-//! ROLE: The notification-area menu: one model for its order, native build, painting and preview.
-//! OWNER: App builds a menu per opening; the Direct2D painter lives only while one is open.
+//! ROLE: The notification-area menu: one model for its order, painting and preview.
+//! OWNER: App opens a `Popup` per opening; the Direct2D painter lives only while one is open.
 //! INVARIANTS: Layout is in 96-DPI logical pixels, scaled once at paint time.
 use super::*;
 use crate::presentation::menu as commands;
@@ -7,7 +7,8 @@ use crate::render::{D2dCanvas, Renderer};
 use crate::settings::{InputLayout, Shortcut};
 use shotoshot_core::{Rect, Tool};
 use shotoshot_ui::{Canvas, Ink};
-use windows::Win32::UI::Controls::*;
+mod popup;
+pub(super) use popup::{CLOSED, COMMAND, Popup};
 
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {
@@ -159,7 +160,7 @@ pub(super) fn icon(id: u32) -> Icon {
 }
 
 /// What the rows display for the current settings.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct Values {
     /// Packed with `shortcut`.
     pub capture: usize,
@@ -263,7 +264,7 @@ const MARGIN: f64 = 14.;
 const TEXT_SIZE: f64 = 13.;
 const TITLE_SIZE: f64 = 11.;
 const SWITCH: Point = Point { x: 28., y: 14. };
-/// Room Windows needs for its own submenu arrow.
+/// Room for the submenu arrow.
 const ARROW: f64 = 14.;
 
 fn height(kind: Kind) -> f64 {
@@ -299,8 +300,6 @@ struct State {
     selected: bool,
     checked: bool,
     data: usize,
-    /// Synthetic previews draw the submenu arrow Windows supplies on a real menu.
-    arrow: bool,
 }
 
 fn segments<C: Canvas>(
@@ -363,7 +362,9 @@ pub(super) fn draw_icon<C: Canvas>(
     let ink = Ink::solid(rgb);
     match icon {
         Icon::None => {}
-        Icon::Toolbar(action) => crate::toolbar::glyph(canvas, action, origin, scale, rgb, rgb)?,
+        Icon::Toolbar(action) => {
+            crate::toolbar::glyph(canvas, action, origin, scale, rgb, (rgb, rgb))?
+        }
         Icon::Capture => {
             // Corner brackets of a selected area.
             for corner in [
@@ -613,18 +614,16 @@ fn paint<C: Canvas>(
     )?;
     let mut right = size.x - u(MARGIN);
     if row.kind == Kind::Submenu {
-        if state.arrow {
-            segments(
-                canvas,
-                Point {
-                    x: right - u(8.),
-                    y: middle - u(6.),
-                },
-                u(0.6),
-                SECONDARY,
-                &[(6., 4.), (12., 10.), (6., 16.)],
-            )?;
-        }
+        segments(
+            canvas,
+            Point {
+                x: right - u(8.),
+                y: middle - u(6.),
+            },
+            u(0.6),
+            SECONDARY,
+            &[(6., 4.), (12., 10.), (6., 16.)],
+        )?;
         right -= u(ARROW);
     }
     if row.kind == Kind::Toggle {
@@ -741,154 +740,31 @@ fn draw_row(
     }
 }
 
-/// Native menu callbacks are reentrant while TrackPopupMenu holds App's borrow.
-/// They only measure and draw, so they deliberately need no application state.
-pub(super) unsafe fn message(hwnd: HWND, msg: u32, l: LPARAM) -> Option<LRESULT> {
-    unsafe {
-        let scale = GetDpiForWindow(hwnd).max(96) as f64 / 96.;
-        if msg == WM_MEASUREITEM {
-            let item = &mut *(l.0 as *mut MEASUREITEMSTRUCT);
-            if item.CtlType != ODT_MENU {
-                return None;
-            }
-            let row = find(item.itemID)?;
-            let needed = with_painter(|renderer| width(renderer, row, item.itemData)).ok()?;
-            item.itemWidth = (needed * scale).ceil() as u32;
-            item.itemHeight = (height(row.kind) * scale).round() as u32;
-            return Some(LRESULT(1));
-        }
-        if msg == WM_DRAWITEM {
-            let item = &*(l.0 as *const DRAWITEMSTRUCT);
-            if item.CtlType != ODT_MENU {
-                return None;
-            }
-            let row = find(item.itemID)?;
-            let state = State {
-                selected: item.itemState.0 & ODS_SELECTED.0 != 0,
-                checked: item.itemState.0 & ODS_CHECKED.0 != 0,
-                data: item.itemData,
-                arrow: false,
-            };
-            // Best effort: a failed paint leaves the row blank and the next one retries.
-            let _ = with_painter(|renderer| {
-                draw_row(renderer, item.hDC, item.rcItem, row, state, scale)
-            });
-            return Some(LRESULT(1));
-        }
-        None
-    }
-}
-
-unsafe fn insert(menu: HMENU, row: &Row, values: &Values, submenu: HMENU) -> Result<()> {
-    let inert = matches!(row.kind, Kind::Title | Kind::Separator);
-    unsafe {
-        InsertMenuItemW(
-            menu,
-            u32::MAX,
-            true,
-            &MENUITEMINFOW {
-                cbSize: std::mem::size_of::<MENUITEMINFOW>() as u32,
-                fMask: MIIM_FTYPE | MIIM_ID | MIIM_STATE | MIIM_DATA | MIIM_SUBMENU,
-                fType: MFT_OWNERDRAW,
-                fState: if values.checked(row.id) {
-                    MFS_CHECKED
-                } else {
-                    MFS_UNCHECKED
-                } | if inert { MFS_DISABLED } else { MFS_ENABLED },
-                wID: row.id,
-                hSubMenu: submenu,
-                dwItemData: values.data(row.id),
-                ..Default::default()
-            },
-        )
-    }
-}
-/// Fills an empty popup menu. Windows destroys the attached submenus with their parent.
-pub(super) fn build(menu: HMENU, values: &Values) -> Result<()> {
-    unsafe {
-        for row in ROOT {
-            if row.kind != Kind::Submenu {
-                insert(menu, row, values, HMENU::default())?;
-                continue;
-            }
-            // PITFALL: Attach the submenu before filling it, so the root menu guard owns
-            // its cleanup if a later step fails.
-            let submenu = CreatePopupMenu()?;
-            if let Err(error) = insert(menu, row, values, submenu) {
-                let _ = DestroyMenu(submenu);
-                return Err(error);
-            }
-            for choice in choices(row.id) {
-                insert(submenu, choice, values, HMENU::default())?;
-            }
-        }
-        Ok(())
-    }
-}
-
 /// Paints the whole menu, with the submenu of row `open` beside it, at `scale`.
 fn render(values: &Values, selected: u32, open: u32, scale: f64) -> Result<Image> {
     let _open = Open;
-    with_painter(|renderer| {
-        let column = |rows: &[Row]| -> Result<i32> {
-            let mut widest: f64 = 0.;
-            for row in rows {
-                widest = widest.max(width(renderer, row, values.data(row.id))?);
-            }
-            Ok((widest * scale).ceil() as i32)
-        };
-        let extent = |rows: &[Row]| -> i32 {
-            rows.iter()
-                .map(|row| (height(row.kind) * scale).round() as i32)
-                .sum()
-        };
-        let opened = choices(open);
-        let (root, beside) = (column(ROOT)?, column(opened)?);
-        // The submenu hangs from its row, wherever that row sits in the menu.
-        let hang: i32 = ROOT
-            .iter()
-            .take_while(|row| row.id != open)
-            .map(|row| (height(row.kind) * scale).round() as i32)
-            .sum();
-        paint_image(
-            (root + beside) as u32,
-            extent(ROOT).max(hang + extent(opened)) as u32,
-            |dc| {
-                let column = |rows: &[Row], left: i32, mut top: i32, wide: i32| -> Result<i32> {
-                    let mut submenu = 0;
-                    for row in rows {
-                        let bottom = top + (height(row.kind) * scale).round() as i32;
-                        if row.id == open {
-                            submenu = top;
-                        }
-                        draw_row(
-                            renderer,
-                            dc,
-                            RECT {
-                                left,
-                                top,
-                                right: left + wide,
-                                bottom,
-                            },
-                            row,
-                            State {
-                                selected: row.id == selected,
-                                checked: values.checked(row.id),
-                                data: values.data(row.id),
-                                arrow: true,
-                            },
-                            scale,
-                        )?;
-                        top = bottom;
-                    }
-                    Ok(submenu)
-                };
-                let submenu = column(ROOT, 0, 0, root)?;
-                column(opened, root, submenu, beside)?;
-                Ok(())
-            },
-        )
-    })
+    let root = popup::Column::new(ROOT, values, scale)?;
+    let beside = popup::Column::new(choices(open), values, scale)?;
+    let position = |id: u32| ROOT.iter().position(|row| row.id == id);
+    // The submenu's first row lines up with the row that opens it, as on screen.
+    let hang = position(open).map_or(0, |index| root.top(index) - beside.top(0));
+    paint_image(
+        (root.width + beside.width) as u32,
+        root.height().max(hang + beside.height()) as u32,
+        |dc| {
+            root.paint(dc, POINT::default(), values, position(selected), scale)?;
+            beside.paint(
+                dc,
+                POINT {
+                    x: root.width,
+                    y: hang,
+                },
+                values,
+                None,
+                scale,
+            )
+        },
+    )
 }
 fn sample() -> Values {
     let defaults = Settings::default();
@@ -984,59 +860,6 @@ mod tests {
             .iter()
             .filter(|pixel| pixel[..3] == [ACCENT[2], ACCENT[1], ACCENT[0]])
             .count()
-    }
-
-    #[test]
-    fn native_menu_follows_the_model_with_its_submenus() {
-        unsafe {
-            let menu = CreatePopupMenu().unwrap();
-            build(menu, &Values::default()).unwrap();
-            let ids: Vec<_> = (0..GetMenuItemCount(Some(menu)))
-                .map(|index| {
-                    let mut info = MENUITEMINFOW {
-                        cbSize: std::mem::size_of::<MENUITEMINFOW>() as u32,
-                        fMask: MIIM_ID,
-                        ..Default::default()
-                    };
-                    GetMenuItemInfoW(menu, index as u32, true, &mut info).unwrap();
-                    info.wID
-                })
-                .collect();
-            assert_eq!(ids, ROOT.iter().map(|row| row.id).collect::<Vec<_>>());
-            let submenus: Vec<_> = (0..GetMenuItemCount(Some(menu)))
-                .filter(|&index| !GetSubMenu(menu, index).is_invalid())
-                .collect();
-            let opening: Vec<_> = submenus
-                .iter()
-                .map(|&index| ROOT[index as usize].id)
-                .collect();
-            assert_eq!(opening, [130, 140, 120]);
-            for index in submenus {
-                assert_eq!(
-                    GetMenuItemCount(Some(GetSubMenu(menu, index))),
-                    choices(ROOT[index as usize].id).len() as i32
-                );
-            }
-            DestroyMenu(menu).unwrap();
-        }
-    }
-
-    #[test]
-    fn titles_and_separator_cannot_be_chosen() {
-        unsafe {
-            let menu = CreatePopupMenu().unwrap();
-            build(menu, &Values::default()).unwrap();
-            for (index, row) in ROOT.iter().enumerate() {
-                let disabled = GetMenuState(menu, index as u32, MF_BYPOSITION) & MF_DISABLED.0 != 0;
-                assert_eq!(
-                    disabled,
-                    matches!(row.kind, Kind::Title | Kind::Separator),
-                    "{}",
-                    row.label
-                );
-            }
-            DestroyMenu(menu).unwrap();
-        }
     }
 
     #[test]

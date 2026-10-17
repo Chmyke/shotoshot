@@ -3,11 +3,14 @@
 //! INVARIANTS: Interface sizes are 96-DPI logical pixels times `Capture::ui_scale`;
 //! only the capture and its annotations are in raw pixels (`scale_tests`).
 use crate::{Canvas, Capture, Ink, region_handles, toolbar};
-use shotoshot_core::{Point, Rect, Tool};
+use shotoshot_core::{FillChange, Object, Point, Rect, Shape, Tool, arrow_points};
 
 const ACCENT: Ink = Ink::solid([100, 170, 255]);
 const SHADE: Ink = Ink::with_alpha([0, 0, 0], 0.48);
 const DARK: Ink = Ink::solid([32, 32, 32]);
+/// Opacity of the colour the bucket would lay, shown under the pointer before the click
+/// (Mickaël's choice on the 2026-10-17 board: B1).
+const PREVIEW: f32 = 0.45;
 
 fn square(center: Point, half: f64) -> Rect {
     Rect {
@@ -33,8 +36,18 @@ impl Capture {
         let Some(r) = self.region else {
             return canvas.fill_rect(screen, SHADE);
         };
+        let preview = self.bucket_preview();
         if let Some(background) = self.editor.background() {
-            canvas.fill_rect(r, Ink::solid(background))?;
+            // A click that would clear it already lets the capture show through.
+            let alpha = if preview == Some(FillChange::Background(None)) {
+                1. - PREVIEW
+            } else {
+                1.
+            };
+            canvas.fill_rect(r, Ink::with_alpha(background, alpha))?;
+        }
+        if let Some(FillChange::Background(Some(color))) = preview {
+            canvas.fill_rect(r, Ink::with_alpha(color, PREVIEW))?;
         }
         for outside in [
             Rect {
@@ -109,6 +122,16 @@ impl Capture {
             canvas.fill_rect(square(p, 4. * s), Ink::solid([250, 250, 250]))?;
             canvas.stroke_rect(square(p, 4. * s), DARK, 1.5 * s)?;
         }
+        self.draw_bucket_preview(canvas, s)?;
+        if show_selection {
+            // Selectable, not selected: the selection's frame in dashes, without handles
+            // (Mickaël's choice on the 2026-10-17 board: H2).
+            for id in self.hovered() {
+                if let Some(frame) = self.editor.frame_of(id) {
+                    dashed(canvas, frame.outline(3. * s), ACCENT, s)?;
+                }
+            }
+        }
         if show_selection && let Some(frame) = self.editor.selection_frame() {
             if frame.angle == 0. {
                 canvas.stroke_rect(frame.bounds.expanded(3. * s), ACCENT, s)?;
@@ -137,6 +160,40 @@ impl Capture {
         }
         Ok(())
     }
+    /// What a bucket click under the pointer would change to a drawn object, laid over it at
+    /// `PREVIEW` with the objects above it; a fill it would remove is outlined instead. The background's preview is
+    /// part of the underlay.
+    fn draw_bucket_preview<C: Canvas>(&self, canvas: &mut C, s: f64) -> Result<(), C::Error> {
+        let objects = self.editor.objects();
+        let (index, ghost) = match self.bucket_preview() {
+            Some(FillChange::Ink { index, color }) if objects[index].style.color != color => {
+                let mut o = resolved(&objects[index], objects);
+                o.style.color = color;
+                (index, o)
+            }
+            Some(FillChange::Fill {
+                index,
+                fill: Some(color),
+            }) => {
+                let mut o = resolved(&objects[index], objects);
+                o.fill = Some(color);
+                (index, o)
+            }
+            Some(FillChange::Fill { index, fill: None }) => {
+                return match self.editor.frame_of(objects[index].id) {
+                    Some(frame) => dashed(canvas, frame.outline(3. * s), ACCENT, s),
+                    None => Ok(()),
+                };
+            }
+            _ => return Ok(()),
+        };
+        // What lies above the target comes along: drawn the same in the faded layer as in
+        // the scene, it stays unchanged on top.
+        let pile: Vec<Object> = std::iter::once(ghost)
+            .chain(objects[index + 1..].iter().map(|o| resolved(o, objects)))
+            .collect();
+        canvas.preview(&pile, PREVIEW)
+    }
     pub fn draw_toolbar<C: Canvas>(
         &self,
         canvas: &mut C,
@@ -147,7 +204,7 @@ impl Capture {
             canvas,
             &buttons,
             self.editor.tool,
-            current_color,
+            (current_color, self.tool_tint(current_color)),
             self.pointer,
             self.eyedropper,
             self.ui_scale(),
@@ -181,14 +238,17 @@ impl Capture {
         }
         Ok(())
     }
-    /// Outline of the current stroke width at the pointer; with a width change, its size.
+    /// Outline of the current stroke width at the pointer, or of the eraser's disc as the
+    /// view shows it; with a size change, its size.
     pub fn draw_width_ring<C: Canvas>(&self, canvas: &mut C) -> Result<(), C::Error> {
-        let width = self.editor.style.width
-            * if self.editor.tool == Tool::Highlight {
-                5.
-            } else {
-                1.
-            };
+        let (width, label) = match self.editor.tool {
+            Tool::Eraser => (
+                self.editor.eraser_size * self.zoom_at_pointer(),
+                self.editor.eraser_size,
+            ),
+            Tool::Highlight => (self.editor.style.width * 5., self.editor.style.width * 5.),
+            _ => (self.editor.style.width, self.editor.style.width),
+        };
         let s = self.ui_scale();
         let center = self.pointer;
         let radius = Point {
@@ -218,7 +278,7 @@ impl Capture {
         };
         canvas.fill_round_rect(bounds, 4. * s, Ink::solid([25, 25, 25]))?;
         canvas.text(
-            &format!("{width:.0} px"),
+            &format!("{label:.0} px"),
             Rect {
                 min: min
                     + Point {
@@ -392,6 +452,51 @@ impl Capture {
         }
         Ok(())
     }
+}
+/// `o` drawable alone: an attached arrow keeps the ends it shows among `objects`.
+fn resolved(o: &Object, objects: &[Object]) -> Object {
+    let mut alone = o.clone();
+    if let Some((a, b)) = arrow_points(o, objects)
+        && let Shape::Arrow {
+            start,
+            end,
+            start_attach,
+            end_attach,
+            ..
+        } = &mut alone.shape
+    {
+        (*start, *end) = (a, b);
+        (*start_attach, *end_attach) = (None, None);
+    }
+    alone
+}
+/// A closed outline through `corners`, in dashes of 4 by 3 interface pixels at `scale`.
+fn dashed<C: Canvas>(
+    canvas: &mut C,
+    corners: [Point; 4],
+    ink: Ink,
+    scale: f64,
+) -> Result<(), C::Error> {
+    let (dash, period) = (4. * scale, 7. * scale);
+    for (i, a) in corners.iter().enumerate() {
+        let side = corners[(i + 1) % 4] - *a;
+        let length = side.length();
+        if length <= 0. {
+            continue;
+        }
+        let unit = side * (1. / length);
+        let mut t = 0.;
+        while t < length {
+            canvas.line(
+                *a + unit * t,
+                *a + unit * (t + dash).min(length),
+                ink,
+                scale,
+            )?;
+            t += period;
+        }
+    }
+    Ok(())
 }
 const NOTICE_SIZE: f64 = 13.;
 const NOTICE_PADDING: Point = Point { x: 12., y: 8. };
