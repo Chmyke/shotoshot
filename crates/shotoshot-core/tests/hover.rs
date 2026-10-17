@@ -124,28 +124,45 @@ fn the_bucket_preview_is_exactly_what_the_click_does() {
         (p(250., 300.), true, RED),
     ];
     let (mut editor, ..) = two_rectangles();
+    let coats = |e: &Editor, zone: Option<usize>| match zone {
+        Some(index) => e.objects()[index].fill.clone(),
+        None => e.background().to_vec(),
+    };
     for (at, clear, color) in cases {
         editor.style.color = color;
         let change = editor
             .fill_change(at, clear)
             .expect("the bucket always aims");
+        let before = match &change {
+            FillChange::Pour { zone, .. } | FillChange::Remove { zone, .. } => {
+                coats(&editor, *zone)
+            }
+            FillChange::Ink { .. } => Vec::new(),
+        };
         editor.fill_at(at, clear);
         match change {
             FillChange::Ink { index, color } => {
                 assert_eq!(editor.objects()[index].style.color, color)
             }
-            FillChange::Fill { index, fill } => assert_eq!(editor.objects()[index].fill, fill),
-            FillChange::Background(background) => assert_eq!(editor.background(), background),
+            FillChange::Pour { zone, coat } => {
+                let mut expected = before;
+                pour(&mut expected, coat);
+                assert_eq!(coats(&editor, zone), expected);
+            }
+            FillChange::Remove { zone, coat } => {
+                let mut expected = before;
+                expected.remove(coat);
+                assert_eq!(coats(&editor, zone), expected);
+            }
         }
     }
     assert_eq!(editor.objects()[0].style.color, BLACK);
-    assert_eq!(
-        editor.objects()[0].fill,
-        None,
+    assert!(
+        editor.objects()[0].fill.is_empty(),
         "filled then emptied by the same colour"
     );
-    assert_eq!(editor.objects()[1].fill, None, "Alt cleared it");
-    assert_eq!(editor.background(), None, "Alt cleared it");
+    assert!(editor.objects()[1].fill.is_empty(), "Alt cleared it");
+    assert!(editor.background().is_empty(), "Alt cleared it");
 }
 
 #[test]

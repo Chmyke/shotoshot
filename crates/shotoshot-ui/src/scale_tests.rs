@@ -45,6 +45,12 @@ impl Canvas for Recorder {
     fn fill_rect(&mut self, r: Rect, ink: Ink) -> Result<(), ()> {
         self.push("fill_rect", &rect(r), format!("{ink:?}"))
     }
+    fn fill_rect_except(&mut self, r: Rect, holes: &[Vec<Point>], ink: Ink) -> Result<(), ()> {
+        let mut lengths = rect(r).to_vec();
+        lengths.extend(holes.iter().flatten().flat_map(|p| [p.x, p.y]));
+        let fixed = format!("{ink:?} {} holes", holes.len());
+        self.push("fill_rect_except", &lengths, fixed)
+    }
     fn stroke_rect(&mut self, r: Rect, ink: Ink, width: f64) -> Result<(), ()> {
         let [a, b, c, d] = rect(r);
         self.push("stroke_rect", &[a, b, c, d, width], format!("{ink:?}"))
@@ -130,7 +136,15 @@ impl Canvas for Recorder {
         self.push("annotations_fading", &[], fixed)
     }
     fn preview(&mut self, objects: &[Object], opacity: f32) -> Result<(), ()> {
-        let colours: Vec<_> = objects.iter().map(|o| (o.style.color, o.fill)).collect();
+        let colours: Vec<_> = objects
+            .iter()
+            .map(|o| {
+                (
+                    o.style.color,
+                    o.fill.iter().map(|c| c.color).collect::<Vec<_>>(),
+                )
+            })
+            .collect();
         self.push("preview", &[], format!("{colours:?} at {opacity}"))
     }
 }
@@ -194,7 +208,7 @@ fn hovering_outlines_what_a_click_would_take_and_the_bucket_previews_its_colour(
     assert_eq!(previews.len(), 1);
     assert_eq!(
         previews[0].fixed,
-        format!("[({red:?}, Some({green:?})), ({red:?}, None)] at 0.45"),
+        format!("[({red:?}, [{green:?}]), ({red:?}, [])] at 0.45"),
         "the shape as the click would fill it, at 45 %, the line above it kept on top"
     );
     assert_eq!(dashes(&fill), 0, "the bucket does not promise a selection");
@@ -204,7 +218,7 @@ fn hovering_outlines_what_a_click_would_take_and_the_bucket_previews_its_colour(
     let preview = ink.iter().find(|o| o.name == "preview").unwrap();
     assert_eq!(
         preview.fixed,
-        format!("[({green:?}, None), ({red:?}, None)] at 0.45")
+        format!("[({green:?}, []), ({red:?}, [])] at 0.45")
     );
 
     // Away from the toolbar, which sits inside a region that fills the screen.
@@ -212,12 +226,12 @@ fn hovering_outlines_what_a_click_would_take_and_the_bucket_previews_its_colour(
     assert!(!c.toolbar_contains(void));
     c.pointer_move(&mut host, void, m);
     let background = frame(&c);
-    let tint = format!("{:?}", Ink::with_alpha(green, 0.45));
+    let tint = format!("{:?} 1 holes", Ink::with_alpha(green, 0.45));
     assert!(
         background
             .iter()
-            .any(|o| o.name == "fill_rect" && o.fixed == tint),
-        "the capture tinted under the annotations"
+            .any(|o| o.name == "fill_rect_except" && o.fixed == tint),
+        "the capture tinted under the annotations, the rectangle spared"
     );
     assert!(background.iter().all(|o| o.name != "preview"));
 

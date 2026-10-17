@@ -8,7 +8,8 @@ mod scene;
 pub use scene::Scene;
 
 const HEADER: &[u8] = b"shotoshot-document ";
-const VERSION: u32 = 1;
+/// The latest version read; a file is written in the lowest one that holds it (`Scene::version`).
+const VERSION: u32 = 2;
 const FRAME: &[u8] = b"frame-png ";
 /// Larger files are refused unread: far above any desktop saved as two PNG images.
 pub const MAX_FILE: u64 = 256 << 20;
@@ -41,7 +42,8 @@ pub fn pack(visible: &[u8], scene: &Scene, frame: &[u8]) -> Option<Vec<u8>> {
     if !scene.valid() {
         return None;
     }
-    let mut payload = format!("shotoshot-document {VERSION}\n{}", scene.encode()).into_bytes();
+    let version = scene.version();
+    let mut payload = format!("shotoshot-document {version}\n{}", scene.encode()).into_bytes();
     payload.extend_from_slice(format!("frame-png {}\n", frame.len()).as_bytes());
     payload.extend_from_slice(frame);
     png::embed(visible, &payload).filter(|file| file.len() as u64 <= MAX_FILE)
@@ -71,7 +73,7 @@ pub fn unpack(file: &[u8]) -> Result<(Scene, &[u8]), Error> {
                 .ok()
                 .and_then(|n| n.parse::<usize>().ok())
                 .filter(|n| *n == after.len())
-                .and_then(|_| scene::decode(std::str::from_utf8(text).ok()?));
+                .and_then(|_| scene::decode(std::str::from_utf8(text).ok()?, version));
             return scene.map(|scene| (scene, after)).ok_or(Error::Damaged);
         }
         rest = after;
@@ -98,6 +100,21 @@ mod tests {
         assert_eq!(unpack(&file), Ok((sample(), FRAME_IMAGE)));
     }
     #[test]
+    fn a_file_takes_the_lowest_version_that_holds_its_scene() {
+        let file = pack(&PIXEL, &sample(), FRAME_IMAGE).unwrap();
+        let payload = png::extract(&file).unwrap();
+        assert!(
+            payload.starts_with(b"shotoshot-document 1\n"),
+            "0.3.6 still opens it"
+        );
+        let mut layered = sample();
+        layered.background[0].walls.push(1);
+        let file = pack(&PIXEL, &layered, FRAME_IMAGE).unwrap();
+        let payload = png::extract(&file).unwrap();
+        assert!(payload.starts_with(b"shotoshot-document 2\n"));
+        assert_eq!(unpack(&file), Ok((layered, FRAME_IMAGE)));
+    }
+    #[test]
     fn what_cannot_be_read_back_is_not_written() {
         let mut scene = sample();
         scene.objects[0].rotation = f64::NAN;
@@ -111,7 +128,7 @@ mod tests {
         assert_eq!(unpack(&PIXEL), Err(Error::NotEditable));
         assert_eq!(unpack(b"plain text"), Err(Error::NotEditable));
         assert_eq!(
-            unpack(&with("shotoshot-document 2\nanything at all\n")),
+            unpack(&with("shotoshot-document 3\nanything at all\n")),
             Err(Error::Newer)
         );
         for payload in [

@@ -63,34 +63,7 @@ impl App {
                     self.notify(notice);
                 }
             }
-            GOOGLE_FINISHED => {
-                if let Some(receiver) = self.google_search.take() {
-                    if let Some(s) = &mut self.session {
-                        s.capture.searching = false;
-                    }
-                    match receiver.try_recv() {
-                        Ok(Ok(page)) => {
-                            if !crate::google_search::open(hwnd, std::path::Path::new(&page)) {
-                                message(
-                                    hwnd,
-                                    "Could not open the browser. Your capture is still open.",
-                                );
-                            } else {
-                                self.close_session(hwnd);
-                            }
-                        }
-                        Ok(Err(error)) => message(
-                            hwnd,
-                            &format!("Google search failed. Your capture is still open.\n{error}"),
-                        ),
-                        Err(_) => message(
-                            hwnd,
-                            "Google search was interrupted. Your capture is still open.",
-                        ),
-                    }
-                    invalidate(hwnd);
-                }
-            }
+            GOOGLE_FINISHED => self.finish_google_search(hwnd, crate::google_search::open),
 
             RENDERER_READY => {
                 if let Some(s) = &mut self.session {
@@ -257,6 +230,13 @@ impl App {
             WM_LBUTTONUP => {
                 if let Some(s) = &mut self.session {
                     s.mouse_up(hwnd, point);
+                    invalidate(hwnd);
+                }
+            }
+            WM_RBUTTONDOWN => {
+                if let Some(s) = &mut self.session
+                    && s.capture.secondary_down(point)
+                {
                     invalidate(hwnd);
                 }
             }
@@ -427,5 +407,38 @@ impl App {
         self.persist_brush(hwnd)?;
         self.persist_custom_color()?;
         Ok(Some(LRESULT(0)))
+    }
+    /// Hands the prepared page to `open` (the browser). The capture stays open behind the
+    /// browser, as after Alt+Tab: the taskbar, Alt+Tab or the capture shortcut bring it back.
+    pub(super) fn finish_google_search(
+        &mut self,
+        hwnd: HWND,
+        open: impl FnOnce(HWND, &std::path::Path) -> bool,
+    ) {
+        let Some(receiver) = self.google_search.take() else {
+            return;
+        };
+        if let Some(s) = &mut self.session {
+            s.capture.searching = false;
+        }
+        match receiver.try_recv() {
+            Ok(Ok(page)) => {
+                if !open(hwnd, std::path::Path::new(&page)) {
+                    message(
+                        hwnd,
+                        "Could not open the browser. Your capture is still open.",
+                    );
+                }
+            }
+            Ok(Err(error)) => message(
+                hwnd,
+                &format!("Google search failed. Your capture is still open.\n{error}"),
+            ),
+            Err(_) => message(
+                hwnd,
+                "Google search was interrupted. Your capture is still open.",
+            ),
+        }
+        invalidate(hwnd);
     }
 }

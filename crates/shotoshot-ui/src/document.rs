@@ -99,7 +99,8 @@ impl Capture {
             })
             .collect();
         // Restacking and erasing leave the pile out of id order; a scene stores it in order.
-        shotoshot_core::renumber(&mut objects, 1);
+        let mut background = self.editor.background().to_vec();
+        shotoshot_core::renumber(&mut objects, &mut background, 1);
         let scene = Scene {
             width: width as u32,
             height: height as u32,
@@ -108,7 +109,7 @@ impl Capture {
                 min: region.min + delta,
                 max: region.max + delta,
             },
-            background: self.editor.background(),
+            background,
             objects,
             last_id: self.editor.last_id(),
         };
@@ -410,8 +411,10 @@ mod tests {
         let reopened =
             Capture::reopen(scene.clone(), frame.clone(), screens.clone(), measure).unwrap();
         assert!(reopened.reopened && !reopened.selecting && !reopened.live);
-        assert_eq!(scene.background, Some(c.editor.style.color));
-        assert_eq!(reopened.editor.background(), scene.background);
+        let coat = scene.background.last().unwrap();
+        assert_eq!(coat.color, c.editor.style.color);
+        assert_eq!(coat.walls, [1], "the ellipse, under its saved number");
+        assert_eq!(reopened.editor.background(), &scene.background[..]);
         assert_eq!(reopened.region, Some(scene.region));
         assert_eq!(reopened.editor.last_id(), scene.last_id);
         assert!(!reopened.editor.can_undo());

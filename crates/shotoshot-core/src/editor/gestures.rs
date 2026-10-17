@@ -37,7 +37,7 @@ impl Editor {
             }
             self.objects.push(Object {
                 rotation: 0.,
-                fill: None,
+                fill: Vec::new(),
                 id: self.next_id,
                 shape,
                 style: self.style,

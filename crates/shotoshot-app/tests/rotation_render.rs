@@ -8,7 +8,7 @@ fn exported_rotated_text_matches_quarter_turn_pixels_and_crop_translation() {
     let image = Image::solid(200, 200, [255; 4]);
     let object = Object {
         rotation: 0.,
-        fill: None,
+        fill: Vec::new(),
         id: 1,
         style: shotoshot_core::Style {
             color: [0, 0, 0],
@@ -26,11 +26,11 @@ fn exported_rotated_text_matches_quarter_turn_pixels_and_crop_translation() {
         max: Point { x: 180., y: 180. },
     };
     let normal = renderer
-        .export(&image, None, std::slice::from_ref(&object), crop)
+        .export(&image, &[], std::slice::from_ref(&object), crop)
         .unwrap();
     let mut rotated = object;
     rotated.rotation = std::f64::consts::FRAC_PI_2;
-    let turned = renderer.export(&image, None, &[rotated], crop).unwrap();
+    let turned = renderer.export(&image, &[], &[rotated], crop).unwrap();
     let dark_bounds = |image: &Image| {
         let mut bounds = Rect {
             min: Point { x: 1e6, y: 1e6 },

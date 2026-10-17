@@ -1,4 +1,4 @@
-use crate::{Point, Rect, rotate_point, segment_distance};
+use crate::{Paint, Point, Rect, coat_seen, remap_walls, rotate_point, segment_distance};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Style {
@@ -50,11 +50,26 @@ pub struct Object {
     pub id: u64,
     pub shape: Shape,
     pub style: Style,
-    /// Opaque interior of a closed shape, drawn under its outline; ignored elsewhere.
-    /// Not part of `Style`: the brush in hand never fills what it draws.
-    pub fill: Option<[u8; 3]>,
+    /// Opaque coats of a closed shape's inside, bottom first, drawn under its outline;
+    /// ignored elsewhere. Not part of `Style`: the brush in hand never fills what it draws.
+    pub fill: Vec<Paint>,
 }
 impl Object {
+    /// A rectangle or an ellipse: the shapes the bucket fills and whose outline stops it.
+    pub fn closed(&self) -> bool {
+        matches!(self.shape, Shape::Rectangle(_) | Shape::Ellipse(_))
+    }
+    /// The coat of this shape's fill seen at `p`, if any; `objects` is the pile it is in.
+    pub fn coat_seen(&self, p: Point, objects: &[Object]) -> Option<usize> {
+        if self.fill.is_empty() || !self.contains(p) {
+            return None;
+        }
+        let floor = objects
+            .iter()
+            .position(|o| o.id == self.id)
+            .map_or(objects.len(), |index| index + 1);
+        coat_seen(&self.fill, p, objects, floor)
+    }
     /// How far each rendered end reaches past its point: a round cap, none for a filled head.
     pub fn end_caps(&self) -> (f64, f64) {
         match self.shape {
@@ -240,7 +255,7 @@ impl Object {
     }
     pub fn hit(&self, p: Point, tolerance: f64, objects: &[Object]) -> bool {
         // A filled interior is solid to the eye, so it is grabbed like the outline.
-        (self.fill.is_some() && self.contains(p)) || self.on_ink(p, tolerance, objects)
+        self.coat_seen(p, objects).is_some() || self.on_ink(p, tolerance, objects)
     }
     /// On what the object draws: its outline, stroke, arrow head or text box. `tolerance`
     /// widens a rectangle from its centre line and every other shape from its drawn edge.
@@ -282,13 +297,16 @@ impl Object {
     }
 }
 /// Numbers `objects` `first`, `first + 1`… in pile order, the order a saved scene stores
-/// them in. An attachment follows its target's new number; one whose target is not among
-/// `objects` is dropped, so callers resolve such ends first (`prepare_transform`).
-pub fn renumber(objects: &mut [Object], first: u64) {
+/// them in. An attachment or a wall follows its target's new number; one whose target is not
+/// among `objects` is dropped, so callers resolve such arrow ends first (`prepare_transform`).
+/// `background` holds the capture's coats, whose walls are among `objects`.
+pub fn renumber(objects: &mut [Object], background: &mut [Paint], first: u64) {
     let old: Vec<u64> = objects.iter().map(|o| o.id).collect();
     let new = |id: u64| Some(first + old.iter().position(|o| *o == id)? as u64);
+    remap_walls(background, new);
     for (index, object) in objects.iter_mut().enumerate() {
         object.id = first + index as u64;
+        remap_walls(&mut object.fill, new);
         if let Shape::Arrow {
             start_attach,
             end_attach,

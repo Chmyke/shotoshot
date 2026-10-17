@@ -364,17 +364,17 @@ fn clearing_removes_every_object_and_the_background_in_one_undo_step() {
     editor.fill_at(p(200., 200.), false);
     assert_eq!(editor.objects().len(), 2);
     assert!(
-        editor.background().is_some(),
+        !editor.background().is_empty(),
         "the bucket painted the background"
     );
     editor.clear();
     assert!(editor.objects().is_empty());
-    assert_eq!(editor.background(), None);
+    assert!(editor.background().is_empty());
     editor.undo();
     assert_eq!(editor.objects().len(), 2, "one undo brings everything back");
-    assert!(editor.background().is_some());
+    assert!(!editor.background().is_empty());
     editor.redo();
-    assert!(editor.objects().is_empty() && editor.background().is_none());
+    assert!(editor.objects().is_empty() && editor.background().is_empty());
     // Nothing to clear records no step: the next undo is still the clear itself.
     editor.clear();
     editor.undo();

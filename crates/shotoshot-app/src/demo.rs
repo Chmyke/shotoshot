@@ -83,7 +83,7 @@ pub fn render_demo() -> Result<()> {
     let renderer = Renderer::new()?;
     let output = renderer.export(
         &image,
-        None,
+        &[],
         editor.objects(),
         Rect {
             min: Point::default(),

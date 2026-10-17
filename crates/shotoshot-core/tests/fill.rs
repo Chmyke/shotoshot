@@ -23,8 +23,17 @@ fn with_rectangle() -> (Editor, u64) {
     (editor, id)
 }
 
+/// The colour of the top coat.
+fn top(coats: &[Paint]) -> Option<[u8; 3]> {
+    coats.last().map(|c| c.color)
+}
+
 fn fill_of(editor: &Editor, id: u64) -> Option<[u8; 3]> {
-    editor.objects().iter().find(|o| o.id == id).unwrap().fill
+    top(&editor.objects().iter().find(|o| o.id == id).unwrap().fill)
+}
+
+fn background(editor: &Editor) -> Option<[u8; 3]> {
+    top(editor.background())
 }
 
 fn colour_of(editor: &Editor, id: u64) -> [u8; 3] {
@@ -38,7 +47,7 @@ fn bucket_inside_a_rectangle_fills_that_rectangle_only() {
     editor.style.color = BLACK;
     editor.fill_at(p(200., 150.), false);
     assert_eq!(fill_of(&editor, id), Some(BLACK));
-    assert_eq!(editor.background(), None);
+    assert_eq!(background(&editor), None);
     assert_eq!(
         editor.objects()[0].style.color,
         RED,
@@ -51,7 +60,7 @@ fn bucket_outside_every_shape_fills_the_background() {
     let (mut editor, id) = with_rectangle();
     editor.style.color = BLACK;
     editor.fill_at(p(20., 20.), false);
-    assert_eq!(editor.background(), Some(BLACK));
+    assert_eq!(background(&editor), Some(BLACK));
     assert_eq!(fill_of(&editor, id), None);
 }
 
@@ -60,7 +69,7 @@ fn bucket_on_an_empty_capture_fills_the_background() {
     let mut editor = Editor::default();
     editor.style.color = BLACK;
     editor.fill_at(p(5., 5.), false);
-    assert_eq!(editor.background(), Some(BLACK));
+    assert_eq!(background(&editor), Some(BLACK));
 }
 
 #[test]
@@ -84,7 +93,7 @@ fn bucket_follows_the_real_outline_of_an_ellipse() {
         None,
         "the corner of its box is outside"
     );
-    assert_eq!(editor.background(), Some(editor.style.color));
+    assert_eq!(background(&editor), Some(editor.style.color));
     editor.fill_at(p(200., 200.), false);
     assert!(fill_of(&editor, id).is_some());
 }
@@ -124,8 +133,8 @@ fn pen_loops_arrows_and_text_are_not_fillable() {
     // Inside the loop and beside the arrow, the click reaches the capture behind them.
     for beside in [p(50., 50.), p(250., 70.)] {
         editor.fill_at(beside, false);
-        assert!(editor.background().is_some());
-        assert!(editor.objects().iter().all(|o| o.fill.is_none()));
+        assert!(background(&editor).is_some());
+        assert!(editor.objects().iter().all(|o| o.fill.is_empty()));
         editor.undo();
     }
 }
@@ -158,8 +167,8 @@ fn bucket_on_drawn_ink_recolours_it_and_fills_nothing() {
         assert_eq!(colour_of(&editor, id), RED);
         editor.fill_at(on, false);
         assert_eq!(colour_of(&editor, id), BLACK, "{on:?}");
-        assert_eq!(editor.background(), None, "{on:?}");
-        assert!(editor.objects().iter().all(|o| o.fill.is_none()));
+        assert_eq!(background(&editor), None, "{on:?}");
+        assert!(editor.objects().iter().all(|o| o.fill.is_empty()));
         editor.undo();
         assert_eq!(colour_of(&editor, id), RED, "one click, one undo step");
         editor.redo();
@@ -184,7 +193,7 @@ fn bucket_on_an_outline_recolours_it_and_inside_still_fills() {
         assert_eq!(colour_of(&editor, id), RED, "the inside, not the outline");
         assert_eq!(fill_of(&editor, id), Some(BLACK));
     }
-    assert_eq!(editor.background(), None);
+    assert_eq!(background(&editor), None);
 }
 
 #[test]
@@ -196,11 +205,11 @@ fn bucket_reaches_three_pixels_around_the_ink_and_no_further() {
     editor.style.color = BLACK;
     editor.fill_at(p(250., 55.), false);
     assert_eq!(colour_of(&editor, line), RED);
-    assert_eq!(editor.background(), Some(BLACK), "5 px away is the capture");
+    assert_eq!(background(&editor), Some(BLACK), "5 px away is the capture");
     editor.undo();
     editor.fill_at(p(250., 54.), false);
     assert_eq!(colour_of(&editor, line), BLACK);
-    assert_eq!(editor.background(), None);
+    assert_eq!(background(&editor), None);
 
     // The reach follows the screen scale, like every pick tolerance.
     editor.undo();
@@ -221,7 +230,7 @@ fn bucket_reach_starts_at_the_drawn_edge_of_a_thick_outline() {
     // The outline is drawn 10 px either side of x = 100.
     editor.fill_at(p(86., 150.), false);
     assert_eq!(colour_of(&editor, id), RED);
-    assert_eq!(editor.background(), Some(BLACK), "14 px out is the capture");
+    assert_eq!(background(&editor), Some(BLACK), "14 px out is the capture");
     editor.undo();
     editor.fill_at(p(88., 150.), false);
     assert_eq!(colour_of(&editor, id), BLACK, "2 px off the drawn edge");
@@ -248,7 +257,7 @@ fn the_same_colour_on_ink_changes_nothing_and_adds_no_history_step() {
     let mut editor = Editor::default();
     draw(&mut editor, Tool::Line, p(200., 50.), p(300., 50.));
     editor.fill_at(p(250., 50.), false);
-    assert_eq!(editor.background(), None);
+    assert_eq!(background(&editor), None);
     editor.undo();
     assert!(editor.objects().is_empty(), "the only step was the line");
 }
@@ -294,7 +303,7 @@ fn another_colour_recolours_and_the_same_colour_removes() {
             if at.x > 100. {
                 fill_of(e, id)
             } else {
-                e.background()
+                background(e)
             }
         };
         editor.style.color = BLACK;
@@ -316,17 +325,19 @@ fn clearing_removes_whatever_the_colour() {
     editor.style.color = RED;
     editor.fill_at(p(200., 150.), true);
     assert_eq!(fill_of(&editor, id), None);
-    assert_eq!(editor.background(), Some(BLACK), "one click, one fill");
+    assert_eq!(background(&editor), Some(BLACK), "one click, one fill");
     editor.fill_at(p(20., 20.), true);
-    assert_eq!(editor.background(), None);
+    assert_eq!(background(&editor), None);
 }
 
 #[test]
 fn clearing_through_a_hollow_shape_removes_the_background_seen_inside() {
-    let (mut editor, id) = with_rectangle();
+    let mut editor = Editor::default();
     editor.fill_at(p(20., 20.), false);
+    // Drawn after the coat: it does not cut it, so the coat shows through.
+    let id = draw(&mut editor, Tool::Rectangle, p(100., 100.), p(300., 200.));
     editor.fill_at(p(200., 150.), true);
-    assert_eq!(editor.background(), None);
+    assert_eq!(background(&editor), None);
     assert_eq!(fill_of(&editor, id), None);
 }
 
@@ -347,9 +358,9 @@ fn fills_are_undone_and_redone_one_click_at_a_time() {
     editor.fill_at(p(20., 20.), false);
 
     editor.undo();
-    assert_eq!(editor.background(), Some(BLACK));
+    assert_eq!(background(&editor), Some(BLACK));
     editor.undo();
-    assert_eq!(editor.background(), None);
+    assert_eq!(background(&editor), None);
     assert_eq!(fill_of(&editor, id), Some(BLACK));
     editor.undo();
     assert_eq!(fill_of(&editor, id), None);
@@ -363,7 +374,7 @@ fn fills_are_undone_and_redone_one_click_at_a_time() {
     editor.redo();
     editor.redo();
     assert_eq!(fill_of(&editor, id), Some(BLACK));
-    assert_eq!(editor.background(), Some(RED));
+    assert_eq!(background(&editor), Some(RED));
     assert!(!editor.can_redo());
 }
 
@@ -414,7 +425,7 @@ fn a_fill_survives_recolouring_the_outline_and_duplication() {
     let copied = editor.copy_selected();
     assert!(editor.paste_objects(&copied, p(20., 20.)));
     assert_eq!(editor.objects().len(), 2);
-    assert_eq!(editor.objects()[1].fill, Some(BLACK));
+    assert_eq!(top(&editor.objects()[1].fill), Some(BLACK));
 }
 
 #[test]
@@ -425,14 +436,14 @@ fn deleting_a_filled_shape_removes_its_fill_and_keeps_the_background() {
     editor.select_only(id);
     editor.delete_selection();
     assert!(editor.objects().is_empty());
-    assert!(editor.background().is_some());
+    assert!(background(&editor).is_some());
 }
 
 #[test]
 fn bucket_ignores_invalid_points_and_an_open_gesture() {
     let mut editor = Editor::default();
     editor.fill_at(p(f64::NAN, 0.), false);
-    assert_eq!(editor.background(), None);
+    assert_eq!(background(&editor), None);
     editor.tool = Tool::Rectangle;
     editor.begin(p(10., 10.), Modifiers::default());
     editor.update(p(50., 50.));
@@ -442,5 +453,196 @@ fn bucket_ignores_invalid_points_and_an_open_gesture() {
         "the unfinished shape is cancelled first"
     );
     assert!(editor.objects().is_empty());
-    assert_eq!(editor.background(), Some(editor.style.color));
+    assert_eq!(background(&editor), Some(editor.style.color));
+}
+
+/// A circle spanning (400, 100) to (600, 300), drawn in red.
+fn circle(editor: &mut Editor) -> u64 {
+    editor.style.color = RED;
+    // Circles grow from their centre.
+    draw(editor, Tool::Ellipse, p(500., 200.), p(600., 200.))
+}
+
+/// The capture's coat seen at `at`, if any.
+fn background_at(editor: &Editor, at: Point) -> Option<[u8; 3]> {
+    let coats = editor.background();
+    coat_seen(coats, at, editor.objects(), 0).map(|coat| coats[coat].color)
+}
+
+#[test]
+fn bucket_outside_a_hollow_shape_spares_its_inside() {
+    let mut editor = Editor::default();
+    let id = circle(&mut editor);
+    editor.style.color = BLACK;
+    editor.fill_at(p(50., 50.), false);
+    assert_eq!(background_at(&editor, p(50., 50.)), Some(BLACK));
+    assert_eq!(
+        background_at(&editor, p(500., 200.)),
+        None,
+        "the outline stops it"
+    );
+    assert_eq!(fill_of(&editor, id), None);
+    // The inside is the circle's own zone: the bucket fills it there.
+    editor.style.color = RED;
+    editor.fill_at(p(500., 200.), false);
+    assert_eq!(fill_of(&editor, id), Some(RED));
+}
+
+#[test]
+fn the_spared_inside_follows_its_shape() {
+    let mut editor = Editor::default();
+    let id = circle(&mut editor);
+    editor.fill_at(p(50., 50.), false);
+    editor.select_only(id);
+    editor.nudge(p(-300., 0.));
+    assert_eq!(
+        background_at(&editor, p(200., 200.)),
+        None,
+        "where it is now"
+    );
+    assert!(
+        background_at(&editor, p(500., 200.)).is_some(),
+        "where it was"
+    );
+}
+
+#[test]
+fn a_shape_drawn_after_a_coat_does_not_cut_it() {
+    let mut editor = Editor::default();
+    editor.style.color = BLACK;
+    editor.fill_at(p(50., 50.), false);
+    circle(&mut editor);
+    assert_eq!(background_at(&editor, p(500., 200.)), Some(BLACK));
+}
+
+#[test]
+fn repainting_keeps_the_old_colour_inside_a_shape_drawn_since() {
+    // The slate: a black board, a red circle on it, then the board turned red.
+    let mut editor = Editor::default();
+    editor.style.color = BLACK;
+    editor.fill_at(p(50., 50.), false);
+    circle(&mut editor);
+    editor.fill_at(p(50., 50.), false);
+    assert_eq!(background_at(&editor, p(50., 50.)), Some(RED));
+    assert_eq!(background_at(&editor, p(500., 200.)), Some(BLACK));
+    // Black again over the whole board: the red coat is hidden, so it goes.
+    editor.style.color = BLACK;
+    editor.fill_at(p(50., 50.), false);
+    assert_eq!(editor.background().len(), 2);
+    assert!(editor.background().iter().all(|c| c.color == BLACK));
+}
+
+#[test]
+fn repainting_the_same_zone_keeps_a_single_coat() {
+    let mut editor = Editor::default();
+    circle(&mut editor);
+    for color in [BLACK, RED, BLACK] {
+        editor.style.color = color;
+        editor.fill_at(p(50., 50.), false);
+    }
+    assert_eq!(editor.background().len(), 1);
+}
+
+#[test]
+fn filling_a_shape_spares_the_shapes_standing_in_it() {
+    let (mut editor, frame) = with_rectangle();
+    let inner = draw(&mut editor, Tool::Rectangle, p(150., 120.), p(200., 180.));
+    let far = circle(&mut editor);
+    editor.style.color = BLACK;
+    editor.fill_at(p(250., 150.), false);
+    let fill = &editor.objects()[0].fill;
+    assert_eq!(fill.len(), 1);
+    assert_eq!(fill[0].walls, [inner], "the circle never touched it");
+    let all = editor.objects();
+    assert!(all[0].coat_seen(p(250., 150.), all).is_some());
+    assert_eq!(all[0].coat_seen(p(175., 150.), all), None);
+    assert_eq!(fill_of(&editor, inner), None);
+    assert_eq!(fill_of(&editor, far), None);
+    assert_eq!(fill_of(&editor, frame), Some(BLACK));
+}
+
+#[test]
+fn a_shape_lowered_under_its_zone_is_spared_no_more() {
+    let (mut editor, _) = with_rectangle();
+    let inner = draw(&mut editor, Tool::Rectangle, p(150., 120.), p(200., 180.));
+    editor.fill_at(p(250., 150.), false);
+    editor.select_only(inner);
+    editor.lower_selection(true);
+    let all = editor.objects();
+    assert_eq!(all[0].id, inner);
+    assert!(
+        all[1].coat_seen(p(175., 150.), all).is_some(),
+        "the fill now covers it"
+    );
+}
+
+#[test]
+fn deleting_a_spared_shape_lets_the_coat_cover_its_place() {
+    let mut editor = Editor::default();
+    let id = circle(&mut editor);
+    editor.fill_at(p(50., 50.), false);
+    editor.select_only(id);
+    editor.delete_selection();
+    assert!(background_at(&editor, p(500., 200.)).is_some());
+    editor.undo();
+    assert_eq!(
+        background_at(&editor, p(500., 200.)),
+        None,
+        "it spares again"
+    );
+}
+
+#[test]
+fn clearing_inside_a_spared_shape_takes_nothing() {
+    let mut editor = Editor::default();
+    circle(&mut editor);
+    editor.fill_at(p(50., 50.), false);
+    assert_eq!(editor.fill_change(p(500., 200.), true), None);
+    editor.fill_at(p(500., 200.), true);
+    assert_eq!(editor.background().len(), 1);
+}
+
+#[test]
+fn clearing_peels_the_coat_seen_and_shows_the_one_below() {
+    let mut editor = Editor::default();
+    editor.style.color = BLACK;
+    editor.fill_at(p(50., 50.), false);
+    circle(&mut editor);
+    editor.fill_at(p(50., 50.), false);
+    editor.fill_at(p(50., 50.), true);
+    assert_eq!(background_at(&editor, p(50., 50.)), Some(BLACK));
+    editor.fill_at(p(50., 50.), true);
+    assert!(editor.background().is_empty());
+}
+
+#[test]
+fn copies_keep_the_walls_they_carry_and_drop_the_others() {
+    let (mut editor, frame) = with_rectangle();
+    let inner = draw(&mut editor, Tool::Rectangle, p(150., 120.), p(200., 180.));
+    editor.fill_at(p(250., 150.), false);
+
+    editor.selected = vec![frame, inner];
+    let both = editor.copy_selected();
+    assert!(editor.paste_objects(&both, p(0., 300.)));
+    let pasted = &editor.objects()[2..];
+    assert_eq!(pasted[0].fill[0].walls, [pasted[1].id]);
+
+    editor.select_only(frame);
+    let alone = editor.copy_selected();
+    assert!(editor.paste_objects(&alone, p(0., 300.)));
+    assert!(editor.objects().last().unwrap().fill[0].walls.is_empty());
+}
+
+#[test]
+fn renumbering_carries_the_walls_and_drops_the_missing() {
+    let mut editor = Editor::default();
+    let gone = circle(&mut editor);
+    let kept = draw(&mut editor, Tool::Rectangle, p(10., 10.), p(60., 60.));
+    editor.fill_at(p(300., 300.), false);
+    let mut background = editor.background().to_vec();
+    assert_eq!(background[0].walls, [gone, kept]);
+    let mut objects = editor.objects()[1..].to_vec();
+    renumber(&mut objects, &mut background, 1);
+    assert_eq!(objects[0].id, 1);
+    assert_eq!(background[0].walls, [1]);
 }

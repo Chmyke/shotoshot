@@ -580,7 +580,7 @@ mod tests {
         let layer = Layer::new(std::ptr::null(), -32000, -32000, 400, 300).unwrap();
         let shape = Object {
             rotation: 0.,
-            fill: None,
+            fill: Vec::new(),
             id: 0,
             style: Style::default(),
             shape: Shape::Rectangle(Rect {

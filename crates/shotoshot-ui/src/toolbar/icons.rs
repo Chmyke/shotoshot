@@ -198,7 +198,7 @@ pub fn glyph<C: Canvas>(
         Action::Tool(Tool::Arrow) => {
             let arrow = shotoshot_core::Object {
                 rotation: 0.,
-                fill: None,
+                fill: Vec::new(),
                 id: 0,
                 style: shotoshot_core::Style {
                     color: foreground,

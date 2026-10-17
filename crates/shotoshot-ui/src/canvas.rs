@@ -42,6 +42,14 @@ pub trait Canvas {
     /// Size of the drawable area.
     fn size(&self) -> Point;
     fn fill_rect(&mut self, r: Rect, ink: Ink) -> Result<(), Self::Error>;
+    /// `r` filled except inside the closed polygons of `holes`, which may overlap: a coat
+    /// of the capture and the shapes it spares.
+    fn fill_rect_except(
+        &mut self,
+        r: Rect,
+        holes: &[Vec<Point>],
+        ink: Ink,
+    ) -> Result<(), Self::Error>;
     fn stroke_rect(&mut self, r: Rect, ink: Ink, width: f64) -> Result<(), Self::Error>;
     fn fill_round_rect(&mut self, r: Rect, radius: f64, ink: Ink) -> Result<(), Self::Error>;
     fn stroke_round_rect(

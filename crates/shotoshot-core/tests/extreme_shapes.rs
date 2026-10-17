@@ -6,7 +6,7 @@ fn point(x: f64, y: f64) -> Point {
 fn ellipse(x: f64, y: f64) -> Object {
     Object {
         rotation: 0.,
-        fill: None,
+        fill: Vec::new(),
         id: 42,
         shape: Shape::Ellipse(Rect {
             min: point(-x, -y),
@@ -21,7 +21,7 @@ fn ellipse(x: f64, y: f64) -> Object {
 fn arrow(length: f64) -> Object {
     Object {
         rotation: 0.,
-        fill: None,
+        fill: Vec::new(),
         id: 42,
         shape: Shape::Arrow {
             start: point(0., 0.),
@@ -146,7 +146,7 @@ fn pen_smoothing_preserves_endpoints_bounds_and_straight_lines() {
     ] {
         let o = Object {
             rotation: 0.,
-            fill: None,
+            fill: Vec::new(),
             id: 1,
             shape: Shape::Stroke {
                 widths: Vec::new(),

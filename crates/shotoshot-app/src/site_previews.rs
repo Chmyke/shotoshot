@@ -1151,7 +1151,7 @@ fn desktop_notes_film(desktop: &NotesDesktop, folder: &Path) -> Result<()> {
     }
     if objects[..ZONES.len()]
         .iter()
-        .any(|zone| zone.fill.is_none())
+        .any(|zone| zone.fill.is_empty())
     {
         return Err(fail("the bucket did not fill a zone"));
     }
@@ -1178,7 +1178,7 @@ fn desktop_notes_film(desktop: &NotesDesktop, folder: &Path) -> Result<()> {
     let notes = Gathered {
         objects: editor.objects().to_vec(),
         last_id: editor.last_id(),
-        background: editor.background(),
+        background: editor.background().to_vec(),
     };
     let renderer = Renderer::with(Backend::Software, false)?;
     let baked = bake::render_screens(&renderer, wallpaper, &notes, &screens)?

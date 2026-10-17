@@ -1539,6 +1539,65 @@ fn windows_ending_its_session_writes_the_board_and_keeps_it_open() {
 }
 
 #[test]
+fn a_google_search_and_the_capture_shortcut_keep_the_capture_open() {
+    let _com = ComApartment::new().unwrap();
+    unsafe {
+        let mut session = Session::new(Image::solid(1000, 700, [230, 230, 230, 255])).unwrap();
+        session.capture.region = Rect::new(Point { x: 100., y: 100. }, Point { x: 600., y: 400. });
+        session.capture.selecting = false;
+        session
+            .capture
+            .editor
+            .add_text(Point { x: 200., y: 200. }, "Keep me".into());
+        let (state, hwnd) = app_window(w!("Shotoshot.Test.GoogleKeeps"), session);
+        let (objects, image) = {
+            let app = state.borrow();
+            let s = app.session.as_ref().unwrap();
+            (
+                s.capture.editor.objects().to_vec(),
+                s.capture.image.pixels.as_ptr(),
+            )
+        };
+        assert_eq!(objects.len(), 1);
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(Ok("lens-page.html".to_string())).unwrap();
+        {
+            let mut app = state.borrow_mut();
+            app.google_search = Some(rx);
+            app.session.as_mut().unwrap().capture.searching = true;
+        }
+        let mut opened = None;
+        state.borrow_mut().finish_google_search(hwnd, |_, page| {
+            opened = Some(page.to_path_buf());
+            true
+        });
+        assert_eq!(
+            opened.as_deref(),
+            Some(std::path::Path::new("lens-page.html"))
+        );
+        let keeps = |why: &str| {
+            let app = state.borrow();
+            let s = app.session.as_ref().expect(why);
+            assert!(!s.capture.searching, "{why}");
+            assert_eq!(s.capture.editor.objects(), objects, "{why}");
+            assert_eq!(s.capture.image.pixels.as_ptr(), image, "{why}");
+        };
+        keeps("the capture stays open behind the browser");
+        assert!(state.borrow().google_search.is_none());
+        // The resident forwards the capture shortcut to a capture still open: it comes back.
+        send(hwnd, CAPTURE_MESSAGE, 0, 0, 0);
+        keeps("the shortcut brings the same capture back");
+        state.borrow_mut().session = None;
+        DestroyWindow(hwnd).unwrap();
+        UnregisterClassW(
+            w!("Shotoshot.Test.GoogleKeeps"),
+            Some(GetModuleHandleW(None).unwrap().into()),
+        )
+        .unwrap();
+    }
+}
+
+#[test]
 fn space_pan_modifier_lets_go_when_the_window_loses_the_pointer_or_the_foreground() {
     let _com = ComApartment::new().unwrap();
     unsafe {

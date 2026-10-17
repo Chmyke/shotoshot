@@ -62,7 +62,7 @@ pub(super) fn write_document(folder: &Path, session: &Session, screens: &[Screen
             })
             .collect(),
         last_id: session.capture.editor.last_id(),
-        background: session.capture.editor.background(),
+        background: session.capture.editor.background().to_vec(),
     };
     let mut board = bake::read_board(folder)?;
     board.scatter(&gathered, screens);

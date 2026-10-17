@@ -984,6 +984,16 @@ impl ApplicationHandler for Editor {
                 }
                 self.redraw();
             }
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Right,
+                ..
+            } => {
+                let p = self.capture.pointer;
+                if self.capture.secondary_down(p) {
+                    self.redraw();
+                }
+            }
             WindowEvent::MouseWheel { delta, .. } => {
                 let lines = match delta {
                     MouseScrollDelta::LineDelta(_, y) => y as f64,

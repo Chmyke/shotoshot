@@ -26,7 +26,7 @@ fn stroke(id: u64, highlight: bool) -> Object {
     Object {
         id,
         rotation: 0.,
-        fill: None,
+        fill: Vec::new(),
         style: Style {
             color: [255, 0, 0],
             width: 3.,
@@ -43,7 +43,7 @@ fn draw(renderer: &Renderer, objects: &[Object]) -> Image {
     renderer
         .export(
             &Image::solid(240, 180, [255; 4]),
-            None,
+            &[],
             objects,
             Rect {
                 min: p(0., 0.),

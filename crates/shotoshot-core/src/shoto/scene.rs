@@ -1,7 +1,8 @@
-//! ROLE: Version 1 of the scene text inside a `.shoto` file: frame, region and objects.
+//! ROLE: The scene text inside a `.shoto` file: frame, region and objects. Version 2 adds
+//! stacked coats and the shapes each spares (`Paint`); version 1 has one plain coat at most.
 //! INVARIANTS: `decode` gives back the scene `encode` wrote, and accepts nothing it does not
 //! fully understand: skipping an unknown field could drop a mask at the next save.
-use crate::{Attachment, Object, Point, Rect, Shape, Style};
+use crate::{Attachment, Object, Paint, Point, Rect, Shape, Style};
 use std::fmt::Write;
 
 /// Largest frame side, far above any desktop.
@@ -21,8 +22,8 @@ pub struct Scene {
     pub origin: (i32, i32),
     /// Selected region, in frame coordinates like the objects.
     pub region: Rect,
-    /// Solid colour shown in the region instead of the captured pixels.
-    pub background: Option<[u8; 3]>,
+    /// Coats laid over the captured pixels of the region, bottom first.
+    pub background: Vec<Paint>,
     /// In stacking order, which is ascending id order.
     pub objects: Vec<Object>,
     /// Highest id ever given; the editor continues above it.
@@ -51,14 +52,35 @@ impl Scene {
             && self.objects.windows(2).all(|pair| pair[0].id < pair[1].id)
             && self.objects.last().is_none_or(|o| o.id <= self.last_id)
             && self.objects.iter().all(|o| object_valid(o, &mut points))
+            && self.coats().all(|coat| {
+                coat.walls
+                    .iter()
+                    .all(|w| self.objects.binary_search_by_key(w, |o| o.id).is_ok())
+            })
     }
-    /// The version 1 text of this scene, as written inside a `.shoto` file.
+    /// The lowest format version that holds this scene: 2 once a zone has more than one coat
+    /// or a coat spares a shape, so simpler files still open in an earlier Shotoshot.
+    pub fn version(&self) -> u32 {
+        let plain = |coats: &[Paint]| coats.len() <= 1 && coats.iter().all(|c| c.walls.is_empty());
+        if plain(&self.background) && self.objects.iter().all(|o| plain(&o.fill)) {
+            1
+        } else {
+            2
+        }
+    }
+    fn coats(&self) -> impl Iterator<Item = &Paint> {
+        self.background
+            .iter()
+            .chain(self.objects.iter().flat_map(|o| &o.fill))
+    }
+    /// The text of this scene, as written inside a `.shoto` file under `version()`.
     pub fn to_text(&self) -> String {
         self.encode()
     }
-    /// A scene read back from `to_text`; `None` for anything not fully understood.
-    pub fn from_text(text: &str) -> Option<Self> {
-        decode(text)
+    /// A scene read back from `to_text` written under `version`; `None` for anything not
+    /// fully understood.
+    pub fn from_text(text: &str, version: u32) -> Option<Self> {
+        decode(text, version)
     }
     pub(super) fn encode(&self) -> String {
         let mut out = String::new();
@@ -72,8 +94,10 @@ impl Scene {
             r.min.x, r.min.y, r.max.x, r.max.y
         );
         let _ = writeln!(out, "last {}", self.last_id);
-        if let Some([r, g, b]) = self.background {
-            let _ = writeln!(out, "background {r:02x}{g:02x}{b:02x}");
+        if !self.background.is_empty() {
+            out.push_str("background ");
+            let _ = write_coats(&mut out, &self.background);
+            out.push('\n');
         }
         for object in &self.objects {
             let _ = encode_object(&mut out, object);
@@ -162,8 +186,9 @@ fn encode_object(out: &mut String, object: &Object) -> std::fmt::Result {
         out,
         "object id={id} kind={kind} color={r:02x}{g:02x}{b:02x} width={width} rotation={rotation}"
     )?;
-    if let Some([r, g, b]) = fill {
-        write!(out, " fill={r:02x}{g:02x}{b:02x}")?;
+    if !fill.is_empty() {
+        out.push_str(" fill=");
+        write_coats(out, fill)?;
     }
     match shape {
         Shape::Rectangle(r) | Shape::Ellipse(r) => {
@@ -219,8 +244,24 @@ fn encode_object(out: &mut String, object: &Object) -> std::fmt::Result {
     out.push('\n');
     Ok(())
 }
+/// `rrggbb` per coat, bottom first, separated by `;`; a coat that spares shapes adds `/`
+/// and their ids separated by `,`.
+fn write_coats(out: &mut String, coats: &[Paint]) -> std::fmt::Result {
+    for (i, Paint { color, walls }) in coats.iter().enumerate() {
+        let [r, g, b] = color;
+        write!(
+            out,
+            "{}{r:02x}{g:02x}{b:02x}",
+            if i == 0 { "" } else { ";" }
+        )?;
+        for (j, wall) in walls.iter().enumerate() {
+            write!(out, "{}{wall}", if j == 0 { "/" } else { "," })?;
+        }
+    }
+    Ok(())
+}
 
-pub(super) fn decode(text: &str) -> Option<Scene> {
+pub(super) fn decode(text: &str, version: u32) -> Option<Scene> {
     let mut lines = text.strip_suffix('\n')?.split('\n').peekable();
     let [width, height] = record(lines.next()?, "frame")?;
     let [x, y] = record(lines.next()?, "origin")?;
@@ -234,25 +275,49 @@ pub(super) fn decode(text: &str) -> Option<Scene> {
             min: pair(number(x0)?, number(y0)?),
             max: pair(number(x1)?, number(y1)?),
         },
-        background: None,
+        background: Vec::new(),
         objects: Vec::new(),
         last_id: last_id.parse().ok()?,
     };
-    if let Some(color) = lines
+    let mut points = 0;
+    if let Some(text) = lines
         .peek()
         .and_then(|line| line.strip_prefix("background "))
     {
-        scene.background = Some(hex(color)?.try_into().ok()?);
+        scene.background = coats(text, version, &mut points)?;
         lines.next();
     }
-    let mut points = 0;
     for line in lines {
         if scene.objects.len() == MAX_OBJECTS {
             return None;
         }
-        scene.objects.push(decode_object(line, &mut points)?);
+        scene
+            .objects
+            .push(decode_object(line, version, &mut points)?);
     }
     scene.valid().then_some(scene)
+}
+/// What `write_coats` wrote; version 1 knows a single coat that spares nothing.
+fn coats(text: &str, version: u32, points: &mut usize) -> Option<Vec<Paint>> {
+    let coats: Vec<Paint> = list(text, ';', points)?
+        .map(|coat| {
+            let (color, walls) = match coat.split_once('/') {
+                Some((color, walls)) => (
+                    color,
+                    list(walls, ',', points)?
+                        .map(|id| id.parse().ok())
+                        .collect::<Option<_>>()?,
+                ),
+                None => (coat, Vec::new()),
+            };
+            Some(Paint {
+                color: hex(color)?.try_into().ok()?,
+                walls,
+            })
+        })
+        .collect::<Option<_>>()?;
+    let plain = coats.len() == 1 && coats[0].walls.is_empty();
+    (version >= 2 || plain).then_some(coats)
 }
 
 /// The `N` fields of the line `name field field…`.
@@ -297,9 +362,13 @@ fn attachment(text: &str) -> Option<Attachment> {
     })
 }
 /// Splits a list whose entry count is checked against the scene budget before any allocation.
-fn list<'a>(text: &'a str, points: &mut usize) -> Option<std::str::Split<'a, char>> {
-    *points += text.bytes().filter(|b| *b == b';').count() + 1;
-    (*points <= MAX_POINTS).then(|| text.split(';'))
+fn list<'a>(
+    text: &'a str,
+    separator: char,
+    points: &mut usize,
+) -> Option<std::str::Split<'a, char>> {
+    *points += text.chars().filter(|c| *c == separator).count() + 1;
+    (*points <= MAX_POINTS).then(|| text.split(separator))
 }
 /// Bytes written as pairs of hexadecimal digits.
 fn hex(text: &str) -> Option<Vec<u8>> {
@@ -321,7 +390,7 @@ impl<'a> Fields<'a> {
     }
 }
 
-fn decode_object(line: &str, points: &mut usize) -> Option<Object> {
+fn decode_object(line: &str, version: u32, points: &mut usize) -> Option<Object> {
     let fields = line.strip_prefix("object ")?.split(' ');
     let mut f = Fields(fields.map(|f| f.split_once('=')).collect::<Option<_>>()?);
     let id = f.take("id")?.parse().ok()?;
@@ -331,8 +400,8 @@ fn decode_object(line: &str, points: &mut usize) -> Option<Object> {
     };
     let rotation = number(f.take("rotation")?)?;
     let fill = match f.take("fill") {
-        Some(color) => Some(hex(color)?.try_into().ok()?),
-        None => None,
+        Some(text) => coats(text, version, points)?,
+        None => Vec::new(),
     };
     let rect = |text| {
         numbers(text).map(|[x0, y0, x1, y1]| Rect {
@@ -358,11 +427,13 @@ fn decode_object(line: &str, points: &mut usize) -> Option<Object> {
         },
         "stroke" => Shape::Stroke {
             highlight: flag(f.take("highlight")?)?,
-            points: list(f.take("points")?, points)?
+            points: list(f.take("points")?, ';', points)?
                 .map(point)
                 .collect::<Option<_>>()?,
             widths: match f.take("widths") {
-                Some(text) => list(text, points)?.map(number).collect::<Option<_>>()?,
+                Some(text) => list(text, ';', points)?
+                    .map(number)
+                    .collect::<Option<_>>()?,
                 None => Vec::new(),
             },
         },
@@ -400,7 +471,7 @@ pub(super) mod tests {
             id,
             shape,
             style: Style { color, width },
-            fill: None,
+            fill: Vec::new(),
         }
     }
     fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Rect {
@@ -428,7 +499,7 @@ pub(super) mod tests {
         let from = pair(1., 2.);
         let to = pair(300., 400.125);
         let filled = Object {
-            fill: Some(blue),
+            fill: vec![Paint::solid(blue)],
             ..object(2, 0.5, [0; 3], 1., Shape::Ellipse(rect(-5.5, 0., 40., 30.)))
         };
         Scene {
@@ -436,7 +507,7 @@ pub(super) mod tests {
             height: 1080,
             origin: (-1920, 0),
             region: rect(100.5, 200., 900., 700.25),
-            background: Some([28, 31, 40]),
+            background: vec![Paint::solid([28, 31, 40])],
             objects: vec![
                 object(1, 0., red, 3., Shape::Rectangle(rect(10., 20., 110., 220.))),
                 filled,
@@ -510,8 +581,14 @@ object id=9 kind=text color=ed4f5c width=3 rotation=1.25 at=50,60 size=24 extent
 
     #[test]
     fn version_1_text_is_frozen() {
+        assert_eq!(sample().version(), 1);
         assert_eq!(sample().encode(), VERSION_1);
-        assert_eq!(decode(VERSION_1), Some(sample()));
+        assert_eq!(decode(VERSION_1, 1), Some(sample()));
+        assert_eq!(
+            decode(VERSION_1, 2),
+            Some(sample()),
+            "version 2 reads it unchanged"
+        );
     }
     #[test]
     fn awkward_numbers_come_back_exactly() {
@@ -522,7 +599,7 @@ object id=9 kind=text color=ed4f5c width=3 rotation=1.25 at=50,60 size=24 extent
             widths: values.iter().map(|v| v.abs()).collect(),
             highlight: false,
         };
-        let back = decode(&scene.encode()).unwrap();
+        let back = decode(&scene.encode(), 1).unwrap();
         assert_eq!(back, scene);
         let Shape::Stroke { points, .. } = &back.objects[4].shape else {
             panic!("stroke expected");
@@ -536,10 +613,10 @@ object id=9 kind=text color=ed4f5c width=3 rotation=1.25 at=50,60 size=24 extent
         let scene = Scene {
             objects: Vec::new(),
             last_id: 0,
-            background: None,
+            background: Vec::new(),
             ..sample()
         };
-        assert_eq!(decode(&scene.encode()), Some(scene));
+        assert_eq!(decode(&scene.encode(), 1), Some(scene));
     }
     #[test]
     fn anything_not_fully_understood_is_refused() {
@@ -602,10 +679,10 @@ object id=9 kind=text color=ed4f5c width=3 rotation=1.25 at=50,60 size=24 extent
         for (from, to) in edits {
             assert!(VERSION_1.contains(from), "{from:?} is not in the reference");
             let text = VERSION_1.replacen(from, to, 1);
-            assert_eq!(decode(&text), None, "{from:?} replaced by {to:?}");
+            assert_eq!(decode(&text, 1), None, "{from:?} replaced by {to:?}");
         }
-        assert_eq!(decode(VERSION_1.trim_end()), None);
-        assert_eq!(decode(""), None);
+        assert_eq!(decode(VERSION_1.trim_end(), 1), None);
+        assert_eq!(decode("", 1), None);
     }
     #[test]
     fn sizes_are_refused_before_they_are_allocated() {
@@ -615,30 +692,113 @@ object id=9 kind=text color=ed4f5c width=3 rotation=1.25 at=50,60 size=24 extent
             .map(|id| format!("object id={id} {ellipse}\n"))
             .collect();
         let last = MAX_OBJECTS + 1;
-        assert_eq!(decode(&format!("{head}last {last}\n{crowd}")), None);
+        assert_eq!(decode(&format!("{head}last {last}\n{crowd}"), 1), None);
         let path = "0,0;".repeat(MAX_POINTS) + "0,0";
         let stroke = "object id=1 kind=stroke color=000000 width=1 rotation=0 highlight=0";
         assert_eq!(
-            decode(&format!("{head}last 1\n{stroke} points={path}\n")),
+            decode(&format!("{head}last 1\n{stroke} points={path}\n"), 1),
             None
         );
         let long = "61".repeat(MAX_TEXT + 1);
         let text = "object id=1 kind=text color=000000 width=1 rotation=0 at=0,0 size=24";
         assert_eq!(
-            decode(&format!("{head}last 1\n{text} extent=1,1 text={long}\n")),
+            decode(&format!("{head}last 1\n{text} extent=1,1 text={long}\n"), 1),
             None
         );
+        let walls = (1..=MAX_POINTS + 1)
+            .map(|_| "1")
+            .collect::<Vec<_>>()
+            .join(",");
+        let filled = "object id=1 kind=ellipse color=000000 width=1 rotation=0 rect=0,0,1,1";
+        assert_eq!(
+            decode(&format!("{head}last 1\n{filled} fill=000000/{walls}\n"), 2),
+            None,
+            "walls count against the same budget"
+        );
+    }
+    /// Version 2 as it was first written: coats stacked on the capture and in a shape, each
+    /// sparing the closed shapes above its zone. Files with this text exist: it never changes.
+    const VERSION_2: &str = "\
+frame 1920 1080
+origin -1920 0
+region 100.5 200 900 700.25
+last 3
+background 1c1f28;ffffff/1,3
+object id=1 kind=rectangle color=ed4f5c width=3 rotation=0 fill=102030/3;00ff00 rect=10,20,110,220
+object id=3 kind=ellipse color=000000 width=1 rotation=0.5 rect=-5.5,0,40,30
+";
+    fn layered() -> Scene {
+        let coat = |color, walls: &[u64]| Paint {
+            color,
+            walls: walls.to_vec(),
+        };
+        Scene {
+            background: vec![coat([28, 31, 40], &[]), coat([255; 3], &[1, 3])],
+            objects: vec![
+                Object {
+                    fill: vec![coat([16, 32, 48], &[3]), coat([0, 255, 0], &[])],
+                    ..object(
+                        1,
+                        0.,
+                        [237, 79, 92],
+                        3.,
+                        Shape::Rectangle(rect(10., 20., 110., 220.)),
+                    )
+                },
+                object(3, 0.5, [0; 3], 1., Shape::Ellipse(rect(-5.5, 0., 40., 30.))),
+            ],
+            last_id: 3,
+            ..sample()
+        }
+    }
+    #[test]
+    fn version_2_text_is_frozen() {
+        assert_eq!(layered().version(), 2);
+        assert_eq!(layered().encode(), VERSION_2);
+        assert_eq!(decode(VERSION_2, 2), Some(layered()));
+    }
+    #[test]
+    fn version_1_knows_one_plain_coat_only() {
+        assert_eq!(decode(VERSION_2, 1), None);
+        let one_wall = VERSION_1.replacen("fill=102030", "fill=102030/1", 1);
+        assert_eq!(decode(&one_wall, 1), None);
+        assert!(decode(&one_wall, 2).is_some());
+        let two_coats = VERSION_1.replacen("background 1c1f28", "background 1c1f28;1c1f28", 1);
+        assert_eq!(decode(&two_coats, 1), None);
+        assert!(decode(&two_coats, 2).is_some());
+    }
+    #[test]
+    fn coats_not_fully_understood_are_refused() {
+        for (from, to) in [
+            ("ffffff/1,3", "ffffff/1,4"),
+            ("ffffff/1,3", "ffffff/"),
+            ("ffffff/1,3", "ffffff/1,,3"),
+            ("ffffff/1,3", "ffffff/1;3"),
+            ("ffffff/1,3", "ffffff/-1"),
+            ("ffffff/1,3", "ffffff/x"),
+            ("ffffff/1,3", "ffffff/1/3"),
+            ("1c1f28;", "1c1f28;;"),
+            ("1c1f28;", ";"),
+            ("fill=102030/3;00ff00", "fill=102030/3;"),
+            ("fill=102030/3;00ff00", "fill="),
+        ] {
+            assert!(VERSION_2.contains(from), "{from:?} is not in the reference");
+            let text = VERSION_2.replacen(from, to, 1);
+            assert_eq!(decode(&text, 2), None, "{from:?} replaced by {to:?}");
+        }
     }
     #[test]
     fn an_invalid_scene_is_recognised_before_it_is_written() {
         assert!(sample().valid());
-        let broken: [fn(&mut Scene); 6] = [
+        let broken: [fn(&mut Scene); 8] = [
             |s| s.width = 0,
             |s| s.region.max.x = 5000.,
             |s| s.last_id = 3,
             |s| s.objects.swap(0, 1),
             |s| s.objects[0].style.width = f64::NAN,
             |s| s.objects[1].rotation = f64::INFINITY,
+            |s| s.background[0].walls.push(3),
+            |s| s.objects[1].fill[0].walls.push(10),
         ];
         for change in broken {
             let mut scene = sample();

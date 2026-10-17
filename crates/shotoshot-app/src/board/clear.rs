@@ -93,14 +93,14 @@ mod tests {
                 color: [1, 2, 3],
                 width: 2.,
             },
-            fill: None,
+            fill: Vec::new(),
         };
         let mut board = Board::default();
         board.scatter(
             &Gathered {
                 objects: vec![note.clone()],
                 last_id: 1,
-                background: Some([9, 9, 9]),
+                background: vec![shotoshot_core::Paint::solid([9, 9, 9])],
             },
             &[screen("present")],
         );
@@ -108,7 +108,7 @@ mod tests {
             &Gathered {
                 objects: vec![note],
                 last_id: 1,
-                background: None,
+                background: Vec::new(),
             },
             &[screen("unplugged")],
         );

@@ -98,10 +98,10 @@ mod tests {
                     color: [1, 2, 3],
                     width: 2.,
                 },
-                fill: None,
+                fill: Vec::new(),
             }],
             last_id: 4,
-            background: None,
+            background: Vec::new(),
         };
         let screens = vec![Screen {
             id: "left".into(),
@@ -162,10 +162,10 @@ mod tests {
                     color: [255, 0, 0],
                     width: 4.,
                 },
-                fill: None,
+                fill: Vec::new(),
             }],
             last_id: 1,
-            background: None,
+            background: Vec::new(),
         };
         let screens = vec![Screen {
             id: "one".into(),
@@ -223,12 +223,12 @@ mod tests {
                 color: [255, 255, 255],
                 width: 4.,
             },
-            fill: None,
+            fill: Vec::new(),
         };
         let gathered = Gathered {
             objects: vec![note(1, 40.), note(2, 340.)],
             last_id: 2,
-            background: None,
+            background: Vec::new(),
         };
         let left = Rect::new(Point::default(), Point { x: 300., y: 200. }).unwrap();
         let right = Rect::new(Point { x: 300., y: 0. }, Point { x: 600., y: 200. }).unwrap();

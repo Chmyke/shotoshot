@@ -136,7 +136,7 @@ const SHORTCUTS: [(&str, Action, u32, bool, bool); 25] = [
     ("Custom color · S", Action::CustomColor, 83, false, false),
     ("Eyedropper · I", Action::Eyedropper, 73, false, false),
     (
-        "Color a stroke, a shape or the background · G · Alt+click clears",
+        "Color a stroke, a shape or the background · G · Right-click or Alt+click clears",
         Action::Fill,
         71,
         false,
@@ -686,7 +686,7 @@ mod tests {
         let fill = row[eyedropper + 1];
         assert_eq!(fill.action, Action::Fill);
         assert_eq!(fill.bounds.min.y, row[eyedropper].bounds.min.y);
-        assert!(fill.label.contains("Alt+click"));
+        assert!(fill.label.contains("Right-click or Alt+click"));
         assert!(
             all.iter().all(|b| b.panel == 1 || b.action != Action::Fill),
             "not among the drawing tools"

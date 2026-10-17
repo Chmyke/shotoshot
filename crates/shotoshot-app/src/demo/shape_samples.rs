@@ -46,7 +46,7 @@ pub(super) fn render(path: &std::path::Path) -> Result<()> {
                     let center = Point { x, y: top + 170. };
                     objects.push(Object {
                         rotation: 0.,
-                        fill: None,
+                        fill: Vec::new(),
                         id: (row * 20 + index + 1) as u64,
                         shape: Shape::Ellipse(Rect {
                             min: center
@@ -65,7 +65,7 @@ pub(super) fn render(path: &std::path::Path) -> Result<()> {
                 }
                 objects.push(Object {
                     rotation: 0.,
-                    fill: None,
+                    fill: Vec::new(),
                     id: (row * 20 + 6) as u64,
                     shape: Shape::Ellipse(Rect {
                         min: Point {
@@ -86,7 +86,7 @@ pub(super) fn render(path: &std::path::Path) -> Result<()> {
                     };
                     objects.push(Object {
                         rotation: 0.,
-                        fill: None,
+                        fill: Vec::new(),
                         id: (row * 20 + 10 + index) as u64,
                         shape: Shape::Arrow {
                             start,
@@ -128,7 +128,7 @@ fn thick_samples(path: &std::path::Path) -> Result<()> {
     let objects = vec![
         Object {
             rotation: 0.,
-            fill: None,
+            fill: Vec::new(),
             id: 1,
             style,
             shape: Shape::Arrow {
@@ -141,7 +141,7 @@ fn thick_samples(path: &std::path::Path) -> Result<()> {
         },
         Object {
             rotation: 0.,
-            fill: None,
+            fill: Vec::new(),
             id: 2,
             style,
             shape: Shape::Stroke {

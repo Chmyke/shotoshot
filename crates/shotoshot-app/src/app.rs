@@ -436,7 +436,15 @@ impl App {
     fn start_capture(&mut self, hwnd: HWND) -> Result<()> {
         self.toast = None;
         self.instant.clear_feedback();
-        if self.session.is_some() || self.setup {
+        if self.session.is_some() {
+            // A capture left behind another application (Alt+Tab, Google search) comes back.
+            // The resident already allowed this process to take the foreground.
+            unsafe {
+                let _ = SetForegroundWindow(hwnd);
+            }
+            return Ok(());
+        }
+        if self.setup {
             return Ok(());
         }
         if !self.quit_after_capture {
@@ -449,6 +457,8 @@ impl App {
             }
             if let Some(window) = worker.request() {
                 self.activate_editor(window)?;
+            } else if let Some(window) = worker.active_window() {
+                unsafe { PostMessageW(Some(window), CAPTURE_MESSAGE, WPARAM(0), LPARAM(0))? };
             }
             return Ok(());
         }

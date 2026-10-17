@@ -37,7 +37,7 @@ fn layers(width: i32, height: i32, shapes: [(Shape, f32); 3]) -> Result<Layers> 
         shape_layer.object(
             &Object {
                 rotation: 0.,
-                fill: None,
+                fill: Vec::new(),
                 id: 0,
                 shape,
                 style: Style {

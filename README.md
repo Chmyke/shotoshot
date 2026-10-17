@@ -104,7 +104,7 @@ drawn keep theirs. Ctrl+Z undoes the whole stroke.
 | T | Text; click an existing text with this tool to edit it |
 | E | Eraser: pen and highlighter ink goes where the disc passes, other objects go whole; the wheel sizes the disc; Ctrl+Z brings everything back |
 | I | Eyedropper: pick a color and copy its hex code |
-| G | Bucket: each click recolors the stroke or outline under it, fills the rectangle or circle, or else the whole capture; Alt+click clears a fill |
+| G | Bucket: each click recolors the stroke or outline under it, fills the rectangle or circle, or else the whole capture, stopping at the outlines already drawn; right-click or Alt+click clears a fill |
 | F | Whole screen / back to the previous selection |
 | S / 1–6 | Color wheel / six quick colors |
 | Wheel | Stroke width; text size while typing it, with it selected or with the Text tool |

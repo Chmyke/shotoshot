@@ -143,7 +143,7 @@ pub fn render_screens(
         };
         pictures.push((
             screen.id.clone(),
-            renderer.export(frame, gathered.background, &objects, crop)?,
+            renderer.export(frame, &gathered.background, &objects, crop)?,
         ));
     }
     Ok(pictures)
@@ -816,10 +816,10 @@ mod tests {
                     color: [255, 0, 0],
                     width: 2.,
                 },
-                fill: Some([255, 0, 0]),
+                fill: vec![shotoshot_core::Paint::solid([255, 0, 0])],
             }],
             last_id: 1,
-            background: None,
+            background: Vec::new(),
         };
         let renderer =
             crate::render::Renderer::with(crate::render::Backend::Software, false).unwrap();

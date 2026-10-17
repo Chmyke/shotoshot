@@ -10,7 +10,7 @@ fn live_shapes_have_soft_corners_and_independently_sized_arrowheads() {
     layer.object(
         &Object {
             rotation: 0.,
-            fill: None,
+            fill: Vec::new(),
             id: 0,
             style: Style {
                 width: 8.,
@@ -34,7 +34,7 @@ fn live_shapes_have_soft_corners_and_independently_sized_arrowheads() {
     );
     let arrow = Object {
         rotation: 0.,
-        fill: None,
+        fill: Vec::new(),
         id: 0,
         style: Style {
             width: 5.,
@@ -84,7 +84,7 @@ fn fading_arrow_has_no_double_opacity_at_the_head_join() {
     for end in [Point { x: 220., y: 80. }, Point { x: 180., y: 130. }] {
         let arrow = Object {
             rotation: 0.,
-            fill: None,
+            fill: Vec::new(),
             id: 0,
             style: Style {
                 width: 10.,
@@ -198,7 +198,7 @@ fn native_layer_releases_input_without_removing_visible_annotation() {
     layer.object(
         &shotoshot_core::Object {
             rotation: 0.,
-            fill: None,
+            fill: Vec::new(),
             id: 1,
             shape: shotoshot_core::Shape::Rectangle(shotoshot_core::Rect {
                 min: Point { x: 20., y: 20. },

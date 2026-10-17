@@ -3,7 +3,7 @@
 //! INVARIANTS: Interface sizes are 96-DPI logical pixels times `Capture::ui_scale`;
 //! only the capture and its annotations are in raw pixels (`scale_tests`).
 use crate::{Canvas, Capture, Ink, region_handles, toolbar};
-use shotoshot_core::{FillChange, Object, Point, Rect, Shape, Tool, arrow_points};
+use shotoshot_core::{FillChange, Object, Paint, Point, Rect, Shape, Tool, arrow_points, paths};
 
 const ACCENT: Ink = Ink::solid([100, 170, 255]);
 const SHADE: Ink = Ink::with_alpha([0, 0, 0], 0.48);
@@ -30,24 +30,34 @@ impl Capture {
         }
     }
     /// All that lies under the annotations: the shade outside the region (the whole
-    /// frame before a selection) and, inside it, the solid background when there is one.
+    /// frame before a selection) and, inside it, the background's coats when there are any.
     pub fn draw_underlay<C: Canvas>(&self, canvas: &mut C) -> Result<(), C::Error> {
         let screen = self.screen();
         let Some(r) = self.region else {
             return canvas.fill_rect(screen, SHADE);
         };
         let preview = self.bucket_preview();
-        if let Some(background) = self.editor.background() {
-            // A click that would clear it already lets the capture show through.
-            let alpha = if preview == Some(FillChange::Background(None)) {
+        let objects = self.editor.objects();
+        let holes = |coat: &Paint| -> Vec<Vec<Point>> {
+            coat.holes(objects, 0)
+                .flat_map(|o| paths(o, objects))
+                .collect()
+        };
+        for (index, coat) in self.editor.background().iter().enumerate() {
+            // A click that would take it off already lets what is under it show through.
+            let alpha = if preview
+                == Some(FillChange::Remove {
+                    zone: None,
+                    coat: index,
+                }) {
                 1. - PREVIEW
             } else {
                 1.
             };
-            canvas.fill_rect(r, Ink::with_alpha(background, alpha))?;
+            canvas.fill_rect_except(r, &holes(coat), Ink::with_alpha(coat.color, alpha))?;
         }
-        if let Some(FillChange::Background(Some(color))) = preview {
-            canvas.fill_rect(r, Ink::with_alpha(color, PREVIEW))?;
+        if let Some(FillChange::Pour { zone: None, coat }) = &preview {
+            canvas.fill_rect_except(r, &holes(coat), Ink::with_alpha(coat.color, PREVIEW))?;
         }
         for outside in [
             Rect {
@@ -171,15 +181,17 @@ impl Capture {
                 o.style.color = color;
                 (index, o)
             }
-            Some(FillChange::Fill {
-                index,
-                fill: Some(color),
+            Some(FillChange::Pour {
+                zone: Some(index),
+                coat,
             }) => {
                 let mut o = resolved(&objects[index], objects);
-                o.fill = Some(color);
+                o.fill = vec![coat];
                 (index, o)
             }
-            Some(FillChange::Fill { index, fill: None }) => {
+            Some(FillChange::Remove {
+                zone: Some(index), ..
+            }) => {
                 return match self.editor.frame_of(objects[index].id) {
                     Some(frame) => dashed(canvas, frame.outline(3. * s), ACCENT, s),
                     None => Ok(()),

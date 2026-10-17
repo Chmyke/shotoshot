@@ -133,6 +133,22 @@ impl Capture {
         }
         Ok(None)
     }
+    /// A secondary press. With the bucket in hand it takes off the coat seen under the
+    /// pointer, whatever its colour, like Alt + click (Mickaël, 2026-10-17); it does nothing
+    /// else. True when it changed the document.
+    pub fn secondary_down(&mut self, p: Point) -> bool {
+        self.pointer = self.clamp(p);
+        if !self.bucket || !self.pointer_on_document() {
+            return false;
+        }
+        let f = self.to_frame(self.pointer);
+        if !self.region.is_some_and(|r| r.contains(f)) || self.editor.fill_change(f, true).is_none()
+        {
+            return false;
+        }
+        self.editor.fill_at(f, true);
+        true
+    }
     pub fn pointer_move<H: Host>(&mut self, host: &mut H, p: Point, modifiers: Modifiers) {
         let p = self.clamp(p);
         self.pointer = p;
@@ -557,6 +573,10 @@ mod tests {
 
     const BLACK: [u8; 3] = crate::toolbar::COLORS[5];
     const WHITE: [u8; 3] = crate::toolbar::COLORS[4];
+    /// The colour of the top coat.
+    fn top(coats: &[shotoshot_core::Paint]) -> Option<[u8; 3]> {
+        coats.last().map(|c| c.color)
+    }
     fn click(c: &mut Capture, host: &mut FakeHost, at: Point, m: Modifiers) -> Option<Action> {
         let action = c.pointer_down(host, at, m).unwrap();
         c.pointer_up(host, at, m);
@@ -580,9 +600,9 @@ mod tests {
             assert_eq!(click(&mut c, &mut host, zone, Modifiers::default()), None);
             assert!(c.bucket, "still in hand after {zone:?}");
         }
-        assert_eq!(c.editor.objects()[0].fill, Some(BLACK));
-        assert_eq!(c.editor.objects()[1].fill, Some(BLACK));
-        assert_eq!(c.editor.background(), Some(BLACK));
+        assert_eq!(top(&c.editor.objects()[0].fill), Some(BLACK));
+        assert_eq!(top(&c.editor.objects()[1].fill), Some(BLACK));
+        assert_eq!(top(c.editor.background()), Some(BLACK));
         assert!(c.editor.objects().len() == 2 && !host.captured);
 
         // The slate case: picking a tool puts the bucket down, then the press draws in white.
@@ -590,7 +610,7 @@ mod tests {
         c.action(&mut host, Action::Color(WHITE));
         assert!(!c.bucket);
         drag(&mut c, &mut host, p(500., 350.), p(560., 350.));
-        assert_eq!(c.editor.background(), Some(BLACK));
+        assert_eq!(top(c.editor.background()), Some(BLACK));
         assert_eq!(c.editor.objects().len(), 3);
     }
     #[test]
@@ -599,9 +619,9 @@ mod tests {
         c.action(&mut host, Action::Color(BLACK));
         c.action(&mut host, Action::Fill);
         click(&mut c, &mut host, p(200., 200.), Modifiers::default());
-        assert_eq!(c.editor.background(), Some(BLACK));
+        assert_eq!(top(c.editor.background()), Some(BLACK));
         click(&mut c, &mut host, p(200., 200.), Modifiers::default());
-        assert_eq!(c.editor.background(), None);
+        assert_eq!(top(c.editor.background()), None);
         assert!(c.bucket);
     }
     #[test]
@@ -612,9 +632,9 @@ mod tests {
         c.action(&mut host, Action::Color(BLACK));
         c.action(&mut host, Action::Fill);
         click(&mut c, &mut host, p(300., 200.), Modifiers::default());
-        assert_eq!(c.editor.objects()[0].fill, Some(BLACK));
+        assert_eq!(top(&c.editor.objects()[0].fill), Some(BLACK));
         assert_eq!(c.editor.objects().len(), 1, "the click drew nothing");
-        assert_eq!(c.editor.background(), None);
+        assert_eq!(top(c.editor.background()), None);
     }
     #[test]
     fn bucket_on_a_drawn_line_recolours_it_and_stays_in_hand() {
@@ -626,7 +646,7 @@ mod tests {
         assert_ne!(c.editor.objects()[0].style.color, BLACK);
         click(&mut c, &mut host, p(300., 200.), Modifiers::default());
         assert_eq!(c.editor.objects()[0].style.color, BLACK);
-        assert_eq!(c.editor.background(), None);
+        assert_eq!(top(c.editor.background()), None);
         assert!(c.bucket && c.editor.objects().len() == 1);
     }
     #[test]
@@ -645,7 +665,7 @@ mod tests {
             Modifiers::default(),
         );
         assert_eq!(pressed, Some(Action::Color(BLACK)), "pressed, not filled");
-        assert_eq!(c.editor.background(), None);
+        assert_eq!(top(c.editor.background()), None);
         for choosing in [
             Action::Color(BLACK),
             Action::CopyColor(BLACK),
@@ -677,7 +697,7 @@ mod tests {
         c.action(&mut host, Action::Fill);
         click(&mut c, &mut host, p(20., 20.), Modifiers::default());
         assert!(c.bucket);
-        assert_eq!(c.editor.background(), None);
+        assert_eq!(top(c.editor.background()), None);
         assert!(!c.editor.can_undo());
     }
     #[test]
@@ -685,15 +705,40 @@ mod tests {
         let (mut c, mut host) = selected();
         c.action(&mut host, Action::Fill);
         click(&mut c, &mut host, p(200., 200.), Modifiers::default());
-        assert!(c.editor.background().is_some());
+        assert!(top(c.editor.background()).is_some());
         c.action(&mut host, Action::Color(BLACK));
         let alt = Modifiers {
             alt: true,
             ..Modifiers::default()
         };
         click(&mut c, &mut host, p(200., 200.), alt);
-        assert_eq!(c.editor.background(), None);
+        assert_eq!(top(c.editor.background()), None);
         assert!(c.bucket);
+    }
+    #[test]
+    fn right_click_with_the_bucket_takes_the_colour_off() {
+        let (mut c, mut host) = selected();
+        c.action(&mut host, Action::Tool(Tool::Rectangle));
+        drag(&mut c, &mut host, p(200., 150.), p(400., 300.));
+        c.action(&mut host, Action::Color(BLACK));
+        c.action(&mut host, Action::Fill);
+        click(&mut c, &mut host, p(300., 200.), Modifiers::default());
+        click(&mut c, &mut host, p(500., 350.), Modifiers::default());
+        c.action(&mut host, Action::Color(WHITE));
+        assert!(
+            c.secondary_down(p(300., 200.)),
+            "whatever the colour in hand"
+        );
+        assert_eq!(top(&c.editor.objects()[0].fill), None);
+        assert!(c.secondary_down(p(500., 350.)));
+        assert_eq!(top(c.editor.background()), None);
+        assert!(c.bucket, "still in hand");
+        assert!(!c.secondary_down(p(500., 350.)), "nothing left to take off");
+        c.editor.undo();
+        assert!(!c.secondary_down(p(20., 20.)), "outside the region");
+        c.action(&mut host, Action::Tool(Tool::Arrow));
+        assert!(!c.secondary_down(p(500., 350.)), "the bucket is down");
+        assert_eq!(top(c.editor.background()), Some(BLACK));
     }
     #[test]
     fn region_handles_keep_resizing_under_an_armed_bucket() {
@@ -703,7 +748,7 @@ mod tests {
         drag(&mut c, &mut host, p(600., 400.), p(700., 500.));
         assert_eq!(c.region, Rect::new(p(100., 100.), p(700., 500.)));
         assert!(c.bucket);
-        assert_eq!(c.editor.background(), None);
+        assert_eq!(top(c.editor.background()), None);
     }
     #[test]
     fn armed_bucket_shows_on_its_button_with_a_cross_and_no_stroke_ring() {
@@ -740,7 +785,7 @@ mod tests {
             .unwrap();
         c.pointer_up(&mut host, p(500., 300.), Modifiers::default());
         assert_eq!(c.editor.objects()[0].rotation, 0.);
-        assert!(c.editor.background().is_some());
+        assert!(top(c.editor.background()).is_some());
     }
     #[test]
     fn wheel_is_inert_while_the_bucket_is_armed() {

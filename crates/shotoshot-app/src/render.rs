@@ -1,7 +1,7 @@
 //! ROLE: Shared Direct2D drawing for the overlay and flattened output.
 //! OWNER: Each capture owns one renderer; no rendering exists while resident.
 use crate::{Image, ImageExt};
-use shotoshot_core::{Object, Point, Rect, Shape, paths};
+use shotoshot_core::{Object, Paint, Point, Rect, Shape, paths};
 use shotoshot_ui::{Canvas, Ink, View};
 use windows::{
     Win32::{
@@ -384,6 +384,48 @@ impl Renderer {
         self.strokes.borrow_mut().retain_present(objects);
         self.annotation_range(target, objects, skip, 0..objects.len())
     }
+    /// The closed polygon through `points`.
+    fn polygon(&self, points: &[Point]) -> Result<ID2D1Geometry> {
+        unsafe {
+            let geometry = self.factory.CreatePathGeometry()?;
+            let sink = geometry.Open()?;
+            if let Some((first, rest)) = points.split_first() {
+                sink.BeginFigure(vector(*first), D2D1_FIGURE_BEGIN_FILLED);
+                for p in rest {
+                    sink.AddLine(vector(*p));
+                }
+                sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+            }
+            sink.Close()?;
+            Ok(geometry.into())
+        }
+    }
+    /// `area` filled with `brush` except inside the closed `holes`, which may overlap.
+    fn fill_except(
+        &self,
+        target: &ID2D1RenderTarget,
+        mut area: ID2D1Geometry,
+        holes: &[Vec<Point>],
+        brush: &ID2D1Brush,
+    ) -> Result<()> {
+        unsafe {
+            for hole in holes {
+                let rest = self.factory.CreatePathGeometry()?;
+                let sink = rest.Open()?;
+                area.CombineWithGeometry(
+                    &self.polygon(hole)?,
+                    D2D1_COMBINE_MODE_EXCLUDE,
+                    None,
+                    D2D1_DEFAULT_FLATTENING_TOLERANCE,
+                    &sink,
+                )?;
+                sink.Close()?;
+                area = rest.into();
+            }
+            target.FillGeometry(&area, brush, None);
+        }
+        Ok(())
+    }
     fn annotation_range(
         &self,
         target: &ID2D1RenderTarget,
@@ -393,7 +435,8 @@ impl Renderer {
     ) -> Result<()> {
         let mut strokes = self.strokes.borrow_mut();
         unsafe {
-            for o in &objects[range] {
+            for index in range {
+                let o = &objects[index];
                 if Some(o.id) == skip {
                     continue;
                 }
@@ -459,10 +502,10 @@ impl Renderer {
                         let sink = geometry.Open()?;
                         let arrow = matches!(o.shape, Shape::Arrow { .. });
                         let filled_head = arrow && path.first() == path.last();
-                        let fill = o.fill.filter(|_| !arrow);
+                        let fill = if arrow { &[][..] } else { &o.fill[..] };
                         sink.BeginFigure(
                             vector(*first),
-                            if filled_head || fill.is_some() {
+                            if filled_head || !fill.is_empty() {
                                 D2D1_FIGURE_BEGIN_FILLED
                             } else {
                                 D2D1_FIGURE_BEGIN_HOLLOW
@@ -477,9 +520,11 @@ impl Renderer {
                             D2D1_FIGURE_END_OPEN
                         });
                         sink.Close()?;
-                        if let Some(fill) = fill {
-                            let interior = target.CreateSolidColorBrush(&color(fill, 1.), None)?;
-                            target.FillGeometry(&geometry, &interior, None);
+                        for coat in fill {
+                            let interior =
+                                target.CreateSolidColorBrush(&color(coat.color, 1.), None)?;
+                            let holes = holes(coat, objects, index + 1);
+                            self.fill_except(target, geometry.clone().into(), &holes, &interior)?;
                         }
                         if filled_head {
                             target.FillGeometry(&geometry, &brush, None);
@@ -524,12 +569,12 @@ impl Renderer {
     pub fn end(&self) -> Result<()> {
         unsafe { self.dc.EndDraw(None, None) }
     }
-    /// The capture flattened with its annotations, cropped to `crop`. A `background`
-    /// replaces the captured pixels.
+    /// The capture flattened with its annotations, cropped to `crop`, the `background`'s
+    /// coats laid over the captured pixels.
     pub fn export(
         &self,
         image: &Image,
-        background: Option<[u8; 3]>,
+        background: &[Paint],
         objects: &[Object],
         crop: Rect,
     ) -> Result<Image> {
@@ -557,15 +602,17 @@ impl Renderer {
             let target = self
                 .factory
                 .CreateWicBitmapRenderTarget(&bitmap, &properties())?;
-            let source = match background {
-                Some(_) => None,
-                None => Some(self.bitmap(&target, image)?),
+            // A coat that spares nothing hides the captured pixels: no need to decode them.
+            let covered = background
+                .iter()
+                .any(|coat| coat.holes(objects, 0).next().is_none());
+            let source = if covered {
+                None
+            } else {
+                Some(self.bitmap(&target, image)?)
             };
             target.BeginDraw();
             target.SetTransform(&Matrix3x2::translation(-(left as f32), -(top as f32)));
-            if let Some(background) = background {
-                target.Clear(Some(&color(background, 1.)));
-            }
             if let Some(source) = &source {
                 target.DrawBitmap(
                     source,
@@ -575,12 +622,26 @@ impl Renderer {
                     None,
                 );
             }
-            let result = self.annotations(&target, objects).and_then(|()| {
-                if let Some((image, _)) = &self.overlay {
-                    draw_bitmap(&target, &self.alpha_bitmap(&target, image)?);
-                }
-                Ok(())
+            let whole = Rect {
+                min: Point::default(),
+                max: Point {
+                    x: image.width as f64,
+                    y: image.height as f64,
+                },
+            };
+            let coats = background.iter().try_for_each(|coat| {
+                let brush = target.CreateSolidColorBrush(&color(coat.color, 1.), None)?;
+                let area = self.polygon(&whole.corners())?;
+                self.fill_except(&target, area, &holes(coat, objects, 0), &brush)
             });
+            let result = coats
+                .and_then(|()| self.annotations(&target, objects))
+                .and_then(|()| {
+                    if let Some((image, _)) = &self.overlay {
+                        draw_bitmap(&target, &self.alpha_bitmap(&target, image)?);
+                    }
+                    Ok(())
+                });
             let end = target.EndDraw(None, None);
             result?;
             end?;
@@ -594,15 +655,26 @@ impl Renderer {
     }
 }
 
+/// Outlines of the shapes `coat` spares, `floor` being the first place above its zone.
+fn holes(coat: &Paint, objects: &[Object], floor: usize) -> Vec<Vec<Point>> {
+    coat.holes(objects, floor)
+        .flat_map(|o| paths(o, objects))
+        .collect()
+}
+
+/// One fill under the annotations: a rectangle, its ink and the outlines it spares.
+pub(crate) type Underlay = (Rect, Ink, Vec<Vec<Point>>);
+
 /// Direct2D implementation of the portable drawing surface, for one frame.
 pub struct D2dCanvas<'a> {
     renderer: &'a Renderer,
     target: &'a ID2D1RenderTarget,
     // One brush recoloured per call: no allocation per primitive.
     brush: ID2D1SolidColorBrush,
-    // The capture paints only shade rectangles before its annotations. Other drawing
-    // before annotations opts out: unknown pixels must never enter a reusable checkpoint.
-    underlay: Option<Vec<(Rect, Ink)>>,
+    // The capture paints only shade rectangles and the background's coats before its
+    // annotations. Other drawing before annotations opts out: unknown pixels must never
+    // enter a reusable checkpoint.
+    underlay: Option<Vec<Underlay>>,
 }
 impl<'a> D2dCanvas<'a> {
     pub fn new(renderer: &'a Renderer, target: &'a ID2D1RenderTarget) -> Result<Self> {
@@ -671,11 +743,19 @@ impl Canvas for D2dCanvas<'_> {
         }
     }
     fn fill_rect(&mut self, r: Rect, ink: Ink) -> Result<()> {
+        self.fill_rect_except(r, &[], ink)
+    }
+    fn fill_rect_except(&mut self, r: Rect, holes: &[Vec<Point>], ink: Ink) -> Result<()> {
         if let Some(underlay) = &mut self.underlay {
-            underlay.push((r, ink));
+            underlay.push((r, ink, holes.to_vec()));
         }
-        unsafe { self.target.FillRectangle(&rect(r), self.ink(ink)) };
-        Ok(())
+        if holes.is_empty() {
+            unsafe { self.target.FillRectangle(&rect(r), self.ink(ink)) };
+            return Ok(());
+        }
+        let area = self.renderer.polygon(&r.corners())?;
+        self.renderer
+            .fill_except(self.target, area, holes, self.ink(ink))
     }
     fn stroke_rect(&mut self, r: Rect, ink: Ink, width: f64) -> Result<()> {
         self.underlay = None;
@@ -945,7 +1025,7 @@ mod arrow_tests {
         let image = Image::solid(240, 100, [255; 4]);
         let object = Object {
             rotation: 0.,
-            fill: None,
+            fill: Vec::new(),
             id: 1,
             style: shotoshot_core::Style {
                 width: 10.,
@@ -962,7 +1042,7 @@ mod arrow_tests {
         let output = renderer
             .export(
                 &image,
-                None,
+                &[],
                 &[object],
                 Rect {
                     min: Point::default(),

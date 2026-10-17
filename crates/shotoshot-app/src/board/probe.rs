@@ -52,14 +52,14 @@ fn synthetic(screens: &[Screen]) -> Board {
                 color: NOTE_COLOR,
                 width: 6.,
             },
-            fill: None,
+            fill: Vec::new(),
         })
         .collect();
     let mut board = Board::default();
     let gathered = Gathered {
         objects,
         last_id: screens.len() as u64,
-        background: None,
+        background: Vec::new(),
     };
     board.scatter(&gathered, screens);
     board

@@ -57,7 +57,7 @@ fn scene() -> Vec<Object> {
     e.fill_at(p(120., 90.), false);
     e.style.color = [28, 31, 40];
     e.fill_at(p(380., 90.), false);
-    assert!(e.objects()[..2].iter().all(|o| o.fill.is_some()));
+    assert!(e.objects()[..2].iter().all(|o| !o.fill.is_empty()));
     e.objects().to_vec()
 }
 
@@ -71,10 +71,10 @@ fn both_renderers_fill_shapes_and_the_capture_with_the_exact_colour() {
     for output in [
         Renderer::new()
             .unwrap()
-            .export(&image, Some(SLATE), &objects, crop)
+            .export(&image, &[Paint::solid(SLATE)], &objects, crop)
             .unwrap(),
         Raster::new()
-            .export(&image, Some(SLATE), &objects, crop)
+            .export(&image, &[Paint::solid(SLATE)], &objects, crop)
             .unwrap(),
     ] {
         assert_eq!((output.width, output.height), (450, 400));
@@ -99,7 +99,7 @@ fn both_renderers_keep_fractional_arrow_joins_solid_and_tails_round() {
     let objects = [Object {
         id: 1,
         rotation: 0.,
-        fill: None,
+        fill: Vec::new(),
         style: Style {
             color: [255, 0, 0],
             width: 10.,
@@ -115,9 +115,9 @@ fn both_renderers_keep_fractional_arrow_joins_solid_and_tails_round() {
     for output in [
         Renderer::new()
             .unwrap()
-            .export(&image, None, &objects, crop)
+            .export(&image, &[], &objects, crop)
             .unwrap(),
-        Raster::new().export(&image, None, &objects, crop).unwrap(),
+        Raster::new().export(&image, &[], &objects, crop).unwrap(),
     ] {
         for (x, y) in [(182, 80), (183, 80), (17, 80), (190, 74)] {
             let offset = (y * 240 + x) * 4;
@@ -132,13 +132,23 @@ fn portable_renderer_matches_direct2d_annotations() {
     let image = Image::solid(480, 420, [245, 242, 238, 255]);
     let crop = Rect::new(Point::default(), Point { x: 480., y: 420. }).unwrap();
     let objects = scene();
-    for (background, name) in [(None, "parity"), (Some([28, 31, 40]), "parity-slate")] {
+    // The slate spares every closed shape, as a coat poured after them does.
+    let walls = objects
+        .iter()
+        .filter(|o| o.closed())
+        .map(|o| o.id)
+        .collect();
+    let slate = Paint {
+        color: [28, 31, 40],
+        walls,
+    };
+    for (background, name) in [(vec![], "parity"), (vec![slate], "parity-slate")] {
         let native = Renderer::new()
             .unwrap()
-            .export(&image, background, &objects, crop)
+            .export(&image, &background, &objects, crop)
             .unwrap();
         let portable = Raster::new()
-            .export(&image, background, &objects, crop)
+            .export(&image, &background, &objects, crop)
             .unwrap();
         let target = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
         save_png(
@@ -378,7 +388,7 @@ fn both_renderers_set_annotation_text_in_the_same_embedded_face() {
     let crop = Rect::new(Point::default(), Point { x: 420., y: 140. }).unwrap();
     let object = Object {
         rotation: 0.,
-        fill: None,
+        fill: Vec::new(),
         id: 1,
         style: Style {
             color: [0, 0, 0],
@@ -392,8 +402,8 @@ fn both_renderers_set_annotation_text_in_the_same_embedded_face() {
         },
     };
     let objects = std::slice::from_ref(&object);
-    let direct = ink_bounds(&native.export(&image, None, objects, crop).unwrap());
-    let raster = ink_bounds(&portable.export(&image, None, objects, crop).unwrap());
+    let direct = ink_bounds(&native.export(&image, &[], objects, crop).unwrap());
+    let raster = ink_bounds(&portable.export(&image, &[], objects, crop).unwrap());
     for (a, b) in direct.into_iter().zip(raster) {
         assert!(
             a.abs_diff(b) <= 2,

@@ -35,7 +35,7 @@ impl Editor {
         self.redo.clear();
     }
     /// One reversible step of its own; an unchanged background adds none.
-    pub(super) fn set_background(&mut self, background: Option<[u8; 3]>) {
+    pub(super) fn set_background(&mut self, background: Vec<Paint>) {
         if background == self.background {
             return;
         }
@@ -44,12 +44,11 @@ impl Editor {
             after: Vec::new(),
             order: None,
             background: Some(Repaint {
-                before: self.background,
+                before: std::mem::replace(&mut self.background, background.clone()),
                 after: background,
             }),
         });
         self.redo.clear();
-        self.background = background;
     }
     /// Swaps `remove` for `add`, then puts the pile back in `order` (bottom first) when the
     /// step recorded one; a step that only changed objects leaves their places alone.
@@ -74,8 +73,8 @@ impl Editor {
         self.cancel();
         if let Some(c) = self.undo.pop() {
             self.apply(&c.after, &c.before, c.order.as_ref().map(|s| &s.before[..]));
-            if let Some(repaint) = c.background {
-                self.background = repaint.before;
+            if let Some(repaint) = &c.background {
+                self.background = repaint.before.clone();
             }
             self.redo.push(c);
         }
@@ -84,8 +83,8 @@ impl Editor {
         self.cancel();
         if let Some(c) = self.redo.pop() {
             self.apply(&c.before, &c.after, c.order.as_ref().map(|s| &s.after[..]));
-            if let Some(repaint) = c.background {
-                self.background = repaint.after;
+            if let Some(repaint) = &c.background {
+                self.background = repaint.after.clone();
             }
             self.undo.push(c);
         }
@@ -108,14 +107,14 @@ impl Editor {
     /// nothing to clear.
     pub fn clear(&mut self) {
         self.cancel();
-        if self.objects.is_empty() && self.background.is_none() {
+        if self.objects.is_empty() && self.background.is_empty() {
             return;
         }
         let before = std::mem::take(&mut self.objects);
         self.selected.clear();
-        let background = self.background.take().map(|before| Repaint {
-            before: Some(before),
-            after: None,
+        let background = (!self.background.is_empty()).then(|| Repaint {
+            before: std::mem::take(&mut self.background),
+            after: Vec::new(),
         });
         self.undo.push(Change {
             order: Some(Stacking {
@@ -179,7 +178,7 @@ impl Editor {
         self.next_id += 1;
         self.objects.push(Object {
             rotation: 0.,
-            fill: None,
+            fill: Vec::new(),
             id: self.next_id,
             shape: Shape::Text {
                 position,
@@ -339,6 +338,10 @@ impl Editor {
             let mut object = original.clone();
             object.prepare_transform(clipboard, &copied_ids);
             object.id = *id;
+            // A wall left behind would spare the inside of a shape the copy does not hold.
+            remap_walls(&mut object.fill, |wall| {
+                Some(remap.iter().find(|(old, _)| *old == wall)?.1)
+            });
             if let Shape::Arrow {
                 start_attach,
                 end_attach,

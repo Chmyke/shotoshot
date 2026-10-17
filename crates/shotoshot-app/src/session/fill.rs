@@ -94,6 +94,45 @@ mod tests {
     }
 
     #[test]
+    fn the_bucket_stops_at_the_outlines_on_screen_and_in_the_export_wherever_they_move() {
+        let _com = ComApartment::new().unwrap();
+        let mut s = session();
+        const RED: [u8; 3] = [200, 30, 30];
+        // A circle around (100, 100), a frame and a square standing in the frame.
+        draw(&mut s, Tool::Ellipse, p(100., 100.), p(125., 100.));
+        draw(&mut s, Tool::Rectangle, p(160., 110.), p(240., 190.));
+        draw(&mut s, Tool::Rectangle, p(185., 135.), p(215., 165.));
+        let ids: Vec<u64> = s.capture.editor.objects().iter().map(|o| o.id).collect();
+        // This first frame leaves checkpoints taken over the captured pixels.
+        assert_eq!(rgb(&frame(&mut s), 100, 100), DESK);
+
+        s.capture.editor.style.color = SLATE;
+        s.capture.editor.fill_at(p(70., 180.), false);
+        s.capture.editor.style.color = RED;
+        s.capture.editor.fill_at(p(170., 120.), false);
+        let exported = s.export().unwrap();
+        for (image, dx, dy) in [(frame(&mut s), 0, 0), (exported, 50, 50)] {
+            let at = |x: usize, y: usize| rgb(&image, x - dx, y - dy);
+            assert_eq!(at(70, 180), SLATE);
+            assert_eq!(at(100, 100), DESK, "the circle spares its inside");
+            assert_eq!(at(170, 120), RED, "the frame has its own fill");
+            assert_eq!(at(200, 150), DESK, "which spares the square");
+        }
+
+        // What is spared follows its shape, past the checkpoints of the first frame.
+        s.capture.editor.select_only(ids[0]);
+        s.capture.editor.nudge(p(0., 50.));
+        s.capture.editor.select_only(ids[2]);
+        s.capture.editor.nudge(p(-15., 0.));
+        let moved = frame(&mut s);
+        assert_eq!(rgb(&moved, 100, 100), SLATE, "where the circle was");
+        assert_eq!(rgb(&moved, 100, 150), DESK, "where it is");
+        assert_eq!(rgb(&moved, 210, 150), RED, "where the square was");
+        assert_eq!(rgb(&moved, 180, 150), DESK, "where it is");
+        assert_eq!(rgb(&s.export().unwrap(), 50, 100), DESK);
+    }
+
+    #[test]
     fn filled_shapes_are_solid_on_screen_and_in_the_export_and_move_with_their_fill() {
         let _com = ComApartment::new().unwrap();
         let mut s = session();
@@ -104,7 +143,7 @@ mod tests {
         s.capture.editor.style.color = SLATE;
         s.capture.editor.fill_at(p(120., 120.), false);
         s.capture.editor.fill_at(p(205., 120.), false);
-        assert_eq!(s.capture.editor.background(), None);
+        assert!(s.capture.editor.background().is_empty());
         let exported = s.export().unwrap();
         for (image, dx, dy) in [(frame(&mut s), 0, 0), (exported, 50, 50)] {
             let at = |x: usize, y: usize| rgb(&image, x - dx, y - dy);

@@ -55,10 +55,10 @@ struct Stacking {
     after: Vec<u64>,
 }
 /// The capture background on both sides of one undo step.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct Repaint {
-    before: Option<[u8; 3]>,
-    after: Option<[u8; 3]>,
+    before: Vec<Paint>,
+    after: Vec<Paint>,
 }
 struct Gesture {
     origin: Point,
@@ -135,8 +135,8 @@ pub struct Editor {
     /// Diameter of the eraser's disc, in frame pixels.
     pub eraser_size: f64,
     objects: Vec<Object>,
-    /// Solid colour replacing the captured pixels of the region, under every object.
-    background: Option<[u8; 3]>,
+    /// Coats over the captured pixels of the region, bottom first, under every object.
+    background: Vec<Paint>,
     undo: Vec<Change>,
     redo: Vec<Change>,
     gesture: Option<Gesture>,
@@ -153,7 +153,7 @@ impl Default for Editor {
             ui_scale: 1.,
             eraser_size: ERASER_SIZE,
             objects: Vec::new(),
-            background: None,
+            background: Vec::new(),
             undo: Vec::new(),
             redo: Vec::new(),
             gesture: None,
@@ -165,7 +165,7 @@ impl Default for Editor {
 impl Editor {
     /// An editor reopened on a saved document: `objects` in stacking order, ids up to
     /// `last_id`. Nothing to undo yet.
-    pub fn restore(objects: Vec<Object>, last_id: u64, background: Option<[u8; 3]>) -> Self {
+    pub fn restore(objects: Vec<Object>, last_id: u64, background: Vec<Paint>) -> Self {
         Self {
             objects,
             background,
@@ -176,8 +176,9 @@ impl Editor {
     pub fn objects(&self) -> &[Object] {
         &self.objects
     }
-    pub fn background(&self) -> Option<[u8; 3]> {
-        self.background
+    /// The capture's coats, bottom first; empty when the captured pixels show.
+    pub fn background(&self) -> &[Paint] {
+        &self.background
     }
     /// Highest id given so far; a saved document keeps it so ids are never reused.
     pub fn last_id(&self) -> u64 {

@@ -1,11 +1,13 @@
 //! ROLE: The Board document: desktop notes anchored to their screen, one scene per screen.
 //! INVARIANTS: `decode` gives back what `encode` wrote and accepts nothing it does not fully
 //! understand; a screen that is absent today keeps its notes untouched.
-use crate::{Attachment, Object, Point, Rect, Shape, renumber, shoto::Scene};
+use crate::{Attachment, Object, Paint, Point, Rect, Shape, remap_walls, renumber, shoto::Scene};
 use std::fmt::Write;
 
 pub const HEADER: &str = "shotoshot-board";
-pub const VERSION: u32 = 1;
+/// The latest version read; a board is written in the lowest one that holds its scenes,
+/// the version of the scene text they share (`Scene::version`).
+pub const VERSION: u32 = 2;
 const MAX_SCREENS: usize = 64;
 
 /// Why a board file does not load.
@@ -46,7 +48,7 @@ pub struct Screen {
 pub struct Gathered {
     pub objects: Vec<Object>,
     pub last_id: u64,
-    pub background: Option<[u8; 3]>,
+    pub background: Vec<Paint>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -60,7 +62,10 @@ fn token(id: &str) -> bool {
 
 impl Board {
     pub fn encode(&self) -> String {
-        let mut out = format!("{HEADER} {VERSION}\n");
+        let version = (self.screens.iter())
+            .map(|n| n.scene.version())
+            .fold(1, u32::max);
+        let mut out = format!("{HEADER} {version}\n");
         for notes in self.screens.iter().filter(|n| token(&n.id)) {
             let text = notes.scene.to_text();
             // Writing to a String cannot fail.
@@ -94,7 +99,7 @@ impl Board {
                 return Err(Error::Damaged);
             }
             let (scene, next) = after.split_at_checked(len).ok_or(Error::Damaged)?;
-            let scene = Scene::from_text(scene).ok_or(Error::Damaged)?;
+            let scene = Scene::from_text(scene, version).ok_or(Error::Damaged)?;
             if screens.iter().any(|s: &ScreenNotes| s.id == id) {
                 return Err(Error::Damaged);
             }
@@ -124,6 +129,7 @@ impl Board {
             for (index, object) in notes.scene.objects.iter().enumerate() {
                 let mut object = object.clone();
                 object.id = first + index as u64;
+                remap_walls(&mut object.fill, map);
                 if let Shape::Arrow {
                     start_attach,
                     end_attach,
@@ -143,7 +149,16 @@ impl Board {
                 gathered.objects.push(object);
                 next = first + index as u64 + 1;
             }
-            gathered.background = gathered.background.or(notes.scene.background);
+            let mut background = notes.scene.background.clone();
+            remap_walls(&mut background, map);
+            // `scatter` writes the same coats to every screen, each keeping its own walls.
+            if gathered.background.is_empty() {
+                gathered.background = background;
+            } else if same_colours(&gathered.background, &background) {
+                for (coat, more) in gathered.background.iter_mut().zip(background) {
+                    coat.walls.extend(more.walls);
+                }
+            }
         }
         gathered.last_id = next - 1;
         gathered
@@ -196,10 +211,12 @@ impl Board {
                     o
                 })
                 .collect();
+            let mut background = gathered.background.clone();
+            remap_walls(&mut background, |wall| ids.contains(&wall).then_some(wall));
             // The pile's order, not its ids: restacking and erasing leave them apart.
-            renumber(&mut objects, 1);
+            renumber(&mut objects, &mut background, 1);
             let stored = self.screens.iter().position(|n| n.id == screen.id);
-            if stored.is_none() && objects.is_empty() && gathered.background.is_none() {
+            if stored.is_none() && objects.is_empty() && background.is_empty() {
                 continue;
             }
             // Never below an object's id, or the scene would not read back.
@@ -220,7 +237,7 @@ impl Board {
                         y: f64::from(height),
                     },
                 },
-                background: gathered.background,
+                background,
                 objects,
                 last_id,
             };
@@ -233,6 +250,10 @@ impl Board {
             }
         }
     }
+}
+
+fn same_colours(a: &[Paint], b: &[Paint]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(a, b)| a.color == b.color)
 }
 
 /// Distance from `p` to the nearest point of `r`; zero inside.
@@ -268,7 +289,7 @@ mod tests {
                 color: [10, 20, 30],
                 width: 4.,
             },
-            fill: None,
+            fill: Vec::new(),
         }
     }
     fn arrow(id: u64, start: Point, end: Point, end_attach: Option<Attachment>) -> Object {
@@ -286,14 +307,14 @@ mod tests {
                 color: [0, 0, 0],
                 width: 3.,
             },
-            fill: None,
+            fill: Vec::new(),
         }
     }
     fn desktop(objects: Vec<Object>, last_id: u64) -> Gathered {
         Gathered {
             objects,
             last_id,
-            background: None,
+            background: Vec::new(),
         }
     }
 
@@ -326,6 +347,41 @@ mod tests {
         assert_eq!(again.objects[1].bounds().min, Point { x: 300., y: 300. });
         assert!(again.objects[0].id < again.objects[1].id);
         assert_eq!(again.last_id, again.objects[1].id);
+    }
+
+    #[test]
+    fn spared_shapes_survive_a_round_trip_across_screens() {
+        let screens = [screen("left", -1920., 0.), screen("main", 0., 0.)];
+        let (dark, light) = ([1, 2, 3], [200, 210, 220]);
+        let mut framed = rectangle(2, 300., 300.);
+        framed.fill = vec![Paint {
+            color: light,
+            walls: vec![3],
+        }];
+        let gathered = Gathered {
+            background: vec![
+                Paint::solid(dark),
+                Paint {
+                    color: light,
+                    walls: vec![1, 3],
+                },
+            ],
+            ..desktop(
+                vec![rectangle(1, -1000., 100.), framed, rectangle(3, 320., 310.)],
+                3,
+            )
+        };
+        let mut board = Board::default();
+        board.scatter(&gathered, &screens);
+        let text = board.encode();
+        assert!(text.starts_with("shotoshot-board 2\n"));
+        let again = Board::decode(&text).unwrap().gather(&screens);
+        let id = |n: usize| again.objects[n].id;
+        assert_eq!(again.objects[1].fill[0].walls, [id(2)]);
+        assert_eq!(again.background[0], Paint::solid(dark));
+        let mut walls = again.background[1].walls.clone();
+        walls.sort();
+        assert_eq!(walls, [id(0), id(2)], "each screen gave back its own walls");
     }
 
     #[test]
@@ -367,7 +423,7 @@ mod tests {
         // A background alone is something to keep, on every present screen.
         board.scatter(
             &Gathered {
-                background: Some([1, 2, 3]),
+                background: vec![Paint::solid([1, 2, 3])],
                 ..desktop(vec![], 1)
             },
             &screens,
@@ -526,7 +582,7 @@ mod tests {
 
     #[test]
     fn newer_or_damaged_files_are_refused() {
-        assert_eq!(Board::decode("shotoshot-board 2\n"), Err(Error::Newer));
+        assert_eq!(Board::decode("shotoshot-board 3\n"), Err(Error::Newer));
         assert_eq!(Board::decode("shotoshot-board 0\n"), Err(Error::Damaged));
         assert_eq!(Board::decode("shotoshot-board 1"), Err(Error::Damaged));
         assert_eq!(
@@ -541,7 +597,7 @@ mod tests {
         let mut board = Board::default();
         board.scatter(
             &Gathered {
-                background: Some([1, 2, 3]),
+                background: vec![Paint::solid([1, 2, 3])],
                 ..desktop(vec![rectangle(1, 1., 1.)], 1)
             },
             &[screen("a", 0., 0.)],

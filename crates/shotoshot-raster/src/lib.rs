@@ -9,8 +9,8 @@ use shotoshot_core::{Object, Point, Rect, Shape, paths, stroke_runs};
 use shotoshot_ui::{Canvas, Face, Image, Ink, annotation_font};
 use std::sync::Arc;
 use tiny_skia::{
-    FillRule, FilterQuality, LineCap, LineJoin, Paint, PathBuilder, Pixmap, PixmapPaint, Stroke,
-    Transform,
+    FillRule, FilterQuality, LineCap, LineJoin, Mask, Paint, PathBuilder, Pixmap, PixmapPaint,
+    Stroke, Transform,
 };
 
 /// Line height relative to font size, close to the Windows UI font metrics.
@@ -92,12 +92,12 @@ impl Raster {
             base: Transform::identity(),
         }
     }
-    /// The capture flattened with its annotations, cropped to `crop`. A `background`
-    /// replaces the captured pixels.
+    /// The capture flattened with its annotations, cropped to `crop`, the `background`'s
+    /// coats laid over the captured pixels.
     pub fn export(
         &mut self,
         image: &Image,
-        background: Option<[u8; 3]>,
+        background: &[shotoshot_core::Paint],
         objects: &[Object],
         crop: Rect,
     ) -> Result<Image, RasterError> {
@@ -109,16 +109,20 @@ impl Raster {
         if right <= left || bottom <= top {
             return Err(RasterError("Empty capture region"));
         }
-        let mut target = match background {
-            Some([r, g, b]) => {
-                let mut solid = Pixmap::new(image.width, image.height)
-                    .ok_or(RasterError("Pixmap too large"))?;
-                solid.fill(tiny_skia::Color::from_rgba8(r, g, b, 255));
-                solid
-            }
-            None => pixmap_from_bgra(image)?,
+        let mut target = pixmap_from_bgra(image)?;
+        let whole = Rect {
+            min: Point::default(),
+            max: Point {
+                x: image.width as f64,
+                y: image.height as f64,
+            },
         };
-        self.canvas(&mut target).annotations(objects, None)?;
+        let mut canvas = self.canvas(&mut target);
+        for coat in background {
+            let ink = Ink::solid(coat.color);
+            canvas.fill_rect_except(whole, &holes(coat, objects, 0), ink)?;
+        }
+        canvas.annotations(objects, None)?;
         let full = image_from_pixmap(&target, image.left, image.top);
         let (width, height) = (right - left, bottom - top);
         let mut output = Image::solid(width, height, [0, 0, 0, 255]);
@@ -130,6 +134,13 @@ impl Raster {
         }
         Ok(output)
     }
+}
+
+/// Outlines of the shapes `coat` spares, `floor` being the first place above its zone.
+fn holes(coat: &shotoshot_core::Paint, objects: &[Object], floor: usize) -> Vec<Vec<Point>> {
+    coat.holes(objects, floor)
+        .flat_map(|o| paths(o, objects))
+        .collect()
 }
 
 /// Opaque BGRA frame to a premultiplied RGBA pixmap.
@@ -254,6 +265,30 @@ impl SkiaCanvas<'_> {
                 .fill_path(&path, &paint(ink), FillRule::Winding, transform, None);
         }
     }
+    /// `area` filled except inside the closed `holes`, which may overlap.
+    fn fill_except(&mut self, area: Option<tiny_skia::Path>, holes: &[Vec<Point>], ink: Ink) {
+        if holes.is_empty() {
+            return self.fill_path(area, ink, Transform::identity());
+        }
+        let (Some(area), Some(mut mask)) =
+            (area, Mask::new(self.target.width(), self.target.height()))
+        else {
+            return;
+        };
+        for hole in holes {
+            if let Some(path) = polyline(hole, true) {
+                mask.fill_path(&path, FillRule::Winding, true, self.transform);
+            }
+        }
+        mask.invert();
+        self.target.fill_path(
+            &area,
+            &paint(ink),
+            FillRule::Winding,
+            self.transform,
+            Some(&mask),
+        );
+    }
     fn text_at(
         &mut self,
         text: &str,
@@ -303,6 +338,18 @@ impl Canvas for SkiaCanvas<'_> {
             self.target
                 .fill_rect(rect, &paint(ink), self.transform, None);
         }
+        Ok(())
+    }
+    fn fill_rect_except(
+        &mut self,
+        r: Rect,
+        holes: &[Vec<Point>],
+        ink: Ink,
+    ) -> Result<(), RasterError> {
+        if holes.is_empty() {
+            return self.fill_rect(r, ink);
+        }
+        self.fill_except(sk_rect(r).map(PathBuilder::from_rect), holes, ink);
         Ok(())
     }
     fn stroke_rect(&mut self, r: Rect, ink: Ink, width: f64) -> Result<(), RasterError> {
@@ -503,7 +550,7 @@ impl Canvas for SkiaCanvas<'_> {
         Ok(())
     }
     fn annotations(&mut self, objects: &[Object], skip: Option<u64>) -> Result<(), RasterError> {
-        for o in objects {
+        for (index, o) in objects.iter().enumerate() {
             if Some(o.id) == skip {
                 continue;
             }
@@ -551,9 +598,10 @@ impl Canvas for SkiaCanvas<'_> {
                             continue;
                         }
                         let closed = path.len() > 2 && path.first() == path.last();
-                        if let Some(fill) = o.fill.filter(|_| !arrow) {
+                        for coat in o.fill.iter().filter(|_| !arrow) {
                             let interior = polyline(&path, true);
-                            self.fill_path(interior, Ink::solid(fill), Transform::identity());
+                            let holes = holes(coat, objects, index + 1);
+                            self.fill_except(interior, &holes, Ink::solid(coat.color));
                         }
                         if arrow && closed {
                             self.fill_path(polyline(&path, true), ink, Transform::identity());
@@ -654,17 +702,54 @@ mod tests {
         let mut e = filled_scene();
         e.style.color = BLUE;
         e.fill_at(at(5., 5.), false);
-        assert_eq!(e.background(), Some(BLUE));
+        assert_eq!(e.background().last().map(|c| c.color), Some(BLUE));
         let image = Image::solid(400, 200, [255; 4]);
         let crop = Rect::new(at(200., 0.), at(400., 200.)).unwrap();
         let out = Raster::new()
             .export(&image, e.background(), e.objects(), crop)
             .unwrap();
         assert_eq!((out.width, out.height), (200, 200));
-        for (x, y) in [(0, 0), (199, 199), (14, 34), (160, 80)] {
+        for (x, y) in [(0, 0), (199, 199), (14, 34)] {
             assert_eq!(rgb(&out, x, y), BLUE, "{x},{y}");
         }
         assert_eq!(rgb(&out, 60, 80), GREEN);
+        assert_eq!(
+            rgb(&out, 160, 80),
+            PAPER,
+            "the hollow rectangle drawn before spares its inside"
+        );
+    }
+    #[test]
+    fn a_fill_spares_the_shape_standing_in_it_wherever_it_goes() {
+        use shotoshot_core::{Modifiers, Tool};
+        let mut e = shotoshot_core::Editor::default();
+        e.tool = Tool::Rectangle;
+        for (from, to) in [
+            (at(40., 40.), at(240., 160.)),
+            (at(100., 80.), at(160., 120.)),
+        ] {
+            e.begin(from, Modifiers::default());
+            e.update(to);
+            e.finish();
+        }
+        let inner = e.objects()[1].id;
+        e.style.color = SLATE;
+        e.fill_at(at(60., 60.), false);
+        let image = Image::solid(400, 200, [255; 4]);
+        let crop = Rect::new(at(0., 0.), at(400., 200.)).unwrap();
+        let mut raster = Raster::new();
+        let out = raster
+            .export(&image, e.background(), e.objects(), crop)
+            .unwrap();
+        assert_eq!(rgb(&out, 60, 60), SLATE);
+        assert_eq!(rgb(&out, 130, 100), PAPER);
+        e.select_only(inner);
+        e.nudge(at(60., 0.));
+        let out = raster
+            .export(&image, e.background(), e.objects(), crop)
+            .unwrap();
+        assert_eq!(rgb(&out, 130, 100), SLATE, "where it was");
+        assert_eq!(rgb(&out, 190, 100), PAPER, "where it is");
     }
     #[test]
     fn the_background_covers_the_region_on_screen_and_only_dims_around_it() {

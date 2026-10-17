@@ -73,7 +73,7 @@ fn render_and_png_roundtrip_preserve_pixels_and_crop() {
     let renderer = Renderer::new().unwrap();
     let crop = Rect::new(Point { x: 10., y: 10. }, Point { x: 200., y: 150. }).unwrap();
     let output = renderer
-        .export(&image, None, editor.objects(), crop)
+        .export(&image, &[], editor.objects(), crop)
         .unwrap();
     assert_eq!((output.width, output.height), (190, 140));
     assert_eq!(&output.pixels[..4], &[240, 240, 240, 255]);
@@ -145,7 +145,7 @@ fn thick_pen_has_round_caps_and_no_join_spikes() {
     ];
     let object = Object {
         rotation: 0.,
-        fill: None,
+        fill: Vec::new(),
         id: 1,
         shape: Shape::Stroke {
             widths: Vec::new(),
@@ -161,7 +161,7 @@ fn thick_pen_has_round_caps_and_no_join_spikes() {
         .unwrap()
         .export(
             &image,
-            None,
+            &[],
             &[object],
             Rect {
                 min: Point::default(),
@@ -211,7 +211,7 @@ fn one_pixel_arrows_render_while_drawing_in_every_direction() {
         let out = renderer
             .export(
                 &image,
-                None,
+                &[],
                 editor.objects(),
                 Rect {
                     min: Point::default(),
@@ -248,7 +248,7 @@ fn variable_highlighter_keeps_one_opacity_at_width_boundary() {
         .unwrap()
         .export(
             &Image::solid(220, 180, [255, 255, 255, 255]),
-            None,
+            &[],
             e.objects(),
             Rect {
                 min: Point::default(),

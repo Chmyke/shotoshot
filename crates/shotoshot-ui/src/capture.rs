@@ -562,7 +562,7 @@ impl Capture {
     }
     /// The pointer rests on the document itself: no panel, button, badge, region handle or
     /// pan between them.
-    fn pointer_on_document(&self) -> bool {
+    pub(crate) fn pointer_on_document(&self) -> bool {
         let p = self.pointer;
         let over = |r: Option<Rect>| r.is_some_and(|r| r.contains(p));
         !(self.selecting

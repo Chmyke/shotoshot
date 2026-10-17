@@ -185,6 +185,10 @@ impl EditorProcess {
     pub fn busy(&self) -> bool {
         self.activation.busy()
     }
+    /// The window of the capture still open, possibly behind other applications.
+    pub fn active_window(&self) -> Option<HWND> {
+        self.activation.active_window()
+    }
     pub fn replenish(&self, exit_code: u32) -> bool {
         self.activation.replenish(exit_code)
     }
@@ -293,6 +297,12 @@ impl Activation {
     }
     fn busy(&self) -> bool {
         self.pending || matches!(self.phase, Phase::Active(_))
+    }
+    fn active_window(&self) -> Option<HWND> {
+        match self.phase {
+            Phase::Active(window) => Some(window),
+            _ => None,
+        }
     }
     fn replenish(&self, exit_code: u32) -> bool {
         exit_code == 0 && matches!(self.phase, Phase::Active(_))
@@ -499,6 +509,26 @@ mod tests {
         assert_eq!(activation.request(), Some(window));
         assert!(activation.busy());
         assert_eq!(activation.request(), None);
+    }
+
+    #[test]
+    fn only_an_open_capture_can_be_brought_back() {
+        let mut activation = Activation::default();
+        assert_eq!(activation.active_window(), None);
+        assert_eq!(activation.request(), None);
+        assert_eq!(activation.active_window(), None, "still preparing");
+        let window = HWND(17 as _);
+        assert_eq!(activation.ready(window), Some(window));
+        assert_eq!(activation.active_window(), Some(window));
+        assert_eq!(activation.request(), None, "a second capture never starts");
+        assert_eq!(activation.active_window(), Some(window));
+        let mut idle = Activation::default();
+        assert_eq!(idle.ready(window), None);
+        assert_eq!(
+            idle.active_window(),
+            None,
+            "a prepared editor shows nothing"
+        );
     }
 
     #[test]

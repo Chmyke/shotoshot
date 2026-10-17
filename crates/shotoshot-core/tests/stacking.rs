@@ -146,7 +146,7 @@ fn a_restored_document_keeps_its_stacking_order_through_undo() {
     drawn.select_only(1);
     drawn.raise_selection(true);
     let objects = drawn.objects().to_vec();
-    let mut e = Editor::restore(objects, drawn.last_id(), None);
+    let mut e = Editor::restore(objects, drawn.last_id(), Vec::new());
     assert_eq!(ids(&e), vec![2, 3, 1]);
     e.tool = Tool::Select;
     e.select_only(2);

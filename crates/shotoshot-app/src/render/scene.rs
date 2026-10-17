@@ -14,7 +14,7 @@ pub(super) struct SceneCache {
 struct Context {
     size: (u32, u32),
     skip: Option<u64>,
-    underlay: Vec<(Rect, Ink)>,
+    underlay: Vec<Underlay>,
 }
 
 struct Checkpoint {
@@ -35,7 +35,7 @@ impl SceneCache {
         device: &ID2D1DeviceContext,
         objects: &[Object],
         skip: Option<u64>,
-        underlay: &[(Rect, Ink)],
+        underlay: &[Underlay],
     ) -> Result<()> {
         let size = unsafe { target.GetPixelSize() };
         if !self.context.as_ref().is_some_and(|c| {
@@ -64,8 +64,9 @@ impl SceneCache {
                 .take_while(|(a, b)| a == b)
                 .count()
         });
-        // An unchanged arrow can depend on a later shape. Conservatively redraw from
-        // the first attached arrow when anything changes, without quadratic lookups.
+        // An unchanged arrow or fill can depend on a later shape: its target, or a shape
+        // it spares. Conservatively redraw from the first of them when anything changes,
+        // without quadratic lookups.
         if let Some(index) = objects[..common].iter().position(|object| {
             matches!(
                 object.shape,
@@ -76,7 +77,7 @@ impl SceneCache {
                     end_attach: Some(_),
                     ..
                 }
-            )
+            ) || object.fill.iter().any(|coat| !coat.walls.is_empty())
         }) {
             common = index;
         }
