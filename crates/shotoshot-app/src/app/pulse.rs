@@ -163,7 +163,7 @@ mod tests {
             }
             assert!(!IsWindowVisible(window).as_bool());
             assert_eq!(GetWindowLongPtrW(window, GWLP_USERDATA), 16);
-            assert!(crate::app::foreground_is_elsewhere());
+            assert!(crate::app::nothing_activated_on_this_thread());
             drop(pulse);
             assert!(!IsWindow(Some(window)).as_bool());
         }

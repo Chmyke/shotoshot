@@ -50,16 +50,40 @@ const BRUSH_DELAY_MS: u32 = 250;
 mod display_tests;
 #[cfg(test)]
 mod tests;
-/// "Does not activate", whatever happens meanwhile: the foreground may move to another program
-/// or to another test's window (tests run in parallel, one thread each, and some bring their
-/// capture back on purpose), never to a window of the calling test's thread.
+/// The tests leave the foreground, and so the keyboard, to the user. Many drive production code
+/// that calls SetFocus or SetForegroundWindow on their hidden windows; a test binary started
+/// from the foreground program (a terminal, an agent) is allowed to take it, and the user's
+/// keystrokes then went to an invisible window. Locked before main, Windows lets no program take
+/// the foreground by itself until the user presses Alt or clicks; the lock ends with the process.
+/// Windows refuses the lock to a process that could not take the foreground anyway.
+/// `check-foreground.ps1` watches the real foreground during the tests.
 #[cfg(test)]
-fn foreground_is_elsewhere() -> bool {
+#[used]
+#[unsafe(link_section = ".CRT$XCU")]
+static LEAVE_THE_FOREGROUND_TO_THE_USER: extern "C" fn() = {
+    extern "C" fn lock() {
+        use windows::Win32::UI::WindowsAndMessaging::{LSFW_LOCK, LockSetForegroundWindow};
+        let _ = unsafe { LockSetForegroundWindow(LSFW_LOCK) };
+    }
+    lock
+};
+/// "Does not activate": no window of the calling test's thread is active. Activation within a
+/// thread happens whether or not Windows lets the process take the foreground (the tests lock
+/// it, above), so this holds on any workstation. Other tests' windows do not count: tests run in
+/// parallel, one thread each, and some bring their capture back on purpose.
+#[cfg(test)]
+fn nothing_activated_on_this_thread() -> bool {
     use windows::Win32::{
         System::Threading::GetCurrentThreadId,
-        UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId},
+        UI::{
+            Input::KeyboardAndMouse::GetActiveWindow,
+            WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId},
+        },
     };
-    unsafe { GetWindowThreadProcessId(GetForegroundWindow(), None) != GetCurrentThreadId() }
+    unsafe {
+        GetActiveWindow().is_invalid()
+            && GetWindowThreadProcessId(GetForegroundWindow(), None) != GetCurrentThreadId()
+    }
 }
 struct App {
     settings: Settings,

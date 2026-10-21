@@ -266,7 +266,7 @@ mod tests {
         assert!(app.instant.pending.is_none());
         assert!(app.toast.is_none(), "success is confirmed without text");
         assert!(app.instant.pulse.is_some());
-        assert!(crate::app::foreground_is_elsewhere());
+        assert!(crate::app::nothing_activated_on_this_thread());
         let original = app.settings.instant_shortcut;
         app.settings.key = 19;
         app.save_instant_shortcut(owner.0, 0, 19).unwrap();

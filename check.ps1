@@ -26,6 +26,9 @@ try {
     # Maintainer only, the tooling is not published: nothing private may reach the public tree.
     $export = Join-Path $PSScriptRoot 'publish/export-public.ps1'
     if (Test-Path $export) { & $export -ScanOnly }
+    # The changelog is valid, has the current version, and CHANGELOG.md is generated from it.
+    $changelog = Join-Path $PSScriptRoot 'publish/changelog.ps1'
+    if (Test-Path $changelog) { & $changelog -SelfTest }
     $release = Join-Path $PSScriptRoot 'publish/release-github.ps1'
     if (Test-Path $release) { & $release -SelfTest }
     cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -37,7 +40,10 @@ try {
     cargo clippy --workspace --all-targets --locked --target x86_64-unknown-linux-gnu -- -D warnings
     if ($LASTEXITCODE -ne 0) { exit 1 }
     # Every test binary runs even after a failure, so one run shows every failing test.
-    cargo test --workspace --locked --no-fail-fast
+    # None may take the foreground, and so the keyboard, from the user meanwhile.
+    & (Join-Path $PSScriptRoot 'check-foreground.ps1') -Under (Join-Path $PSScriptRoot 'target') -Run {
+        cargo test --workspace --locked --no-fail-fast
+    }
     if ($LASTEXITCODE -ne 0) { exit 1 }
     if (-not $Fast) {
         # The tests above never read the screen. The ones that need a real display are named

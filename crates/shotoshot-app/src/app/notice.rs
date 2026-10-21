@@ -441,7 +441,7 @@ mod tests {
                 GetWindowLongPtrW(toast.window.0, GWLP_USERDATA) & 0xffff,
                 25
             );
-            assert!(crate::app::foreground_is_elsewhere());
+            assert!(crate::app::nothing_activated_on_this_thread());
             let mut affinity = 0;
             GetWindowDisplayAffinity(toast.window.0, &mut affinity).unwrap();
             assert_eq!(affinity, WDA_EXCLUDEFROMCAPTURE.0);
@@ -497,7 +497,7 @@ mod tests {
             );
             assert_eq!(message.wParam.0, GetCurrentProcessId() as usize);
             assert_eq!(message.lParam.0, Notice::Copied as isize);
-            assert!(crate::app::foreground_is_elsewhere());
+            assert!(crate::app::nothing_activated_on_this_thread());
         }
     }
     #[test]
