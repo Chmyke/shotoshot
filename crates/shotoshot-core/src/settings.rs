@@ -269,7 +269,6 @@ pub struct Brush {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     pub instant_shortcut: Shortcut,
-    pub instant_sound: bool,
     pub start_with_windows: bool,
     pub capture_stroke_width: u32,
     /// The editor eraser's diameter at 100 %, in pixels.
@@ -297,7 +296,6 @@ impl Default for Settings {
                 modifiers: 0,
                 key: 145,
             },
-            instant_sound: true,
             start_with_windows: true,
             capture_stroke_width: 3,
             capture_eraser_size: crate::ERASER_SIZE as u32,
@@ -477,6 +475,10 @@ impl Settings {
                 shortcut
             }
         };
+        // Former capture sound switch: the sound is always on, the slot stays for compatibility.
+        if !matches!(fields.get(21), None | Some(&"0" | &"1")) {
+            return Err("Invalid instant capture sound setting".into());
+        }
         let board_visible = match fields.get(26) {
             None | Some(&"0") => false,
             Some(&"1") => true,
@@ -488,11 +490,6 @@ impl Settings {
             .map_or(LanguageChoice::Auto, |value| LanguageChoice::decode(value));
         Ok(Self {
             instant_shortcut,
-            instant_sound: match fields.get(21) {
-                None | Some(&"1") => true,
-                Some(&"0") => false,
-                _ => return Err("Invalid instant capture sound setting".into()),
-            },
             start_with_windows: match fields.get(18) {
                 None | Some(&"1") => true,
                 Some(&"0") => false,
@@ -589,7 +586,7 @@ impl Settings {
             self.capture_stroke_width,
             self.instant_shortcut.modifiers,
             self.instant_shortcut.key,
-            u8::from(self.instant_sound),
+            1,
             self.presentation.input_layout.index(),
             self.presentation.input_scale,
             self.save_format.index(),
@@ -997,15 +994,21 @@ mod tests {
         assert_eq!(&fields[20..22], &["0,145", "1"]);
         let mut custom: Vec<_> = fields.iter().map(|v| v.to_string()).collect();
         custom[20] = "6,122".into();
-        custom[21] = "0".into();
-        assert_eq!(
+        let roundtrip = |custom: &[String]| {
             Settings::decode(&custom.join("\n"))
                 .unwrap()
                 .encode()
                 .lines()
-                .collect::<Vec<_>>(),
-            custom
-        );
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(roundtrip(&custom), custom);
+        // A sound switched off before it became permanent is read, then written back on.
+        custom[21] = "0".into();
+        assert_eq!(roundtrip(&custom)[21], "1");
+        custom[21] = "2".into();
+        assert!(Settings::decode(&custom.join("\n")).is_err());
+        custom[21] = "1".into();
         custom[20] = "0,0".into();
         assert!(Settings::decode(&custom.join("\n")).is_err());
     }
@@ -1500,7 +1503,6 @@ mod tests {
                 modifiers: 0,
                 key: 145,
             },
-            instant_sound: true,
             start_with_windows: true,
             capture_stroke_width: 3,
             capture_eraser_size: 24,

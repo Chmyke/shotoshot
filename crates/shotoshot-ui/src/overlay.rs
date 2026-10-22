@@ -7,7 +7,9 @@ use shotoshot_core::{FillChange, Object, Paint, Point, Rect, Shape, Tool, arrow_
 use shotoshot_text::{Key, Language, Text, language, tr, tr_in};
 
 const ACCENT: Ink = Ink::solid([100, 170, 255]);
-const SHADE: Ink = Ink::with_alpha([0, 0, 0], 0.48);
+/// Opacity of the black over everything outside the region.
+pub(crate) const SHADE_ALPHA: f32 = 0.48;
+const SHADE: Ink = Ink::with_alpha([0, 0, 0], SHADE_ALPHA);
 const DARK: Ink = Ink::solid([32, 32, 32]);
 /// Opacity of the colour the bucket would lay, shown under the pointer before the click
 /// (Mickaël's choice on the 2026-10-17 board: B1).

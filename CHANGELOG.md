@@ -2,6 +2,11 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.9 · 2026-10-22
+
+- The crosshair now picks black or white to match what's underneath, so it no longer plays hide-and-seek on pale pages.
+- The capture click now always plays, so its switch left the menu. Prefer silence? An empty custom sound file does the trick (see the README).
+
 ## 0.3.8 · 2026-10-22
 
 - **New** · Shotoshot now speaks 15 languages. Pick yours when installing, or switch anytime from the menu.

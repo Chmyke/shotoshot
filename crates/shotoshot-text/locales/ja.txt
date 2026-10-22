@@ -95,7 +95,6 @@ menu.capture = キャプチャ
 menu.instant_screenshot = 即時スクリーンショット
 menu.board == Board
 menu.options = オプション
-menu.screenshot_sound = スクリーンショットの音
 menu.live_capture_default = 既定でライブキャプチャ
 menu.start_with_windows = Windows の起動時に開始
 menu.quit = Shotoshot を終了

@@ -95,7 +95,6 @@ menu.capture = Знімок
 menu.instant_screenshot = Миттєвий знімок екрана
 menu.board == Board
 menu.options = Параметри
-menu.screenshot_sound = Звук знімка
 menu.live_capture_default = Знімання в реальному часі за замовчуванням
 menu.start_with_windows = Запускати разом з Windows
 menu.quit = Вийти з Shotoshot

@@ -58,6 +58,7 @@ impl Session {
                 back_buffer: None,
                 acceleration: None,
                 caret: Default::default(),
+                cross_ink: Default::default(),
             },
             document: Some(path.into()),
             board: None,

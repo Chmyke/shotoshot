@@ -12,7 +12,7 @@ follows the active keyboard layout.
   when you click its button, sent by your browser.
 - **Open.** GPL-3.0, written in Rust on Direct2D, with no web engine.
 
-![Shotoshot at work: an area is selected and widened, an arrow points at a chart legend, a note is typed, enlarged and rotated, a square is drawn then moved, then the arrow is re-aimed by its tip alone, recoloured with the eyedropper and thickened with the wheel, and the square is widened a little.](https://shotoshot.com/assets/capture.gif)
+![Shotoshot at work: an area is selected and widened, an arrow points at a chart legend, a note is typed, enlarged and rotated, a square is drawn then moved, then the arrow is re-aimed by its tip alone, recoloured with the eyedropper and thickened with the wheel.](https://shotoshot.com/assets/capture.gif)
 
 ## Install
 
@@ -51,12 +51,21 @@ choice is remembered.
 **Scroll Lock** saves the screen of the active application straight to the Desktop, with no
 selection, no editor and no focus change. Files are named `Shot 001.png`, `Shot 002.png` and so
 on, never replacing an existing capture. The **Instant screenshot** menu row changes this
-shortcut; **Screenshot sound** turns the short confirmation click on or off. Both settings are
-remembered.
+shortcut, and the setting is remembered.
 
-The built-in sound is an original mechanical click. A personal WAV placed at
+A short confirmation click always plays; the menu has no switch for it. The built-in sound is an
+original mechanical click. A personal WAV placed at
 `%LOCALAPPDATA%/Shotoshot/screenshot-custom.wav` replaces it locally; if that file is missing or
 cannot be played, the built-in sound is used. The personal file is never part of the installer.
+
+To silence the click, make that personal file empty: an empty `screenshot-custom.wav` means no
+sound. From PowerShell:
+
+```powershell
+New-Item -Force "$env:LOCALAPPDATA\Shotoshot\screenshot-custom.wav"
+```
+
+Deleting the file brings the built-in click back.
 
 A light blue 2 px outline pulses for 0.4 s on the four edges of the captured monitor, without
 dimming its center or intercepting input; it is excluded from captures. The outline and the sound

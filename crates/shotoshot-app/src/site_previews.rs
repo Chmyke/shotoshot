@@ -507,7 +507,7 @@ fn film(desktop: &Image, folder: &Path) -> Result<()> {
 /// From a bare desktop to a finished capture: select an area, draw an arrow, type a two-line
 /// note, grow it with the wheel, recolour and turn it, draw a square and move it, widen the area,
 /// then come back to the arrow: its tip swings onto the square, the eyedropper recolours it and
-/// the wheel doubles its stroke; the square, last, widens a little.
+/// the wheel doubles its stroke.
 fn capture_film(desktop: &Image, folder: &Path) -> Result<()> {
     std::fs::create_dir_all(folder).map_err(|e| fail(&e.to_string()))?;
     let owner = text_owner(desktop)?;
@@ -657,31 +657,6 @@ fn capture_film(desktop: &Image, folder: &Path) -> Result<()> {
     let grown = arrow_of(&film)?;
     if grown.width != 2. * drawn.width || grown.color != sampled {
         return Err(fail("the wheel did not double the arrow alone"));
-    }
-    // The square, selected in turn, only widens a little and stays blue.
-    let square = film.last_bounds()?;
-    film.glide(p(square.center().x, square.min.y + 2.), 14, none)?;
-    film.click()?;
-    film.hold(4)?;
-    for _ in 0..2 {
-        film.session.wheel(film.window, 120)?;
-        film.hold(5)?;
-    }
-    film.hold(8)?;
-    let widened = film
-        .session
-        .capture
-        .editor
-        .objects()
-        .last()
-        .map(|o| o.style);
-    if widened
-        != Some(Style {
-            color: BLUE,
-            width: 1.5 * drawn.width,
-        })
-    {
-        return Err(fail("the wheel did not widen the blue square a little"));
     }
     // A click on the bare board drops the selection: the last frames show the capture as saved.
     film.glide(p(760., 505.), 16, none)?;

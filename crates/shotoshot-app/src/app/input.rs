@@ -132,7 +132,6 @@ impl App {
             temporary_shapes: enabled.shapes,
             keys: enabled.keys,
             mouse: enabled.mouse,
-            sound: self.settings.instant_sound,
             live: self.settings.live_capture,
             startup: crate::startup::enabled()?,
             board: self.settings.board_visible,
@@ -279,14 +278,6 @@ impl App {
                     }
                 }
                 13 => self.show_shortcut_setup(hwnd, setup::ShortcutTarget::Board)?,
-                7 => {
-                    let mut next = self.settings.clone();
-                    next.instant_sound = !next.instant_sound;
-                    if self.persist_preferences {
-                        next.save().map_err(crate::settings::unsaved)?;
-                    }
-                    self.settings = next;
-                }
                 4 => {
                     let enabled = !crate::startup::enabled()?;
                     crate::startup::set_enabled(enabled)?;

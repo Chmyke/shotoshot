@@ -8,7 +8,6 @@ pub(super) const RETRY_TIMER: usize = 0x5353;
 struct Pending {
     receiver: mpsc::Receiver<std::result::Result<(), String>>,
     bounds: RECT,
-    sound: bool,
 }
 pub(super) struct InstantCapture {
     pub hotkey: crate::hotkey::Hotkey,
@@ -26,7 +25,7 @@ impl InstantCapture {
     pub fn clear_feedback(&mut self) {
         self.pulse = None;
     }
-    fn start(&mut self, hwnd: HWND, sound: bool) -> Result<()> {
+    fn start(&mut self, hwnd: HWND) -> Result<()> {
         if self.pending.is_some() {
             return Ok(());
         }
@@ -62,7 +61,6 @@ impl InstantCapture {
         self.pending = Some(Pending {
             receiver,
             bounds: info.rcMonitor,
-            sound,
         });
         Ok(())
     }
@@ -84,7 +82,7 @@ impl App {
         }
         self.toast = None;
         self.instant.clear_feedback();
-        if let Err(error) = self.instant.start(hwnd, self.settings.instant_sound) {
+        if let Err(error) = self.instant.start(hwnd) {
             let detail = crate::failure::reason(&error);
             let text = Text::with(Key::NoticeScreenshotError, &[("detail", &detail)]);
             self.toast = notice::Toast::new(&text, true).ok();
@@ -117,7 +115,7 @@ impl App {
         } else {
             None
         };
-        if success && pending.sound && self.persist_preferences {
+        if success && self.persist_preferences {
             play_sound();
         }
         if let Err(error) = result {
@@ -173,12 +171,31 @@ impl App {
     }
 }
 
+/// What a successful instant screenshot plays.
+#[derive(Debug, PartialEq)]
+enum Sound {
+    Custom,
+    /// An empty personal file: the documented way to turn the sound off.
+    Silent,
+    Builtin,
+}
+fn sound_for(custom: &Path) -> Sound {
+    match std::fs::metadata(custom) {
+        Ok(file) if file.is_file() && file.len() == 0 => Sound::Silent,
+        Ok(file) if file.is_file() => Sound::Custom,
+        _ => Sound::Builtin,
+    }
+}
 fn play_sound() {
     use windows::Win32::Media::Audio::*;
     // Optional user-owned override stays outside the application and its installer.
     if let Ok(folder) = crate::settings::known_folder(&FOLDERID_LocalAppData) {
         let path = folder.join("Shotoshot").join("screenshot-custom.wav");
-        if path.is_file()
+        let sound = sound_for(&path);
+        if sound == Sound::Silent {
+            return;
+        }
+        if sound == Sound::Custom
             && unsafe {
                 PlaySoundW(
                     PCWSTR(crate::wide(&path).as_ptr()),
@@ -258,7 +275,6 @@ mod tests {
                 bottom: 1080,
                 ..Default::default()
             },
-            sound: false,
         });
         app.finish_instant_capture();
         assert!(app.toast.is_none());
@@ -278,6 +294,25 @@ mod tests {
         app.save_instant_shortcut(owner.0, 1, 0x52).unwrap();
         assert!(!app.setup_ui.error.is_empty());
         assert_eq!(app.settings.instant_shortcut, original);
+    }
+    #[test]
+    fn an_empty_personal_sound_silences_and_a_missing_one_keeps_the_builtin() {
+        let root = std::env::temp_dir().join(format!("shotoshot-sound-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let custom = root.join("screenshot-custom.wav");
+        assert_eq!(sound_for(&custom), Sound::Builtin);
+        std::fs::write(&custom, b"").unwrap();
+        assert_eq!(sound_for(&custom), Sound::Silent);
+        std::fs::write(&custom, b"RIFF").unwrap();
+        assert_eq!(sound_for(&custom), Sound::Custom);
+        std::fs::remove_file(&custom).unwrap();
+        std::fs::create_dir(&custom).unwrap();
+        assert_eq!(
+            sound_for(&custom),
+            Sound::Builtin,
+            "a folder is not a sound"
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn instant_export_is_numbered_and_does_not_modify_previous_files() {
@@ -324,7 +359,6 @@ mod tests {
                     bottom: 1080,
                     ..Default::default()
                 },
-                sound: true,
             });
             sender.send(Err("Disk full".into())).unwrap();
             SetWindowLongPtrW(
@@ -357,7 +391,6 @@ mod tests {
                     bottom: 1080,
                     ..Default::default()
                 },
-                sound: true,
             });
             drop(sender);
             app.finish_instant_capture();

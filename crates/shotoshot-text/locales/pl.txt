@@ -95,7 +95,6 @@ menu.capture = Przechwytywanie
 menu.instant_screenshot = Natychmiastowy zrzut ekranu
 menu.board == Board
 menu.options = Opcje
-menu.screenshot_sound = Dźwięk zrzutu ekranu
 menu.live_capture_default = Domyślnie przechwytywanie na żywo
 menu.start_with_windows = Uruchamiaj z systemem Windows
 menu.quit = Zamknij Shotoshot

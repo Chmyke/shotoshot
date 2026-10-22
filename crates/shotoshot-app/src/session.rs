@@ -63,6 +63,8 @@ pub struct Native {
     // The hardware renderer being built for `accelerate`.
     acceleration: Option<std::sync::mpsc::Receiver<Result<Prepared>>>,
     pub caret: text::CaretBlink,
+    // The ink the cross last showed: it changes only past a band, see `CrossInk::against`.
+    cross_ink: std::cell::Cell<shotoshot_ui::cursor_image::CrossInk>,
 }
 pub struct Session {
     pub capture: Capture,
@@ -97,6 +99,7 @@ impl Session {
                 back_buffer: None,
                 acceleration: None,
                 caret: Default::default(),
+                cross_ink: Default::default(),
             },
             document: None,
             board: None,
@@ -224,7 +227,14 @@ impl Session {
         let system = match kind {
             CursorKind::NewText => return pointer::new_text(self.capture.ui_scale()),
             CursorKind::Arrow => IDC_ARROW,
-            CursorKind::Cross => IDC_CROSS,
+            CursorKind::Cross => {
+                let scale = self.capture.ui_scale();
+                let reach = pointer::size(scale) as f64 * shotoshot_ui::cursor_image::CROSS_REACH;
+                let shown = self.native.cross_ink.get();
+                let ink = shown.against(self.capture.luminance_under(p, reach));
+                self.native.cross_ink.set(ink);
+                return pointer::cross(scale, ink);
+            }
             CursorKind::IBeam => IDC_IBEAM,
             CursorKind::Hand => IDC_HAND,
             CursorKind::Move => IDC_SIZEALL,

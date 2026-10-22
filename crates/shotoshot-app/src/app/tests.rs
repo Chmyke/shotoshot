@@ -455,9 +455,8 @@ fn the_menu_stays_open_for_settings_and_the_icon_closes_it() {
         .unwrap()
     };
     app.menu = Some(open(&app));
-    let sound = app.settings.instant_sound;
-    app.menu_command(owner.0, 7, true).unwrap();
-    assert_eq!(app.settings.instant_sound, !sound);
+    app.menu_command(owner.0, 121, true).unwrap();
+    assert_eq!(app.settings.presentation.duration_ms, 1000);
     assert!(app.menu.is_some(), "a setting keeps the menu open");
     // A click on the icon closes the open menu rather than opening another.
     app.tray_click(owner.0).unwrap();

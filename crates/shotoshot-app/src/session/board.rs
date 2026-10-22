@@ -67,6 +67,7 @@ impl Session {
                 back_buffer: None,
                 acceleration: None,
                 caret: Default::default(),
+                cross_ink: Default::default(),
             },
             document: None,
             board: Some(BoardSession { screens, folder }),

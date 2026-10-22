@@ -95,7 +95,6 @@ menu.capture = Yakalama
 menu.instant_screenshot = Anında ekran görüntüsü
 menu.board == Board
 menu.options = Seçenekler
-menu.screenshot_sound = Ekran görüntüsü sesi
 menu.live_capture_default = Varsayılan olarak canlı yakalama
 menu.start_with_windows = Windows ile başlat
 menu.quit = Shotoshot’tan çık

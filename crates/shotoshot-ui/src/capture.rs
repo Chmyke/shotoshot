@@ -280,6 +280,38 @@ impl Capture {
             self.image.pixels[offset],
         ]
     }
+    /// Mean luminance (0 to 255) of what the window shows in the square reaching `reach`
+    /// screen pixels around client point `p`: the capture, darkened where the shade covers it.
+    /// Annotations are left out; the cross reads the picture they sit on.
+    pub fn luminance_under(&self, p: Point, reach: f64) -> u8 {
+        let f = self.to_frame(p);
+        let reach = (self.to_frame(p + Point { x: reach, y: 0. }).x - f.x).max(0.5);
+        let (width, height) = (self.image.width as f64, self.image.height as f64);
+        let span = |c: f64, limit: f64| {
+            let start = (c - reach).floor().clamp(0., limit - 1.) as usize;
+            start..=((c + reach).floor().clamp(0., limit - 1.) as usize)
+        };
+        // A cursor at 500 % covers 120 pixels a side: 24 samples a side keep it cheap.
+        let (xs, ys) = (span(f.x, width), span(f.y, height));
+        let step = (xs.clone().count() / 24).max(1);
+        let (mut sum, mut count) = (0u64, 0u64);
+        for y in ys.step_by(step) {
+            for x in xs.clone().step_by(step) {
+                let i = (y * self.image.width as usize + x) * 4;
+                let [b, g, r] = [0, 1, 2].map(|c| self.image.pixels[i + c] as u64);
+                sum += (299 * r + 587 * g + 114 * b) / 1000;
+                count += 1;
+            }
+        }
+        let mean = (sum / count.max(1)) as f32;
+        let shaded = self.region.is_none_or(|r| !r.contains(f));
+        let shown = if shaded {
+            mean * (1. - crate::overlay::SHADE_ALPHA)
+        } else {
+            mean
+        };
+        shown.round() as u8
+    }
     /// The colour the pen, highlighter and bucket glyphs show: the pixel under the eyedropper
     /// while it hovers outside the toolbar, `current` otherwise.
     pub fn tool_tint(&self, current: [u8; 3]) -> [u8; 3] {
@@ -1160,5 +1192,38 @@ mod tests {
         let mut c = capture();
         c.image.pixels[..4].copy_from_slice(&[10, 20, 30, 255]);
         assert_eq!(c.sample_color(Point { x: -5., y: -5. }), [30, 20, 10]);
+    }
+    #[test]
+    fn the_luminance_under_the_cross_is_what_the_shade_leaves_of_the_capture() {
+        let mut c = Capture::new(Image::solid(900, 600, [255, 255, 255, 255]));
+        let at = Point { x: 300., y: 250. };
+        // Before any region, the shade covers the white page: a mid grey, the cross's trap.
+        assert_eq!(c.luminance_under(at, 12.), 133);
+        c.region = Rect::new(Point { x: 100., y: 100. }, Point { x: 600., y: 400. });
+        assert_eq!(
+            c.luminance_under(at, 12.),
+            255,
+            "inside the region: no shade"
+        );
+        assert_eq!(c.luminance_under(Point { x: 50., y: 50. }, 12.), 133);
+        // Left half black: the mean of what the square covers, 13 white columns of 25.
+        for y in 0..600 {
+            c.image.pixels[y * 900 * 4..(y * 900 + 300) * 4].fill(0);
+        }
+        let mean = c.luminance_under(at, 12.);
+        assert!((125..=140).contains(&mean), "{mean}");
+        // Pure blue is dark, pure yellow light, as the eye sees them.
+        c.image
+            .pixels
+            .chunks_mut(4)
+            .for_each(|p| p.copy_from_slice(&[255, 0, 0, 255]));
+        assert_eq!(c.luminance_under(at, 12.), 29);
+        c.image
+            .pixels
+            .chunks_mut(4)
+            .for_each(|p| p.copy_from_slice(&[0, 255, 255, 255]));
+        assert_eq!(c.luminance_under(at, 12.), 225);
+        // Clamped at the corner, never past the image.
+        assert_eq!(c.luminance_under(Point { x: -40., y: 900. }, 12.), 117);
     }
 }

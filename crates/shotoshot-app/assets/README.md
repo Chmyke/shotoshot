@@ -19,8 +19,8 @@ no existing file.
 
 Offline regeneration: `python generate-screenshot-sound.py` (standard library only, fixed seed).
 PCM16 mono 44,100 Hz, about 202 ms, peak −6.38 dBFS with no clipping. Played asynchronously from
-memory after a successful save; it can be turned off in the menu.
+memory after a successful save; the menu has no switch for it.
 
 A personal sound can replace this file at playback through
-`%LOCALAPPDATA%/Shotoshot/screenshot-custom.wav`. That local replacement does not change the
-distributed assets.
+`%LOCALAPPDATA%/Shotoshot/screenshot-custom.wav`; an empty file there means silence. That local
+replacement does not change the distributed assets.

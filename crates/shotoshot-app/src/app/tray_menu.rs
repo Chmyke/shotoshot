@@ -36,7 +36,6 @@ pub(super) enum Icon {
     Layout,
     Size,
     Clock,
-    Sound,
     Power,
     /// A note pinned to the desktop.
     Board,
@@ -133,7 +132,6 @@ const ROOT: &[Row] = &[
     ),
     row(13, Key::MenuBoard, Icon::Board, Kind::Command),
     title(92, Key::MenuOptions),
-    row(7, Key::MenuScreenshotSound, Icon::Sound, Kind::Toggle),
     row(
         5,
         Key::MenuLiveCaptureDefault,
@@ -246,7 +244,6 @@ pub(super) struct Values {
     pub temporary_shapes: bool,
     pub keys: bool,
     pub mouse: bool,
-    pub sound: bool,
     pub live: bool,
     pub startup: bool,
     /// Whether the board is shown in the wallpaper.
@@ -265,7 +262,6 @@ impl Values {
             102 => self.temporary_shapes,
             103 => self.keys,
             104 => self.mouse,
-            7 => self.sound,
             5 => self.live,
             4 => self.startup,
             9 => self.board,
@@ -556,25 +552,6 @@ pub(super) fn draw_icon<C: Canvas>(
                 rgb,
                 &[(10., 5.5), (10., 10.), (13.5, 12.)],
             )?;
-        }
-        Icon::Sound => {
-            segments(
-                canvas,
-                origin,
-                scale,
-                rgb,
-                &[
-                    (2., 7.5),
-                    (5.5, 7.5),
-                    (10.5, 3.5),
-                    (10.5, 16.5),
-                    (5.5, 12.5),
-                    (2., 12.5),
-                    (2., 7.5),
-                ],
-            )?;
-            arc(canvas, origin, scale, rgb, ((10.5, 10.), 4.), (-45., 45.))?;
-            arc(canvas, origin, scale, rgb, ((10.5, 10.), 7.5), (-50., 50.))?;
         }
         Icon::Power => {
             arc(canvas, origin, scale, rgb, ((10., 10.5), 7.5), (-55., 235.))?;
@@ -889,7 +866,6 @@ fn sample() -> Values {
         temporary_shapes: true,
         keys: false,
         mouse: false,
-        sound: defaults.instant_sound,
         live: defaults.live_capture,
         startup: defaults.start_with_windows,
         board: defaults.board_visible,
@@ -1181,7 +1157,6 @@ mod tests {
                 "Ellipse",
                 "Board",
                 "Options",
-                "Screenshot sound",
                 "Live capture by default",
                 "Start with Windows",
                 "",

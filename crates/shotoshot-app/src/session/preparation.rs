@@ -54,6 +54,7 @@ impl Preparation {
                 back_buffer,
                 acceleration: None,
                 caret: Default::default(),
+                cross_ink: Default::default(),
             },
             document: None,
             board: None,

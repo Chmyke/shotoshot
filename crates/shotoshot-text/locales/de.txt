@@ -95,7 +95,6 @@ menu.capture = Aufnahme
 menu.instant_screenshot = Sofort-Screenshot
 menu.board == Board
 menu.options = Optionen
-menu.screenshot_sound = Screenshot-Ton
 menu.live_capture_default = Standardmäßig Live-Aufnahme
 menu.start_with_windows = Mit Windows starten
 menu.quit = Shotoshot beenden

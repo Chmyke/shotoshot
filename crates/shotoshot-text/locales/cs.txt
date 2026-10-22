@@ -95,7 +95,6 @@ menu.capture = Snímání
 menu.instant_screenshot = Okamžitý snímek obrazovky
 menu.board == Board
 menu.options = Možnosti
-menu.screenshot_sound = Zvuk snímku
 menu.live_capture_default = Výchozí živé snímání
 menu.start_with_windows = Spouštět s Windows
 menu.quit = Ukončit Shotoshot

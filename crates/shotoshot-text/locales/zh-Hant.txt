@@ -95,7 +95,6 @@ menu.capture = 擷取
 menu.instant_screenshot = 即時擷取畫面
 menu.board == Board
 menu.options = 選項
-menu.screenshot_sound = 擷取音效
 menu.live_capture_default = 預設即時擷取
 menu.start_with_windows = 隨 Windows 啟動
 menu.quit = 結束 Shotoshot

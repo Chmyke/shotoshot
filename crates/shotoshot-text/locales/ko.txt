@@ -95,7 +95,6 @@ menu.capture = 캡처
 menu.instant_screenshot = 즉시 스크린샷
 menu.board == Board
 menu.options = 옵션
-menu.screenshot_sound = 스크린샷 소리
 menu.live_capture_default = 기본으로 실시간 캡처
 menu.start_with_windows = Windows 시작 시 실행
 menu.quit = Shotoshot 종료
