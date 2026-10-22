@@ -48,7 +48,6 @@ What changed in each version of Shotoshot, newest first.
 
 ## 0.2.0 · 2026-10-10
 
-- Shotshot is now Shotoshot. Same app, one extra "o".
 - **New** · Save a capture as an editable .shoto image. Reopen it later and every arrow, box and text can still be moved. Explorer even shows a thumbnail.
 - **New** · Paint bucket: fill a shape, recolour a line, or flood the whole capture.
 - Presentation mode shows your keyboard and mouse separately, with a choice of layouts.
