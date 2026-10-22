@@ -1,0 +1,223 @@
+# Shotoshot 인터페이스 문구, 한국어. 형식은 en.txt를 참고하세요.
+
+language.menu = 언어
+
+tooltip.with_shortcut = {label} · {shortcut}
+
+key.ctrl == Ctrl
+key.shift == Shift
+key.alt == Alt
+key.win == Win
+key.esc == Esc
+key.delete == Delete
+key.backspace == Backspace
+key.tab == Tab
+key.enter == Enter
+key.caps_lock == Caps Lock
+key.space = 스페이스
+key.page_up == Page Up
+key.page_down == Page Down
+key.end == End
+key.home == Home
+key.left = ←
+key.up = ↑
+key.right = →
+key.down = ↓
+key.insert == Insert
+key.numpad = 숫자패드 {key}
+key.num_lock == Num Lock
+key.scroll_lock == Scroll Lock
+key.pause == Pause
+key.break == Break
+key.print_screen == Print Screen
+key.code = 키 {code}
+
+toolbar.select = 선택 · {shortcut} · Page Up/Down: 앞뒤로 이동
+toolbar.rectangle = 사각형
+toolbar.ellipse = 타원
+toolbar.line = 선
+toolbar.arrow = 화살표
+toolbar.pen = 펜
+toolbar.highlighter = 형광펜
+toolbar.text = 텍스트
+toolbar.eraser = 지우개
+toolbar.live_capture = 실시간 캡처 · {shortcut} · 복사하거나 저장할 때 새로 고침
+toolbar.red = 빨강
+toolbar.yellow = 노랑
+toolbar.green = 초록
+toolbar.blue = 파랑
+toolbar.white = 흰색
+toolbar.black = 검정
+toolbar.custom_color = 사용자 지정 색
+toolbar.eyedropper = 스포이트
+toolbar.fill = 선, 도형 또는 배경 칠하기 · {shortcut} · 오른쪽 클릭 또는 Alt+클릭: 색 제거
+toolbar.undo = 실행 취소
+toolbar.redo = 다시 실행
+toolbar.google_lens = Google 렌즈로 검색
+toolbar.copy_image = 이미지 복사
+toolbar.save = 저장
+toolbar.close = 닫기
+toolbar.clear_board = Board 지우기 · 복원: {shortcut}
+
+capture.nothing_to_undo = 실행 취소할 작업 없음
+capture.nothing_to_redo = 다시 실행할 작업 없음
+capture.google_search_in_progress = Google 검색 중
+capture.live_on = 실시간 캡처 켜짐 · 고정: {shortcut}
+capture.live_frozen = 캡처 고정됨 · 실시간 캡처: {shortcut}
+capture.live_for_new_captures = 실시간 캡처는 새 캡처에서만 쓸 수 있습니다
+capture.full_screen = 전체 화면
+capture.restore_selection = 이전 선택 영역으로
+capture.edit_dimensions = 크기 편집 · 수식: 800+20, 1920/2
+
+overlay.select_area = 영역 선택
+overlay.cancel = 취소: {shortcut}
+overlay.stroke_width == {width} px
+magnifier.pick = 클릭하여 선택 · {shortcut}
+picker.apply = 바깥 클릭: 적용 · 취소: {shortcut}
+
+crop.invalid = 2 이상의 정수 픽셀 값이나 800+20 같은 수식을 입력하세요.
+crop.outside = 캡처는 바탕 화면 안에 있어야 합니다. 너비나 높이를 줄이세요.
+
+menu.take_screenshot = 스크린샷 찍기
+menu.edit_board = Board 편집
+menu.show_board = Board 표시
+menu.clear_board = Board 지우기
+menu.presentation = 프레젠테이션
+menu.pointer_halo = 포인터 강조
+menu.keyboard = 키보드
+menu.mouse = 마우스
+menu.keyboard_layout = 키보드 형태
+menu.input_size = 키보드 및 마우스 크기
+menu.temporary_shapes = 임시 도형
+menu.shape_duration = 도형 표시 시간
+menu.shortcuts = 바로 가기 키 · 클릭하여 변경
+menu.capture = 캡처
+menu.instant_screenshot = 즉시 스크린샷
+menu.board == Board
+menu.options = 옵션
+menu.screenshot_sound = 스크린샷 소리
+menu.live_capture_default = 기본으로 실시간 캡처
+menu.start_with_windows = Windows 시작 시 실행
+menu.quit = Shotoshot 종료
+menu.duration_1 = 1초
+menu.duration_3 = 3초
+menu.duration_5 = 5초
+menu.layout_full = 전체
+menu.layout_compact = 컴팩트
+menu.layout_gaming = 게임용
+menu.seconds = {n}초
+menu.percent = {n}%
+menu.shortcut_in_use = {shortcut} (사용 중)
+menu.language_auto = Windows 언어
+menu.language_system = 시스템 언어
+
+setup.title_capture = 캡처 바로 가기 키
+setup.title_instant = 즉시 스크린샷 바로 가기 키
+setup.title_arrow = 화살표 바로 가기 키
+setup.title_rectangle = 사각형 바로 가기 키
+setup.title_ellipse = 타원 바로 가기 키
+setup.title_board = Board 바로 가기 키
+setup.press = 바로 가기 키를 누르세요…
+setup.waiting = …
+setup.choose = 바로 가기 키 선택
+setup.cancel = 취소
+setup.save = 저장
+setup.any_key_hint = 어떤 키든 단독으로 또는 Ctrl, Shift, Alt, Windows와 함께 쓸 수 있습니다.
+setup.board_hint = Ctrl 또는 Alt와 함께 누르는 키입니다. Shift나 Windows를 추가할 수도 있습니다.
+setup.shape_hint = Ctrl 또는 Alt와 함께 누르는 문자입니다. Shift를 추가할 수도 있습니다.
+setup.print_screen_hint = Print Screen을 누르면 Windows 캡처 도구 대신 Shotoshot이 열립니다. 다른 키를 고르려면 키를 클릭하세요.
+setup.change_hint = 키를 클릭하여 변경하세요.
+setup.used_for_instant = 이 바로 가기 키는 이미 즉시 스크린샷에 사용 중입니다.
+setup.used_for_capture = 이 조합은 이미 캡처에 사용 중입니다.
+setup.used_by_presentation = 이 바로 가기 키는 이미 프레젠테이션 모드에서 사용 중입니다. 다른 바로 가기 키를 선택하세요.
+setup.used_by_board = 이 바로 가기 키는 이미 Board에서 사용 중입니다.
+setup.used_by_shotoshot = 이 바로 가기 키는 이미 Shotoshot에서 사용 중입니다.
+setup.register_failed = 이 바로 가기 키를 등록할 수 없습니다({code}). 예약되어 있거나 이미 사용 중일 수 있습니다.
+setup.unavailable = 바로 가기 키를 사용할 수 없습니다({code}). 다른 키를 선택하세요.
+setup.invalid = 바로 가기 키를 사용할 수 없거나 잘못되었습니다: {detail}
+setup.print_screen_held = Print Screen을 아직 다른 앱이 사용 중이거나, 로그아웃 후 다시 로그인할 때까지 Windows가 사용 중입니다. 그 앱을 닫거나 다른 키를 선택하세요.
+
+tray.tooltip = Shotoshot: 캡처하고 주석 달기
+
+setup.invalid_shape = 잘못된 도형 바로 가기 키
+setup.invalid_board = 잘못된 Board 바로 가기 키
+setup.shape_needs_modifier = 입력 중에 도형이 실행되지 않도록 Ctrl 또는 Alt가 포함된 바로 가기 키를 선택하세요.
+setup.board_needs_modifier = 입력 중에 Board가 열리지 않도록 Ctrl 또는 Alt가 포함된 바로 가기 키를 선택하세요.
+setup.reserved = Ctrl+Alt+Esc는 예약되어 있습니다
+setup.duplicate_shape = 도형 바로 가기 키가 중복됩니다
+
+notice.copied = 스크린샷을 클립보드에 복사했습니다.
+notice.saved = 이미지를 저장했습니다.
+notice.searching = Google 검색 중…
+notice.preferences = 설정을 저장했습니다.
+notice.saved_editable = 화면을 포함해 편집 가능한 이미지를 저장했습니다.
+notice.instant_unavailable = 즉시 스크린샷 바로 가기 키를 쓸 수 없습니다. Shotoshot 메뉴에서 변경하세요.
+notice.board_unavailable = Board 바로 가기 키를 쓸 수 없습니다. Shotoshot 메뉴에서 변경하세요.
+notice.shortcuts_unavailable = 바로 가기 키를 사용할 수 없음: {names}
+notice.names_separator == {before}, {after}
+notice.screenshot_failed = 스크린샷 실패: 파일이 저장되지 않음
+notice.screenshot_error = 스크린샷 실패: {detail}
+
+presentation.stop = 모두 끄기
+
+error.unexpected = 문제가 발생했습니다.\n{detail}
+error.stopped = 예기치 않은 내부 오류가 발생했습니다. Shotoshot이 중지되었습니다.
+error.already_running = Shotoshot이 이미 실행 중입니다. 알림 영역의 아이콘을 사용하세요.
+error.editor_start = 편집기를 시작할 수 없습니다. 다시 캡처해 보세요.
+error.screenshot_refused = 데스크톱이 스크린샷을 거부했습니다.
+error.capture_shortcut_in_use = 캡처 바로 가기 키가 이미 사용 중입니다. 다른 조합을 선택하세요.
+error.shortcut_in_use = 바로 가기 키 {shortcut}이(가) 이미 사용 중입니다. 추가 기능을 켜지 않았습니다.
+error.presentation_busy = 프레젠테이션 설정을 바꾸기 전에 현재 캡처를 마치세요.
+error.presentation_stopped = 오류로 프레젠테이션이 중지되었습니다. Shotoshot 메뉴에서 다시 켤 수 있습니다.
+error.display_changed = 디스플레이 구성이 바뀌었습니다. 새로 캡처하세요.
+error.display_changed_board = 디스플레이 구성이 바뀌었습니다. Board를 저장했습니다.
+error.no_region = 먼저 캡처 영역을 선택하세요
+error.settings_unreadable = 지원되지 않거나 손상된 설정입니다. 원래 파일은 그대로 두었습니다.\n{detail}
+error.settings_unsaved = 설정을 저장할 수 없습니다: {detail}
+error.settings_busy = 설정이 사용 중입니다. 다시 시도하세요.
+error.save_dialog = 저장 대화 상자를 열 수 없습니다({code})
+error.not_editable_capture = 이 캡처는 편집 가능한 이미지로 저장할 수 없습니다.
+error.text_layout = 텍스트 레이아웃 실패
+error.lens_browser = 브라우저를 열 수 없습니다. 캡처는 계속 열려 있습니다.
+error.lens_failed = Google 검색에 실패했습니다. 캡처는 계속 열려 있습니다.\n{detail}
+error.lens_interrupted = Google 검색이 중단되었습니다. 캡처는 계속 열려 있습니다.
+error.lens_too_large = 이미지가 Google 렌즈 제한인 20MB를 초과합니다.
+error.document_unread = {path}을(를) 열 수 없습니다: {detail}
+error.document_too_large = 이 이미지({width} × {height})는 이 화면보다 큽니다. PNG로는 계속 열 수 있습니다.
+error.board_unsaved = Board를 저장할 수 없습니다: {detail}
+error.wallpaper_unchanged = 메모는 저장했지만 배경 화면은 업데이트하지 못했습니다: {detail}
+error.board_unopened = Board를 열 수 없습니다.
+error.board_in_use = Board를 편집하는 중입니다. 먼저 닫은 다음 지우세요.
+error.board_base_damaged = Board 기본 파일이 손상되었습니다. 변경하지 않고 그대로 두었습니다.
+
+board.newer = 이 Board는 최신 버전의 Shotoshot에서 작성되었습니다.
+board.damaged = Board 파일이 손상되었습니다. 변경하지 않고 그대로 두었습니다.
+
+document.not_editable = 이 파일에는 편집 가능한 Shotoshot 데이터가 없습니다.
+document.newer = 이 이미지는 최신 Shotoshot에서 저장되었습니다. 편집하려면 Shotoshot을 업데이트하세요. PNG로는 계속 열 수 있습니다.
+document.damaged = 이 편집 가능한 이미지가 손상되어 편집용으로 열 수 없습니다.
+
+save.png = PNG 이미지
+save.jpeg = JPEG 이미지
+save.shoto = 편집 가능한 Shotoshot 이미지, 화면 전체 보관
+
+lens.sending = 캡처를 Google 렌즈로 보내는 중…
+lens.needs_script = 캡처를 보내려면 JavaScript가 필요합니다.
+
+keycap.esc == Esc
+keycap.ctrl == Ctrl
+keycap.alt == Alt
+keycap.alt_gr == Gr
+keycap.caps == Caps
+keycap.num == Num
+keycap.scroll == Scr
+keycap.print == Prt
+keycap.end == End
+keycap.insert == Ins
+keycap.delete == Del
+
+# Installer
+installer.language.title = Shotoshot 언어
+installer.language.description = 나중에 알림 영역의 Shotoshot 아이콘에서 변경할 수 있습니다.
+installer.language.auto = Windows 언어
+installer.shoto_file = 편집 가능한 Shotoshot 이미지

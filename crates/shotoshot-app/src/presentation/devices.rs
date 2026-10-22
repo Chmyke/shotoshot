@@ -1,6 +1,7 @@
 //! ROLE: Physical input state for the presentation diagram.
 //! OWNER: One presentation session owns one Devices value.
 //! INVARIANTS: Fixed transient labels only, no text history; E0 keys are independent.
+use shotoshot_text::{Key, Language, tr_in};
 const RELEASE_MS: u64 = 180;
 const LABEL_FADE_MS: u64 = 600;
 #[derive(Clone, Copy, Default)]
@@ -44,7 +45,7 @@ impl Devices {
             let key = &mut self.keys[index];
             if down && !key.down {
                 self.labels[index] = [0; 4];
-                let text = special_label(scan, extended);
+                let text = special_label_in(scan, extended, shotoshot_text::language());
                 let mut length = 0;
                 for unit in text.encode_utf16().take(4) {
                     self.labels[index][length] = unit;
@@ -145,22 +146,24 @@ impl Devices {
     }
 }
 // Physical labels remain useful when Num Lock is off or a key has no printable character.
-fn special_label(scan: u16, extended: bool) -> &'static str {
+// Words follow the keyboards of `language` (`keycap.*`); symbols and digits stay.
+pub(super) fn special_label_in(scan: u16, extended: bool, language: Language) -> &'static str {
+    let word = |key: Key| tr_in(language, key);
     match (scan, extended) {
-        (1, false) => "Esc",
+        (1, false) => word(Key::KeycapEsc),
         (14, false) => "←",
         (15, false) => "⇥",
         (28, _) => "↵",
-        (29, _) => "Ctrl",
+        (29, _) => word(Key::KeycapCtrl),
         (42 | 54, false) => "⇧",
-        (56, false) => "Alt",
-        (56, true) => "Gr",
+        (56, false) => word(Key::KeycapAlt),
+        (56, true) => word(Key::KeycapAltGr),
         (57, false) => "␣",
-        (58, false) => "Caps",
-        (69, false) => "Num",
+        (58, false) => word(Key::KeycapCaps),
+        (69, false) => word(Key::KeycapNum),
         (69, true) => "Ⅱ",
-        (70, false) => "Scr",
-        (55, true) => "Prt",
+        (70, false) => word(Key::KeycapScroll),
+        (55, true) => word(Key::KeycapPrint),
         (91 | 92, true) => "⊞",
         (93, true) => "☰",
         (71, true) => "↖",
@@ -168,11 +171,11 @@ fn special_label(scan: u16, extended: bool) -> &'static str {
         (73, true) => "⇞",
         (75, true) => "←",
         (77, true) => "→",
-        (79, true) => "End",
+        (79, true) => word(Key::KeycapEnd),
         (80, true) => "↓",
         (81, true) => "⇟",
-        (82, true) => "Ins",
-        (83, true) => "Del",
+        (82, true) => word(Key::KeycapInsert),
+        (83, true) => word(Key::KeycapDelete),
         (53, true) => "/",
         (55, false) => "*",
         (74, false) => "−",

@@ -19,10 +19,11 @@ pub enum Error {
     Damaged,
 }
 impl Error {
-    pub fn message(self) -> &'static str {
+    /// The text the user reads.
+    pub fn key(self) -> shotoshot_text::Key {
         match self {
-            Self::Newer => "This board was written by a newer version of Shotoshot.",
-            Self::Damaged => "The board file is damaged. It was left untouched.",
+            Self::Newer => shotoshot_text::Key::BoardNewer,
+            Self::Damaged => shotoshot_text::Key::BoardDamaged,
         }
     }
 }
@@ -267,6 +268,12 @@ fn distance(r: Rect, p: Point) -> f64 {
 mod tests {
     use super::*;
     use crate::Style;
+
+    #[test]
+    fn refusals_are_keys() {
+        assert_eq!(Error::Newer.key(), shotoshot_text::Key::BoardNewer);
+        assert_eq!(Error::Damaged.key(), shotoshot_text::Key::BoardDamaged);
+    }
 
     fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Rect {
         Rect {

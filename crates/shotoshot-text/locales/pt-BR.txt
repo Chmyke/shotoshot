@@ -1,0 +1,223 @@
+# Textos da interface do Shotoshot, português do Brasil. O formato está descrito em en.txt.
+
+language.menu = Idioma
+
+tooltip.with_shortcut = {label} · {shortcut}
+
+key.ctrl == Ctrl
+key.shift == Shift
+key.alt == Alt
+key.win == Win
+key.esc == Esc
+key.delete == Delete
+key.backspace == Backspace
+key.tab == Tab
+key.enter == Enter
+key.caps_lock == Caps Lock
+key.space = Espaço
+key.page_up == Page Up
+key.page_down == Page Down
+key.end == End
+key.home == Home
+key.left = Esquerda
+key.up = Cima
+key.right = Direita
+key.down = Baixo
+key.insert == Insert
+key.numpad = Num {key}
+key.num_lock == Num Lock
+key.scroll_lock == Scroll Lock
+key.pause == Pause
+key.break == Break
+key.print_screen == Print Screen
+key.code = Tecla {code}
+
+toolbar.select = Selecionar · {shortcut} · Page Up/Down: para frente ou para trás
+toolbar.rectangle = Retângulo
+toolbar.ellipse = Elipse
+toolbar.line = Linha
+toolbar.arrow = Seta
+toolbar.pen = Caneta
+toolbar.highlighter = Marca-texto
+toolbar.text = Texto
+toolbar.eraser = Borracha
+toolbar.live_capture = Captura ao vivo · {shortcut} · atualiza ao copiar ou salvar
+toolbar.red = Vermelho
+toolbar.yellow = Amarelo
+toolbar.green = Verde
+toolbar.blue = Azul
+toolbar.white = Branco
+toolbar.black = Preto
+toolbar.custom_color = Cor personalizada
+toolbar.eyedropper = Conta-gotas
+toolbar.fill = Colorir um traço, uma forma ou o fundo · {shortcut} · Clique direito ou Alt+clique remove a cor
+toolbar.undo = Desfazer
+toolbar.redo = Refazer
+toolbar.google_lens = Pesquisar com o Google Lens
+toolbar.copy_image = Copiar imagem
+toolbar.save = Salvar
+toolbar.close = Fechar
+toolbar.clear_board = Limpar o Board · {shortcut} restaura
+
+capture.nothing_to_undo = Nada para desfazer
+capture.nothing_to_redo = Nada para refazer
+capture.google_search_in_progress = Pesquisa do Google em andamento
+capture.live_on = Captura ao vivo ativada · {shortcut} para congelar
+capture.live_frozen = Captura congelada · {shortcut} para captura ao vivo
+capture.live_for_new_captures = A captura ao vivo é só para novas capturas
+capture.full_screen = Tela inteira
+capture.restore_selection = Voltar à seleção anterior
+capture.edit_dimensions = Editar dimensões · expressões: 800+20, 1920/2
+
+overlay.select_area = Selecione uma área
+overlay.cancel = {shortcut} para cancelar
+overlay.stroke_width == {width} px
+magnifier.pick = Clique: pegar · {shortcut}
+picker.apply = Clique fora: aplicar · {shortcut}: cancelar
+
+crop.invalid = Digite um número inteiro de pixels (no mínimo 2) ou uma expressão como 800+20.
+crop.outside = A captura precisa ficar dentro da área de trabalho. Reduza a largura ou a altura.
+
+menu.take_screenshot = Capturar a tela
+menu.edit_board = Editar o Board
+menu.show_board = Mostrar o Board
+menu.clear_board = Limpar o Board
+menu.presentation = Apresentação
+menu.pointer_halo = Halo do ponteiro
+menu.keyboard = Teclado
+menu.mouse == Mouse
+menu.keyboard_layout = Formato do teclado
+menu.input_size = Tamanho do teclado e do mouse
+menu.temporary_shapes = Formas temporárias
+menu.shape_duration = Duração das formas
+menu.shortcuts = Atalhos · clique para alterar
+menu.capture = Captura
+menu.instant_screenshot = Captura instantânea
+menu.board == Board
+menu.options = Opções
+menu.screenshot_sound = Som da captura
+menu.live_capture_default = Captura ao vivo por padrão
+menu.start_with_windows = Iniciar com o Windows
+menu.quit = Sair do Shotoshot
+menu.duration_1 = 1 segundo
+menu.duration_3 = 3 segundos
+menu.duration_5 = 5 segundos
+menu.layout_full = Completo
+menu.layout_compact = Compacto
+menu.layout_gaming = Para jogos
+menu.seconds = {n} s
+menu.percent = {n}%
+menu.shortcut_in_use = {shortcut} (em uso)
+menu.language_auto = Idioma do Windows
+menu.language_system = Idioma do sistema
+
+setup.title_capture = Atalho de captura
+setup.title_instant = Atalho de captura instantânea
+setup.title_arrow = Atalho da seta
+setup.title_rectangle = Atalho do retângulo
+setup.title_ellipse = Atalho da elipse
+setup.title_board = Atalho do Board
+setup.press = Pressione seu atalho…
+setup.waiting = …
+setup.choose = Escolha um atalho
+setup.cancel = Cancelar
+setup.save = Salvar
+setup.any_key_hint = Qualquer tecla serve, sozinha ou com Ctrl, Shift, Alt ou Windows.
+setup.board_hint = Uma tecla com Ctrl ou Alt. Também dá para adicionar Shift ou Windows.
+setup.shape_hint = Uma letra com Ctrl ou Alt. Também dá para adicionar Shift.
+setup.print_screen_hint = Print Screen abrirá o Shotoshot em vez da Ferramenta de Captura do Windows. Clique na tecla para escolher outra.
+setup.change_hint = Clique nas teclas para alterá-las.
+setup.used_for_instant = Este atalho já é usado pela captura instantânea.
+setup.used_for_capture = Esta combinação já é usada pela captura.
+setup.used_by_presentation = Este atalho já é usado pelo modo de apresentação. Escolha outro atalho.
+setup.used_by_board = Este atalho já é usado pelo Board.
+setup.used_by_shotoshot = Este atalho já é usado pelo Shotoshot.
+setup.register_failed = Não foi possível registrar este atalho ({code}). Ele pode estar reservado ou já em uso.
+setup.unavailable = Atalho indisponível ({code}). Escolha outra tecla.
+setup.invalid = Atalho indisponível ou inválido: {detail}
+setup.print_screen_held = Print Screen continua em uso, por outro aplicativo ou pelo Windows até você sair e entrar de novo. Feche esse aplicativo ou escolha outra tecla.
+
+tray.tooltip = Shotoshot: capturar e anotar
+
+setup.invalid_shape = Atalho de forma inválido
+setup.invalid_board = Atalho do Board inválido
+setup.shape_needs_modifier = Escolha um atalho com Ctrl ou Alt para não acionar formas ao digitar.
+setup.board_needs_modifier = Escolha um atalho com Ctrl ou Alt para não abrir o Board ao digitar.
+setup.reserved = Ctrl+Alt+Esc é reservado
+setup.duplicate_shape = Atalho de forma duplicado
+
+notice.copied = Captura copiada para a área de transferência.
+notice.saved = Imagem salva.
+notice.searching = Pesquisando no Google…
+notice.preferences = Configurações salvas.
+notice.saved_editable = Imagem editável salva, com a tela incluída.
+notice.instant_unavailable = Atalho de captura instantânea indisponível. Altere-o no menu do Shotoshot.
+notice.board_unavailable = Atalho do Board indisponível. Altere-o no menu do Shotoshot.
+notice.shortcuts_unavailable = Atalho indisponível: {names}
+notice.names_separator == {before}, {after}
+notice.screenshot_failed = Falha na captura: arquivo não salvo
+notice.screenshot_error = Falha na captura: {detail}
+
+presentation.stop = Desativar tudo
+
+error.unexpected = Algo deu errado.\n{detail}
+error.stopped = Falha interna inesperada. O Shotoshot foi encerrado.
+error.already_running = O Shotoshot já está em execução. Use o ícone dele na área de notificação.
+error.editor_start = Não foi possível iniciar o editor. Tente outra captura.
+error.screenshot_refused = A área de trabalho recusou a captura.
+error.capture_shortcut_in_use = O atalho de captura já está em uso. Escolha outra combinação.
+error.shortcut_in_use = O atalho {shortcut} já está em uso. Nenhum recurso adicional foi ativado.
+error.presentation_busy = Conclua a captura atual antes de alterar as configurações de apresentação.
+error.presentation_stopped = A apresentação parou após um erro. Você pode reativá-la no menu do Shotoshot.
+error.display_changed = A configuração de vídeo mudou. Inicie uma nova captura.
+error.display_changed_board = A configuração de vídeo mudou. O Board foi salvo.
+error.no_region = Selecione primeiro uma área de captura
+error.settings_unreadable = Configurações incompatíveis ou danificadas. O arquivo original foi preservado.\n{detail}
+error.settings_unsaved = Não foi possível salvar as configurações: {detail}
+error.settings_busy = As configurações estão ocupadas. Tente novamente.
+error.save_dialog = Não foi possível abrir a caixa de diálogo Salvar ({code})
+error.not_editable_capture = Esta captura não pode ser salva como imagem editável.
+error.text_layout = Falha no layout do texto
+error.lens_browser = Não foi possível abrir o navegador. Sua captura continua aberta.
+error.lens_failed = A pesquisa do Google falhou. Sua captura continua aberta.\n{detail}
+error.lens_interrupted = A pesquisa do Google foi interrompida. Sua captura continua aberta.
+error.lens_too_large = A imagem excede o limite de 20 MB do Google Lens.
+error.document_unread = Não foi possível abrir {path}: {detail}
+error.document_too_large = Esta imagem ({width} × {height}) é maior que esta tela. Ela ainda abre como PNG.
+error.board_unsaved = Não foi possível salvar o Board: {detail}
+error.wallpaper_unchanged = As notas foram salvas, mas o papel de parede não foi atualizado: {detail}
+error.board_unopened = Não foi possível abrir o Board.
+error.board_in_use = O Board está aberto para edição: feche-o primeiro e depois limpe-o.
+error.board_base_damaged = O arquivo de base do Board está danificado. Ele não foi alterado.
+
+board.newer = Este Board foi gravado por uma versão mais recente do Shotoshot.
+board.damaged = O arquivo do Board está danificado. Ele não foi alterado.
+
+document.not_editable = Este arquivo não tem dados editáveis do Shotoshot.
+document.newer = Esta imagem foi salva por um Shotoshot mais recente. Atualize o Shotoshot para editá-la. Ela ainda abre como PNG.
+document.damaged = Esta imagem editável está danificada e não pode ser aberta para edição.
+
+save.png = Imagem PNG
+save.jpeg = Imagem JPEG
+save.shoto = Imagem editável do Shotoshot, mantém a tela inteira
+
+lens.sending = Enviando a captura para o Google Lens…
+lens.needs_script = É preciso JavaScript para enviar a captura.
+
+keycap.esc == Esc
+keycap.ctrl == Ctrl
+keycap.alt == Alt
+keycap.alt_gr == Gr
+keycap.caps == Caps
+keycap.num == Num
+keycap.scroll == Scr
+keycap.print == Prt
+keycap.end == End
+keycap.insert == Ins
+keycap.delete == Del
+
+# Installer
+installer.language.title = Idioma do Shotoshot
+installer.language.description = Você pode alterá-lo depois pelo ícone do Shotoshot na área de notificação.
+installer.language.auto = Idioma do Windows
+installer.shoto_file = Imagem editável do Shotoshot

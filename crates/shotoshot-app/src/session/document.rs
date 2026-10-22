@@ -8,7 +8,7 @@ impl Session {
     /// A session on the document `scene`, whose frame is the PNG `frame`, reopened from
     /// `path`: Save rewrites that file.
     pub fn reopen(scene: Scene, frame: &[u8], path: &std::path::Path) -> Result<Self> {
-        let damaged = || Error::new(E_FAIL, shoto::Error::Damaged.message());
+        let damaged = || crate::failure::visible(shoto::Error::Damaged.key(), &[]);
         let size = Point {
             x: scene.width as f64,
             y: scene.height as f64,
@@ -26,12 +26,12 @@ impl Session {
             y: pointer.y as f64,
         };
         let corner = shotoshot_ui::placement(size, origin, &screens, pointer).ok_or_else(|| {
-            Error::new(
-                E_FAIL,
-                format!(
-                    "This image ({} × {}) is larger than this screen. It still opens as a PNG.",
-                    scene.width, scene.height
-                ),
+            crate::failure::visible(
+                shotoshot_text::Key::ErrorDocumentTooLarge,
+                &[
+                    ("width", &scene.width.to_string()),
+                    ("height", &scene.height.to_string()),
+                ],
             )
         })?;
         let mut frame = decode_png(frame, (scene.width, scene.height)).map_err(|_| damaged())?;
@@ -188,6 +188,10 @@ mod tests {
         let mut huge = scene;
         (huge.width, huge.height) = (32_000, 32_000);
         let error = Session::reopen(huge, frame, path).err().unwrap();
-        assert!(error.message().contains("larger than this screen"));
+        let text = crate::failure::text_in(&error, shotoshot_text::Language::En);
+        assert!(
+            text.as_str()
+                .contains("32000 × 32000) is larger than this screen")
+        );
     }
 }

@@ -3,8 +3,10 @@
 #![cfg(target_os = "linux")]
 mod clipboard;
 mod editor;
+mod failure;
 mod files;
 mod keymap;
+mod language;
 mod monitors;
 mod notice;
 mod png_io;
@@ -22,22 +24,34 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
     let result = dispatch(&args);
-    let unattended = args.iter().any(|a| {
-        a == clipboard::SERVE
-            || a == notice::ARG
-            || a == notice::CONFIRMATION
-            || a.starts_with("--linux-")
-    });
     if let Err(error) = &result
-        && !unattended
+        && !unattended(&args)
         && !portal::cancelled(error.as_ref())
     {
-        notice::report(&format!("Shotoshot: {error}"));
+        let text = failure::text_in(error.as_ref(), shotoshot_text::language());
+        notice::report(&format!("Shotoshot: {text}"));
     }
     result
 }
 
+/// Whether a process started with `args` speaks to nobody: a child that serves the clipboard
+/// or shows a message it was handed, or a diagnostic (`--linux-*`, in English so that its
+/// output does not depend on the PC). Its failures only reach the terminal.
+fn unattended(args: &[String]) -> bool {
+    args.iter().any(|a| {
+        a == clipboard::SERVE
+            || a == notice::ARG
+            || a == notice::CONFIRMATION
+            || a.starts_with("--linux-")
+    })
+}
+
 fn dispatch(args: &[String]) -> Result<(), Box<dyn Error>> {
+    // Whatever fails from here on is said in the stored language (the session's when the
+    // settings cannot be read: the editor then reports the damage).
+    if !unattended(args) {
+        language::apply(&settings::load().unwrap_or_default());
+    }
     if args.iter().any(|a| a == clipboard::SERVE) {
         return clipboard::serve();
     }
@@ -110,7 +124,10 @@ fn diagnostic(out: &std::path::Path) -> Result<(), Box<dyn Error>> {
     // Both message windows must open on the real desktop too, from their own process.
     for (kind, message) in [
         (notice::ARG, "Shotoshot diagnostic: message window"),
-        (notice::CONFIRMATION, editor::SAVED_EDITABLE),
+        (
+            notice::CONFIRMATION,
+            shotoshot_text::tr(shotoshot_text::Key::NoticeSavedEditable),
+        ),
     ] {
         let status = notice::spawn(kind, message)?.wait()?;
         if !status.success() {
@@ -130,5 +147,38 @@ fn capture() -> Result<shotoshot_ui::Image, Box<dyn Error>> {
         x11::screenshot().or_else(|error| portal::screenshot().map_err(|_| error))
     } else {
         portal::screenshot()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_children_and_diagnostics_are_unattended() {
+        let args = |list: &[&str]| -> Vec<String> {
+            std::iter::once("shotoshot")
+                .chain(list.iter().copied())
+                .map(str::to_owned)
+                .collect()
+        };
+        for attended in [
+            &[][..],
+            &["--capture"],
+            &["--instant"],
+            &["/home/me/a.shoto"],
+        ] {
+            assert!(!unattended(&args(attended)), "{attended:?}");
+        }
+        for silent in [
+            &[clipboard::SERVE][..],
+            &[notice::ARG, "message"],
+            &[notice::CONFIRMATION, "message"],
+            &["--linux-diagnostic", "/tmp/out"],
+            &["--linux-x11-probe"],
+            &["/home/me/a.shoto", editor::PROBE],
+        ] {
+            assert!(unattended(&args(silent)), "{silent:?}");
+        }
     }
 }

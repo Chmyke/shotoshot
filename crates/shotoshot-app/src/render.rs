@@ -20,6 +20,8 @@ mod scene;
 /// Opacity of the objects a sweep is about to erase: the highlighter's, already in the eye.
 const FADING: f32 = 0.3;
 #[cfg(test)]
+mod locale_tests;
+#[cfg(test)]
 mod scene_tests;
 #[cfg(test)]
 mod stroke_tests;
@@ -121,6 +123,15 @@ fn properties() -> D2D1_RENDER_TARGET_PROPERTIES {
 impl Renderer {
     /// The typeface of interface text at `size`.
     fn interface_format(&self, size: f32) -> Result<IDWriteTextFormat> {
+        self.interface_format_in(size, shotoshot_text::language())
+    }
+    /// The typeface of interface text at `size`, shaped for `language` (the locale picks
+    /// the regional glyph forms of shared Han characters and the fallback fonts).
+    fn interface_format_in(
+        &self,
+        size: f32,
+        language: shotoshot_text::Language,
+    ) -> Result<IDWriteTextFormat> {
         unsafe {
             self.write.CreateTextFormat(
                 w!("Segoe UI"),
@@ -129,30 +140,62 @@ impl Renderer {
                 DWRITE_FONT_STYLE_NORMAL,
                 DWRITE_FONT_STRETCH_NORMAL,
                 size,
-                w!("en-US"),
+                &HSTRING::from(language.locale_name()),
             )
         }
     }
     pub fn measure_text(&self, text: &str, size: f32) -> Result<Point> {
-        self.measure(text, &self.interface_format(size)?)
+        self.measure_text_in(text, size, shotoshot_text::language())
+    }
+    /// Extent of interface `text` at `size` as it is drawn in `language`.
+    pub fn measure_text_in(
+        &self,
+        text: &str,
+        size: f32,
+        language: shotoshot_text::Language,
+    ) -> Result<Point> {
+        self.measure(text, &self.interface_format_in(size, language)?, None)
+    }
+    /// Extent of interface `text` at `size` in `language`, wrapped at `width` as it is when
+    /// drawn into a rectangle that wide.
+    pub fn measure_wrapped_text_in(
+        &self,
+        text: &str,
+        size: f32,
+        width: f32,
+        language: shotoshot_text::Language,
+    ) -> Result<Point> {
+        self.measure(
+            text,
+            &self.interface_format_in(size, language)?,
+            Some(width),
+        )
     }
     /// Extent of annotation `text` at `size`, exactly as annotations draw it.
     pub fn measure_annotation_text(&self, text: &str, size: f32) -> Result<Point> {
-        self.measure(text, &annotation_font::format(&self.write, size)?)
+        self.measure(text, &annotation_font::format(&self.write, size)?, None)
     }
-    fn measure(&self, text: &str, format: &IDWriteTextFormat) -> Result<Point> {
+    /// Extent of `text` on one line, or wrapped at `wrap` when given.
+    fn measure(&self, text: &str, format: &IDWriteTextFormat, wrap: Option<f32>) -> Result<Point> {
         unsafe {
-            format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
+            if wrap.is_none() {
+                format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
+            }
             let layout = self.write.CreateTextLayout(
                 &text.encode_utf16().collect::<Vec<_>>(),
                 format,
-                1_000_000.,
+                wrap.unwrap_or(1_000_000.),
                 1_000_000.,
             )?;
             let mut metrics = DWRITE_TEXT_METRICS::default();
             layout.GetMetrics(&mut metrics)?;
             Ok(Point {
-                x: metrics.widthIncludingTrailingWhitespace as f64,
+                // A wrapped line's trailing space hangs past the edge without being drawn.
+                x: if wrap.is_some() {
+                    metrics.width
+                } else {
+                    metrics.widthIncludingTrailingWhitespace
+                } as f64,
                 y: metrics.height as f64,
             })
         }

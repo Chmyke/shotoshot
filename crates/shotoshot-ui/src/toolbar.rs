@@ -1,7 +1,16 @@
 use crate::{Canvas, Ink};
 use shotoshot_core::{Point, Rect, Tool};
+use shotoshot_text::{Key, Language, Text, language, tr_in};
 mod icons;
+mod motion;
 pub use icons::glyph;
+pub use motion::{Chosen, Motion, SwatchLook};
+
+/// A chosen button: filled with the blue of shape selection, under a dark glyph.
+const CHOSEN_FILL: [u8; 3] = [100, 170, 255];
+const CHOSEN_GLYPH: [u8; 3] = [16, 22, 32];
+const PANEL: [u8; 3] = [32, 32, 32];
+const HOVER: [u8; 3] = [55, 55, 55];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Action {
@@ -30,7 +39,8 @@ pub enum Action {
 #[derive(Clone)]
 pub struct Button {
     pub bounds: Rect,
-    pub label: &'static str,
+    /// What the button is; its hint adds the keys it answers to (`tooltip`).
+    pub label: Key,
     pub action: Action,
     pub panel: u8,
     pub active: bool,
@@ -92,82 +102,114 @@ pub const COLORS: [[u8; 3]; 6] = [
     [28, 31, 40],
 ];
 // One source for toolbar hints and keyboard dispatch. Native text fields handle their own keys.
-const SHORTCUTS: [(&str, Action, u32, bool, bool); 25] = [
+const SHORTCUTS: [(Key, Action, u32, bool, bool); 25] = [
     (
-        "Select · V · Page Up/Down forward or back",
+        Key::ToolbarSelect,
         Action::Tool(Tool::Select),
         86,
         false,
         false,
     ),
     (
-        "Rectangle · R",
+        Key::ToolbarRectangle,
         Action::Tool(Tool::Rectangle),
         82,
         false,
         false,
     ),
-    ("Ellipse · C", Action::Tool(Tool::Ellipse), 67, false, false),
-    ("Line · L", Action::Tool(Tool::Line), 76, false, false),
-    ("Arrow · A", Action::Tool(Tool::Arrow), 65, false, false),
-    ("Pen · P", Action::Tool(Tool::Pen), 80, false, false),
     (
-        "Highlighter · H",
+        Key::ToolbarEllipse,
+        Action::Tool(Tool::Ellipse),
+        67,
+        false,
+        false,
+    ),
+    (Key::ToolbarLine, Action::Tool(Tool::Line), 76, false, false),
+    (
+        Key::ToolbarArrow,
+        Action::Tool(Tool::Arrow),
+        65,
+        false,
+        false,
+    ),
+    (Key::ToolbarPen, Action::Tool(Tool::Pen), 80, false, false),
+    (
+        Key::ToolbarHighlighter,
         Action::Tool(Tool::Highlight),
         72,
         false,
         false,
     ),
-    ("Text · T", Action::Tool(Tool::Text), 84, false, false),
-    ("Eraser · E", Action::Tool(Tool::Eraser), 69, false, false),
+    (Key::ToolbarText, Action::Tool(Tool::Text), 84, false, false),
     (
-        "Live capture · F2 · refresh on copy or save",
-        Action::Live,
-        113,
+        Key::ToolbarEraser,
+        Action::Tool(Tool::Eraser),
+        69,
         false,
         false,
     ),
-    ("Red · 1", Action::Color(COLORS[0]), 49, false, false),
-    ("Yellow · 2", Action::Color(COLORS[1]), 50, false, false),
-    ("Green · 3", Action::Color(COLORS[2]), 51, false, false),
-    ("Blue · 4", Action::Color(COLORS[3]), 52, false, false),
-    ("White · 5", Action::Color(COLORS[4]), 53, false, false),
-    ("Black · 6", Action::Color(COLORS[5]), 54, false, false),
-    ("Custom color · S", Action::CustomColor, 83, false, false),
-    ("Eyedropper · I", Action::Eyedropper, 73, false, false),
+    (Key::ToolbarLiveCapture, Action::Live, 113, false, false),
+    (Key::ToolbarRed, Action::Color(COLORS[0]), 49, false, false),
     (
-        "Color a stroke, a shape or the background · G · Right-click or Alt+click clears",
-        Action::Fill,
-        71,
+        Key::ToolbarYellow,
+        Action::Color(COLORS[1]),
+        50,
         false,
         false,
     ),
-    ("Undo · Ctrl+Z", Action::Undo, 90, true, false),
     (
-        "Redo · Ctrl+Y / Ctrl+Shift+Z",
-        Action::Redo,
-        89,
-        true,
+        Key::ToolbarGreen,
+        Action::Color(COLORS[2]),
+        51,
+        false,
+        false,
+    ),
+    (Key::ToolbarBlue, Action::Color(COLORS[3]), 52, false, false),
+    (
+        Key::ToolbarWhite,
+        Action::Color(COLORS[4]),
+        53,
+        false,
         false,
     ),
     (
-        "Search with Google Lens · Ctrl+G",
+        Key::ToolbarBlack,
+        Action::Color(COLORS[5]),
+        54,
+        false,
+        false,
+    ),
+    (
+        Key::ToolbarCustomColor,
+        Action::CustomColor,
+        83,
+        false,
+        false,
+    ),
+    (Key::ToolbarEyedropper, Action::Eyedropper, 73, false, false),
+    (Key::ToolbarFill, Action::Fill, 71, false, false),
+    (Key::ToolbarUndo, Action::Undo, 90, true, false),
+    (Key::ToolbarRedo, Action::Redo, 89, true, false),
+    (
+        Key::ToolbarGoogleLens,
         Action::GoogleSearch,
         71,
         true,
         false,
     ),
-    // The hint names the shorter Ctrl+C, which copies the image whenever no annotation is
-    // selected (`keys`); the key read here, Ctrl+Shift+C, copies it always.
-    ("Copy image · Ctrl+C", Action::Copy, 67, true, true),
-    ("Save · Ctrl+S", Action::Save, 83, true, false),
-    ("Close · Esc", Action::Close, 27, false, false),
+    // The hint names the shorter Ctrl+C (`named_keys`), which copies the image whenever no
+    // annotation is selected (`keys`); the key read here, Ctrl+Shift+C, copies it always.
+    (Key::ToolbarCopyImage, Action::Copy, 67, true, true),
+    (Key::ToolbarSave, Action::Save, 83, true, false),
+    (Key::ToolbarClose, Action::Close, 27, false, false),
 ];
+/// Ctrl+Shift+Z, the second key of Redo, as (key, Ctrl, Shift).
+const REDO_ALTERNATE: (u32, bool, bool) = (90, true, true);
 
 /// Full-screen toggle: a button beside the size badge, outside the toolbar panels.
 pub const FULL_SCREEN_KEY: u32 = 70;
-pub const FULL_SCREEN_LABEL: &str = "Full screen · F";
-pub const RESTORE_SELECTION_LABEL: &str = "Back to previous selection · F";
+pub const FULL_SCREEN_LABEL: Key = Key::CaptureFullScreen;
+pub const RESTORE_SELECTION_LABEL: Key = Key::CaptureRestoreSelection;
 
 pub fn shortcut_action(key: u32, ctrl: bool, shift: bool, alt: bool) -> Option<Action> {
     if alt {
@@ -176,7 +218,7 @@ pub fn shortcut_action(key: u32, ctrl: bool, shift: bool, alt: bool) -> Option<A
     if key == FULL_SCREEN_KEY && !ctrl {
         return Some(Action::FullScreen);
     }
-    if key == 90 && ctrl && shift {
+    if (key, ctrl, shift) == REDO_ALTERNATE {
         return Some(Action::Redo);
     }
     if key == 83 && ctrl && shift {
@@ -188,6 +230,92 @@ pub fn shortcut_action(key: u32, ctrl: bool, shift: bool, alt: bool) -> Option<A
             // Shift also reaches unmodified keys on layouts such as AZERTY.
             (key == expected && ctrl == control && (!ctrl || shift == shifted)).then_some(action)
         })
+}
+
+/// Widest text a hint may have, in logical pixels at its size (12): a translation beyond it is
+/// shortened rather than the hint widened (`every_tooltip_fits`).
+pub const MAX_HINT_WIDTH: f64 = 600.;
+
+/// Labels the capture gives a button in some state in place of its own (`Capture::buttons`),
+/// and the buttons beside the size badge, each with its button's action.
+const STATE_HINTS: [(Key, Action); 9] = [
+    (Key::CaptureNothingToUndo, Action::Undo),
+    (Key::CaptureNothingToRedo, Action::Redo),
+    (Key::CaptureGoogleSearchInProgress, Action::GoogleSearch),
+    (Key::CaptureLiveForNewCaptures, Action::Live),
+    (Key::CaptureLiveOn, Action::Live),
+    (Key::CaptureLiveFrozen, Action::Live),
+    (FULL_SCREEN_LABEL, Action::FullScreen),
+    (RESTORE_SELECTION_LABEL, Action::FullScreen),
+    (Key::CaptureEditDimensions, Action::Dimensions),
+];
+
+/// Labels that explain why their button does nothing, so they name no key.
+const KEYLESS_LABELS: [Key; 1] = [Key::CaptureLiveForNewCaptures];
+
+/// The key combinations a hint names for `action`, as (key, Ctrl, Shift).
+fn named_keys(action: Action) -> Vec<(u32, bool, bool)> {
+    match action {
+        Action::Copy => vec![(67, true, false)],
+        Action::Redo => vec![(89, true, false), REDO_ALTERNATE],
+        Action::FullScreen => vec![(FULL_SCREEN_KEY, false, false)],
+        // Undo brings a cleared board back.
+        Action::ClearBoard => named_keys(Action::Undo),
+        _ => SHORTCUTS
+            .iter()
+            .filter(|entry| entry.1 == action)
+            .map(|&(_, _, key, ctrl, shift)| (key, ctrl, shift))
+            .collect(),
+    }
+}
+
+/// The hint of `button` in the interface language: its label and the keys it answers to.
+pub fn tooltip(button: &Button) -> String {
+    tooltip_in(button, language())
+}
+
+/// The hint of `button` in `language`.
+pub fn tooltip_in(button: &Button, language: Language) -> String {
+    hint_in(button.label, button.action, language)
+}
+
+/// A label with a `{shortcut}` places the keys itself; any other is followed by them through the
+/// `tooltip.with_shortcut` template, or stands alone when the action has no key.
+fn hint_in(label: Key, action: Action, language: Language) -> String {
+    let keys = if KEYLESS_LABELS.contains(&label) {
+        Vec::new()
+    } else {
+        named_keys(action)
+    };
+    if keys.is_empty() {
+        return Text::new_in(language, label).to_string();
+    }
+    let shortcut = keys
+        .iter()
+        .map(|&(key, ctrl, shift)| crate::shortcut_label_in(key, ctrl, shift, language))
+        .collect::<Vec<_>>()
+        .join(" / ");
+    if label.placeholders().contains(&"shortcut") {
+        return Text::with_in(language, label, &[("shortcut", &shortcut)]).to_string();
+    }
+    let args = [("label", tr_in(language, label)), ("shortcut", &shortcut)];
+    Text::with_in(language, Key::TooltipWithShortcut, &args).to_string()
+}
+
+/// Every label a hint can show with its button's action: the toolbar, the board and the states.
+fn all_hints() -> impl Iterator<Item = (Key, Action)> {
+    SHORTCUTS
+        .iter()
+        .map(|&(label, action, ..)| (label, action))
+        .chain(BOARD_ACTIONS)
+        .chain(STATE_HINTS)
+}
+
+/// Every hint the toolbar and the buttons beside the size badge can show, in `language`.
+pub fn all_tooltips_in(language: Language) -> Vec<String> {
+    all_hints()
+        .map(|(label, action)| hint_in(label, action, language))
+        .collect()
 }
 
 pub fn buttons(region: Rect, width: u32, height: u32) -> Vec<Button> {
@@ -206,7 +334,7 @@ pub fn buttons(region: Rect, width: u32, height: u32) -> Vec<Button> {
 }
 
 /// Buttons a board session adds to the action panel, before Close. They have no key.
-const BOARD_ACTIONS: [(&str, Action); 1] = [("Clear board · Ctrl+Z restores", Action::ClearBoard)];
+const BOARD_ACTIONS: [(Key, Action); 1] = [(Key::ToolbarClearBoard, Action::ClearBoard)];
 
 /// Both panels beside `region`, kept on `screen`, with the board's own buttons when `board`.
 /// The layout is in 96-DPI logical pixels and scaled once here, so buttons keep their apparent
@@ -382,19 +510,18 @@ pub fn panels(buttons: &[Button], scale: f64) -> Vec<Rect> {
 pub fn bounds(buttons: &[Button], scale: f64) -> Option<Rect> {
     panels(buttons, scale).into_iter().reduce(|a, b| a.union(b))
 }
+/// Both panels as `state` marks them, with `motion` at `now`. `tint` paints the live tips.
 pub fn draw<C: Canvas>(
     canvas: &mut C,
     buttons: &[Button],
-    tool: Tool,
-    colors: ([u8; 3], [u8; 3]),
-    pointer: Point,
-    eyedropper: bool,
+    state: Chosen,
+    tint: [u8; 3],
+    (motion, now): (&Motion, std::time::Instant),
     scale: f64,
 ) -> Result<(), C::Error> {
     for id in [0, 1] {
         let group: Vec<_> = buttons.iter().filter(|b| b.panel == id).cloned().collect();
-        let pointer = (pointer, eyedropper);
-        draw_panel(canvas, &group, tool, colors, pointer, scale)?;
+        draw_panel(canvas, &group, state, tint, (motion, now), scale)?;
     }
     Ok(())
 }
@@ -405,8 +532,8 @@ pub(crate) fn draw_hint<C: Canvas>(
     opacity: f32,
     scale: f64,
 ) -> Result<(), C::Error> {
-    let label = button.label;
-    let extent = canvas.measure_text(label, 12. * scale)?;
+    let label = tooltip(button);
+    let extent = canvas.measure_text(&label, 12. * scale)?;
     let hint = tooltip_bounds(
         button.bounds,
         screen,
@@ -418,7 +545,7 @@ pub(crate) fn draw_hint<C: Canvas>(
     );
     canvas.fill_round_rect(hint, 4. * scale, Ink::with_alpha([32, 32, 32], opacity))?;
     canvas.text(
-        label,
+        &label,
         Rect {
             min: hint.min
                 + Point {
@@ -462,29 +589,50 @@ pub(crate) fn tooltip_bounds(button: Rect, screen: Rect, size: Point, scale: f64
 fn draw_panel<C: Canvas>(
     canvas: &mut C,
     buttons: &[Button],
-    tool: Tool,
-    colors: ([u8; 3], [u8; 3]),
-    (pointer, eyedropper): (Point, bool),
+    state: Chosen,
+    tint: [u8; 3],
+    (motion, now): (&Motion, std::time::Instant),
     scale: f64,
 ) -> Result<(), C::Error> {
     let Some(panel) = bounds(buttons, scale) else {
         return Ok(());
     };
-    canvas.fill_round_rect(panel, 8. * scale, Ink::solid([32, 32, 32]))?;
+    canvas.fill_round_rect(panel, 8. * scale, Ink::solid(PANEL))?;
     canvas.stroke_round_rect(panel, 8. * scale, Ink::solid([78, 78, 78]), scale)?;
     for b in buttons {
-        let selected = b.active
-            || matches!(b.action,Action::Tool(t)if t==tool)
-            || matches!(b.action, Action::Eyedropper) && eyedropper;
-        let rgb = if selected {
-            [55, 70, 80]
-        } else if b.enabled && b.bounds.contains(pointer) {
-            [55, 55, 55]
-        } else {
-            [32, 32, 32]
+        let selected = state.button(b);
+        let hovered = b.enabled && b.bounds.contains(state.pointer);
+        let swatch = motion::is_swatch(b.action);
+        // A bounce scales the whole button, glyph included, about its centre.
+        let k = motion.scale(b.action, now);
+        let (center, half) = (b.bounds.center(), b.bounds.size() * (k / 2.));
+        let button = Button {
+            bounds: Rect {
+                min: center - half,
+                max: center + half,
+            },
+            ..b.clone()
         };
-        canvas.fill_round_rect(b.bounds, 5. * scale, Ink::solid(rgb))?;
-        icons::draw(canvas, b, colors, selected, scale)?;
+        let radius = 5. * scale * k;
+        let rgb = if selected {
+            CHOSEN_FILL
+        } else if hovered && !swatch {
+            HOVER
+        } else {
+            PANEL
+        };
+        canvas.fill_round_rect(button.bounds, radius, Ink::solid(rgb))?;
+        if !selected && let Some(alpha) = motion.release(b.action, now) {
+            canvas.fill_round_rect(button.bounds, radius, Ink::with_alpha(CHOSEN_FILL, alpha))?;
+        }
+        let look = swatch.then(|| motion.swatch(b.action, state.swatch(b.action), hovered, now));
+        icons::draw(
+            canvas,
+            &button,
+            (state.current, tint),
+            (selected, look),
+            scale * k,
+        )?;
     }
     Ok(())
 }
@@ -492,6 +640,93 @@ fn draw_panel<C: Canvas>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use shotoshot_text::Language;
+
+    /// The English hints as they were written before translation, in listing order.
+    const ENGLISH_HINTS: [&str; 35] = [
+        "Select · V · Page Up/Down forward or back",
+        "Rectangle · R",
+        "Ellipse · C",
+        "Line · L",
+        "Arrow · A",
+        "Pen · P",
+        "Highlighter · H",
+        "Text · T",
+        "Eraser · E",
+        "Live capture · F2 · refresh on copy or save",
+        "Red · 1",
+        "Yellow · 2",
+        "Green · 3",
+        "Blue · 4",
+        "White · 5",
+        "Black · 6",
+        "Custom color · S",
+        "Eyedropper · I",
+        "Color a stroke, a shape or the background · G · Right-click or Alt+click clears",
+        "Undo · Ctrl+Z",
+        "Redo · Ctrl+Y / Ctrl+Shift+Z",
+        "Search with Google Lens · Ctrl+G",
+        "Copy image · Ctrl+C",
+        "Save · Ctrl+S",
+        "Close · Esc",
+        "Clear board · Ctrl+Z restores",
+        "Nothing to undo · Ctrl+Z",
+        "Nothing to redo · Ctrl+Y / Ctrl+Shift+Z",
+        "Google search in progress · Ctrl+G",
+        "Live capture is for new captures",
+        "Live capture on · F2 to freeze",
+        "Capture frozen · F2 for live capture",
+        "Full screen · F",
+        "Back to previous selection · F",
+        "Edit dimensions · expressions: 800+20, 1920/2",
+    ];
+
+    #[test]
+    fn english_tooltips_are_unchanged() {
+        assert_eq!(all_tooltips_in(Language::En), ENGLISH_HINTS);
+        let region = Rect::new(Point { x: 100., y: 100. }, Point { x: 400., y: 300. }).unwrap();
+        let screen = Rect::new(Point::default(), Point { x: 1920., y: 1080. }).unwrap();
+        for board in [false, true] {
+            for button in buttons_in(region, screen, 1., board) {
+                let hint = tooltip_in(&button, Language::En);
+                assert!(ENGLISH_HINTS.contains(&hint.as_str()), "{hint}");
+            }
+        }
+    }
+
+    #[test]
+    fn french_tooltip_keeps_the_shortcut() {
+        let region = Rect::new(Point { x: 100., y: 100. }, Point { x: 400., y: 300. }).unwrap();
+        let all = buttons(region, 1920, 1080);
+        let find = |action| all.iter().find(|b| b.action == action).unwrap();
+        let rectangle = tooltip_in(find(Action::Tool(Tool::Rectangle)), Language::Fr);
+        assert!(rectangle.ends_with("· R"), "{rectangle}");
+        assert_eq!(
+            tooltip_in(find(Action::Tool(Tool::Pen)), Language::Fr),
+            "Stylo · P"
+        );
+        let redo = tooltip_in(find(Action::Redo), Language::Fr);
+        assert!(redo.ends_with("· Ctrl+Y / Ctrl+Maj+Z"), "{redo}");
+        let redo = tooltip_in(find(Action::Redo), Language::De);
+        assert!(redo.ends_with("· Strg+Y / Strg+Umschalt+Z"), "{redo}");
+        assert!(tooltip_in(find(Action::Close), Language::De).ends_with("· Esc"));
+    }
+
+    #[test]
+    fn every_hint_key_is_listed_for_measuring() {
+        let listed: Vec<Key> = all_hints().map(|(label, _)| label).collect();
+        for &key in Key::ALL {
+            if key.id().starts_with("toolbar.") || key.id().starts_with("capture.") {
+                assert!(listed.contains(&key), "{} is never measured", key.id());
+            }
+        }
+        for language in Language::ALL {
+            for hint in all_tooltips_in(language) {
+                assert!(!hint.contains(['{', '}']), "{}: {hint}", language.tag());
+            }
+        }
+    }
+
     #[test]
     fn e_selects_the_eraser_and_its_button_follows_text_in_every_layout() {
         assert_eq!(
@@ -520,7 +755,7 @@ mod tests {
                 .iter()
                 .find(|b| b.action == Action::Tool(Tool::Eraser))
                 .unwrap();
-            assert_eq!(eraser.label, "Eraser · E");
+            assert_eq!(tooltip_in(eraser, Language::En), "Eraser · E");
         }
     }
     #[test]
@@ -686,7 +921,7 @@ mod tests {
         let fill = row[eyedropper + 1];
         assert_eq!(fill.action, Action::Fill);
         assert_eq!(fill.bounds.min.y, row[eyedropper].bounds.min.y);
-        assert!(fill.label.contains("Right-click or Alt+click"));
+        assert!(tooltip_in(fill, Language::En).contains("Right-click or Alt+click"));
         assert!(
             all.iter().all(|b| b.panel == 1 || b.action != Action::Fill),
             "not among the drawing tools"

@@ -1,10 +1,11 @@
 //! ROLE: Validates arithmetic dimension input and resizes a crop without moving its origin.
+//! An error is the key of its message, so the platform shows it in the interface language.
 use shotoshot_core::{Point, Rect};
+use shotoshot_text::Key;
 
-const INVALID: &str =
-    "Enter a whole number of pixels (at least 2), or an expression such as 800+20.";
+const INVALID: Key = Key::CropInvalid;
 
-pub fn dimension(expression: &str) -> Result<u32, &'static str> {
+pub fn dimension(expression: &str) -> Result<u32, Key> {
     if expression.len() > 128 {
         return Err(INVALID);
     }
@@ -31,7 +32,7 @@ pub fn resize_region(
     height: &str,
     screen_width: u32,
     screen_height: u32,
-) -> Result<Rect, &'static str> {
+) -> Result<Rect, Key> {
     let size = Point {
         x: dimension(width)? as f64,
         y: dimension(height)? as f64,
@@ -43,7 +44,7 @@ pub fn resize_region(
         || max.x > screen_width as f64
         || max.y > screen_height as f64
     {
-        return Err("The capture must stay inside the desktop. Reduce its width or height.");
+        return Err(Key::CropOutside);
     }
     Ok(Rect {
         min: region.min,
@@ -74,7 +75,7 @@ impl Parser<'_> {
             false
         }
     }
-    fn sum(&mut self, depth: usize) -> Result<f64, &'static str> {
+    fn sum(&mut self, depth: usize) -> Result<f64, Key> {
         let mut value = self.product(depth)?;
         loop {
             if self.take(b'+') {
@@ -86,7 +87,7 @@ impl Parser<'_> {
             }
         }
     }
-    fn product(&mut self, depth: usize) -> Result<f64, &'static str> {
+    fn product(&mut self, depth: usize) -> Result<f64, Key> {
         let mut value = self.atom(depth)?;
         loop {
             if self.take(b'*') {
@@ -102,7 +103,7 @@ impl Parser<'_> {
             }
         }
     }
-    fn atom(&mut self, depth: usize) -> Result<f64, &'static str> {
+    fn atom(&mut self, depth: usize) -> Result<f64, Key> {
         if depth >= 16 {
             return Err(INVALID);
         }

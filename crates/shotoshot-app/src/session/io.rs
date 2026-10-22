@@ -4,11 +4,26 @@ use std::path::{Path, PathBuf};
 
 /// Posted to the hook with the one-based entry of the type list as WPARAM.
 const UPDATE_CAPTURE_NAME: u32 = WM_APP + 83;
-/// The type list of the Save dialog: one entry per `SaveFormat::ALL`, in that order, then the
-/// editable document, whose label says what such a file keeps at the moment it is chosen.
-const SAVE_FILTER: PCWSTR = w!(
-    "PNG image\0*.png\0JPEG image\0*.jpg;*.jpeg\0Editable Shotoshot image, keeps the whole screen\0*.shoto\0\0"
-);
+/// The type list of the Save dialog in `language`: one entry per `SaveFormat::ALL`, in that
+/// order, then the editable document, whose label says what such a file keeps at the moment it
+/// is chosen. Each label and pattern ends with a null, the list with an empty string.
+fn save_filter_in(language: shotoshot_text::Language) -> Vec<u16> {
+    use shotoshot_text::{Key, tr_in};
+    let entries = [
+        (Key::SavePng, "*.png"),
+        (Key::SaveJpeg, "*.jpg;*.jpeg"),
+        (Key::SaveShoto, "*.shoto"),
+    ];
+    let mut filter = Vec::new();
+    for (label, pattern) in entries {
+        for part in [tr_in(language, label), pattern] {
+            filter.extend(part.encode_utf16());
+            filter.push(0);
+        }
+    }
+    filter.push(0);
+    filter
+}
 
 fn listed_format(filter_index: u32) -> SaveFormat {
     SaveFormat::ALL
@@ -253,10 +268,13 @@ impl Native {
                     let extent = match self.renderer.measure_annotation_text(&text, input.size) {
                         Ok(extent) => extent,
                         Err(error) => {
+                            // The title says what failed, the body why, as Windows put it.
+                            let title =
+                                shotoshot_text::Text::new(shotoshot_text::Key::ErrorTextLayout);
                             MessageBoxW(
                                 Some(hwnd),
                                 &HSTRING::from(error.to_string()),
-                                w!("Text layout failed"),
+                                &HSTRING::from(title.as_str()),
                                 MB_OK | MB_ICONERROR,
                             );
                             self.text = Some(input);
@@ -305,7 +323,7 @@ impl Session {
     /// The `.shoto` file of this capture: its flattened image as any viewer shows it, and
     /// inside it the screens of `background` under the region and the objects, still apart.
     pub(crate) fn document_bytes(&self, background: &Image) -> Result<Vec<u8>> {
-        let refused = || Error::new(E_FAIL, "This capture cannot be saved as an editable image.");
+        let refused = || crate::failure::visible(shotoshot_text::Key::ErrorNotEditableCapture, &[]);
         let (scene, frame) = self.capture.document(background).ok_or_else(refused)?;
         let visible = png_data(&self.flatten(background)?)?;
         shoto::pack(&visible, &scene, &png_data(&frame)?).ok_or_else(refused)
@@ -336,10 +354,11 @@ impl Session {
                 buffer[i] = c;
             }
             let extension = crate::wide(Path::new(settings.save_format.extension()));
+            let filter = save_filter_in(shotoshot_text::language());
             let mut dialog = OPENFILENAMEW {
                 lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
                 hwndOwner: hwnd,
-                lpstrFilter: SAVE_FILTER,
+                lpstrFilter: PCWSTR(filter.as_ptr()),
                 nFilterIndex: settings.save_format.index() as u32 + 1,
                 lpstrFile: PWSTR(buffer.as_mut_ptr()),
                 nMaxFile: buffer.len() as u32,
@@ -356,9 +375,9 @@ impl Session {
             if !GetSaveFileNameW(&mut dialog).as_bool() {
                 let error = CommDlgExtendedError().0;
                 if error != 0 {
-                    return Err(Error::new(
-                        E_FAIL,
-                        format!("Could not open the Save dialog ({error})"),
+                    return Err(crate::failure::visible(
+                        shotoshot_text::Key::ErrorSaveDialog,
+                        &[("code", &error.to_string())],
                     ));
                 }
                 return Ok(Saved::Cancelled);
@@ -503,6 +522,7 @@ mod save_dialog_tests {
             names: vec![],
         };
         let folder = crate::wide(root);
+        let filter = save_filter_in(shotoshot_text::Language::En);
         let mut buffer = vec![0u16; 32768];
         let name = crate::wide(Path::new("Capture 001.png"));
         buffer[..name.len()].copy_from_slice(&name);
@@ -511,7 +531,7 @@ mod save_dialog_tests {
             lpstrInitialDir: PCWSTR(folder.as_ptr()),
             lpstrFile: PWSTR(buffer.as_mut_ptr()),
             nMaxFile: buffer.len() as u32,
-            lpstrFilter: SAVE_FILTER,
+            lpstrFilter: PCWSTR(filter.as_ptr()),
             nFilterIndex: 1,
             lpstrDefExt: w!("png"),
             Flags: OFN_EXPLORER | OFN_ENABLEHOOK | OFN_NOCHANGEDIR | OFN_PATHMUSTEXIST,
@@ -581,21 +601,45 @@ mod save_dialog_tests {
         assert_eq!(named("bare", 3), Listed::Document);
         assert_eq!(named("Shot 001.png", 3), Listed::Image(SaveFormat::Png));
     }
-    #[test]
-    fn type_list_entries_follow_the_save_formats() {
-        // The list ends at its first empty string.
-        let mut units = vec![];
-        let mut unit = SAVE_FILTER.0;
-        unsafe {
-            while *unit != 0 || *unit.add(1) != 0 {
-                units.push(*unit);
-                unit = unit.add(1);
-            }
-        }
-        let entries: Vec<_> = units
+    /// The entries of a type list, up to the empty string that ends it.
+    fn entries(filter: &[u16]) -> Vec<String> {
+        let end = filter
+            .windows(2)
+            .position(|pair| pair == [0, 0])
+            .expect("a type list ends with an empty string");
+        filter[..end]
             .split(|unit| *unit == 0)
             .map(String::from_utf16_lossy)
+            .collect()
+    }
+    #[test]
+    fn save_filter_is_translated() {
+        use shotoshot_text::{Key, Language, tr_in};
+        for language in Language::ALL {
+            let filter = save_filter_in(language);
+            assert!(filter.ends_with(&[0, 0]));
+            let labels =
+                [Key::SavePng, Key::SaveJpeg, Key::SaveShoto].map(|key| tr_in(language, key));
+            assert_eq!(
+                entries(&filter),
+                [
+                    labels[0],
+                    "*.png",
+                    labels[1],
+                    "*.jpg;*.jpeg",
+                    labels[2],
+                    "*.shoto"
+                ]
+            );
+        }
+        let english: Vec<u16> = "PNG image\0*.png\0JPEG image\0*.jpg;*.jpeg\0Editable Shotoshot image, keeps the whole screen\0*.shoto\0\0"
+            .encode_utf16()
             .collect();
+        assert_eq!(save_filter_in(Language::En), english);
+    }
+    #[test]
+    fn type_list_entries_follow_the_save_formats() {
+        let entries = entries(&save_filter_in(shotoshot_text::Language::En));
         // The editable document closes the list.
         assert_eq!(entries.len(), SaveFormat::ALL.len() * 2 + 2);
         assert_eq!(entries.last().unwrap(), "*.shoto");

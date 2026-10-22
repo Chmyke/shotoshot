@@ -2,6 +2,12 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.8 · 2026-10-22
+
+- **New** · Shotoshot now speaks 15 languages. Pick yours when installing, or switch anytime from the menu.
+- **New** · Searching an image on Google now opens the results in your language, not just in English.
+- No more squinting at the toolbar: the tool in your hand lights up blue with a little bounce, and your drawing colour sits in a white ring.
+
 ## 0.3.7 · 2026-10-17
 
 - **New** · The bucket now stops at the lines you've already drawn, like paint poured into a colouring book. Right-click takes a fill back off.

@@ -171,9 +171,10 @@ impl App {
                     unsafe {
                         GetClientRect(hwnd, &mut rect)?;
                     }
-                    if let Some(action) = setup::hit(
-                        point.x * setup::WIDTH as f64 / rect.right as f64,
-                        point.y * setup::HEIGHT as f64 / rect.bottom as f64,
+                    let zones = self.setup_ui.layout;
+                    if let Some(action) = zones.hit(
+                        point.x * zones.size.x / rect.right as f64,
+                        point.y * zones.size.y / rect.bottom as f64,
                     ) && (action != 2 || !self.setup_ui.recording)
                     {
                         self.setup_activate(hwnd, action)?;
@@ -300,16 +301,10 @@ impl App {
                 }
                 if let Some(session) = &self.session {
                     if session.board.is_some() {
-                        self.close_session_saying(
-                            hwnd,
-                            Some("The display configuration changed. The board was saved."),
-                        );
+                        self.close_session_saying(hwnd, Some(Key::ErrorDisplayChangedBoard));
                     } else {
                         self.close_session(hwnd);
-                        message(
-                            hwnd,
-                            "The display configuration changed. Start a new capture.",
-                        );
+                        message(hwnd, &Text::new(Key::ErrorDisplayChanged));
                     }
                 }
                 if !self.quit_after_capture {
@@ -344,20 +339,9 @@ impl App {
             crate::presentation::PREFERENCES_CHANGED => {
                 if let Some(presentation) = &self.presentation {
                     let preferences = presentation.borrow().preferences.clone();
-                    let mut next = if self.persist_preferences {
-                        Settings::load().map_err(|e| Error::new(E_FAIL, e))?
-                    } else {
-                        self.settings.clone()
-                    };
-                    // Only the fields changed by manipulation are merged; another window may
-                    // have saved duration, colors or shortcuts while this notification was queued.
-                    next.presentation.input_offset = preferences.input_offset;
-                    next.presentation.input_locked = preferences.input_locked;
-                    next.presentation.stroke_width = preferences.stroke_width;
-                    if self.persist_preferences {
-                        next.save().map_err(|e| Error::new(E_FAIL, e))?;
+                    if self.store_presentation_preferences(&preferences)? {
+                        crate::language::apply(&self.settings);
                     }
-                    self.settings = next;
                 }
             }
             TRAY_MESSAGE => {
@@ -394,13 +378,14 @@ impl App {
             },
             _ => return Ok(None),
         }
+        let now = std::time::Instant::now();
+        if let Some(s) = &mut self.session {
+            let current = s.toolbar_color();
+            s.capture.observe_toolbar(current, now);
+        }
         unsafe {
             let _ = KillTimer(Some(hwnd), crate::toolbar::HINT_TIMER);
-            if let Some(delay) = self
-                .session
-                .as_ref()
-                .and_then(|s| s.capture.hover_hint.next_tick(std::time::Instant::now()))
-            {
+            if let Some(delay) = self.session.as_ref().and_then(|s| s.capture.next_tick(now)) {
                 SetTimer(Some(hwnd), crate::toolbar::HINT_TIMER, delay, None);
             }
         }
@@ -408,6 +393,30 @@ impl App {
         self.persist_custom_color()?;
         Ok(Some(LRESULT(0)))
     }
+
+    /// Keeps the fields the presentation changed by manipulation. Persisted settings are read
+    /// back first, since another window may have saved duration, colors, shortcuts or the
+    /// language while the notification was queued. Returns true when they were read back: only
+    /// then can the language have changed (diagnostics keep English).
+    pub(super) fn store_presentation_preferences(
+        &mut self,
+        preferences: &crate::settings::PresentationSettings,
+    ) -> Result<bool> {
+        let mut next = if self.persist_preferences {
+            Settings::load().map_err(crate::settings::unreadable)?
+        } else {
+            self.settings.clone()
+        };
+        next.presentation.input_offset = preferences.input_offset;
+        next.presentation.input_locked = preferences.input_locked;
+        next.presentation.stroke_width = preferences.stroke_width;
+        if self.persist_preferences {
+            next.save().map_err(crate::settings::unsaved)?;
+        }
+        self.settings = next;
+        Ok(self.persist_preferences)
+    }
+
     /// Hands the prepared page to `open` (the browser). The capture stays open behind the
     /// browser, as after Alt+Tab: the taskbar, Alt+Tab or the capture shortcut bring it back.
     pub(super) fn finish_google_search(
@@ -424,20 +433,14 @@ impl App {
         match receiver.try_recv() {
             Ok(Ok(page)) => {
                 if !open(hwnd, std::path::Path::new(&page)) {
-                    message(
-                        hwnd,
-                        "Could not open the browser. Your capture is still open.",
-                    );
+                    message(hwnd, &Text::new(Key::ErrorLensBrowser));
                 }
             }
             Ok(Err(error)) => message(
                 hwnd,
-                &format!("Google search failed. Your capture is still open.\n{error}"),
+                &Text::with(Key::ErrorLensFailed, &[("detail", &error)]),
             ),
-            Err(_) => message(
-                hwnd,
-                "Google search was interrupted. Your capture is still open.",
-            ),
+            Err(_) => message(hwnd, &Text::new(Key::ErrorLensInterrupted)),
         }
         invalidate(hwnd);
     }

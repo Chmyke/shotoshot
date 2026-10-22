@@ -3,13 +3,15 @@
 fn main() {
     if let Err(error) = shotoshot_app::run() {
         if shotoshot_app::reports_errors_on_stderr(std::env::args()) {
-            eprintln!("{error}");
+            eprintln!("{}", shotoshot_app::failure::log_line(&error));
             std::process::exit(1);
         }
+        // A translated sentence; an internal failure keeps its technical detail below it.
+        let text = shotoshot_app::failure::text(&error);
         unsafe {
             windows::Win32::UI::WindowsAndMessaging::MessageBoxW(
                 None,
-                &windows::core::HSTRING::from(error.to_string()),
+                &windows::core::HSTRING::from(text.as_str()),
                 windows::core::w!("Shotoshot"),
                 windows::Win32::UI::WindowsAndMessaging::MB_OK
                     | windows::Win32::UI::WindowsAndMessaging::MB_ICONERROR,

@@ -52,9 +52,9 @@ impl Session {
                 self.capture.image.height,
             )
         {
-            return Err(Error::new(
-                E_FAIL,
-                "Display configuration changed. Start a new capture.",
+            return Err(crate::failure::visible(
+                shotoshot_text::Key::ErrorDisplayChanged,
+                &[],
             ));
         }
         Ok(image)
@@ -77,6 +77,11 @@ impl Session {
         self.flatten(&self.fresh_desktop()?)
     }
     pub fn paint_window(&mut self, hwnd: HWND, hdc: HDC) -> Result<()> {
+        // A change made outside this window's messages still starts the toolbar's motion
+        // before the frame that shows it.
+        let current = self.toolbar_color();
+        self.capture
+            .observe_toolbar(current, std::time::Instant::now());
         let painted = self.paint_window_once(hwnd, hdc);
         self.native.caret.arm(hwnd);
         painted

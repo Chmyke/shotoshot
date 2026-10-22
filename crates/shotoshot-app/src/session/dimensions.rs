@@ -6,7 +6,7 @@ use windows::Win32::UI::Controls::{EM_SETLIMITTEXT, EM_SETSEL};
 pub(super) struct DimensionsInput {
     pub width: TextInput,
     pub height: TextInput,
-    error: Option<&'static str>,
+    error: Option<shotoshot_text::Key>,
 }
 
 impl Native {

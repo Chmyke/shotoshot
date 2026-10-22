@@ -20,12 +20,15 @@ impl App {
     /// Starts a session on the document at `path` instead of a fresh capture.
     pub(super) fn open_document(&mut self, hwnd: HWND, path: &Path) -> Result<()> {
         let unread = |error: std::io::Error| {
-            Error::new(
-                E_FAIL,
-                format!("Could not open {}: {error}", path.display()),
+            crate::failure::visible(
+                Key::ErrorDocumentUnread,
+                &[
+                    ("path", &path.display().to_string()),
+                    ("detail", &error.to_string()),
+                ],
             )
         };
-        let refused = |error: shoto::Error| Error::new(E_FAIL, error.message());
+        let refused = |error: shoto::Error| crate::failure::visible(error.key(), &[]);
         if std::fs::metadata(path).map_err(unread)?.len() > shoto::MAX_FILE {
             return Err(refused(shoto::Error::Damaged));
         }

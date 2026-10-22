@@ -15,12 +15,13 @@ path = "src/bin/clipboard-probe/main.rs"
 [dependencies]
 shotoshot-core = { path = "../shotoshot-core" }
 shotoshot-ui = { path = "../shotoshot-ui" }
+shotoshot-text = { path = "../shotoshot-text" }
 
 # Windows platform layer; the whole library is cfg(windows).
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = [
     "Win32_Graphics_Direct3D", "Win32_Graphics_Direct3D11", "Win32_Graphics_Dxgi", "Win32_Media_Audio",
-    "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_Graphics_Direct2D",
+    "Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_Graphics_Direct2D",
     "Win32_Graphics_Direct2D_Common", "Win32_Graphics_DirectWrite",
     "Win32_Graphics_Dxgi_Common", "Win32_Graphics_Imaging", "Win32_Graphics_DirectComposition",
     "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_LibraryLoader",
@@ -41,6 +42,9 @@ shotoshot-raster = { path = "../shotoshot-raster" }
 
 # The OBS mirror tests capture a window the way OBS does (Windows.Graphics.Capture).
 [target.'cfg(windows)'.dev-dependencies]
+# The `implement` macro of `windows` expands to paths in this crate (already in the tree through
+# `windows`); the font-coverage test implements a DirectWrite callback interface with it.
+windows-core = "0.62.2"
 windows = { version = "0.62.2", features = [
     "Foundation", "Graphics", "Graphics_Capture", "Graphics_DirectX", "Graphics_DirectX_Direct3D11",
     "Win32_System_WinRT", "Win32_System_WinRT_Direct3D11", "Win32_System_WinRT_Graphics_Capture"

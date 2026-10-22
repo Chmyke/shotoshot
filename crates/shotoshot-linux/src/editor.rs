@@ -6,9 +6,10 @@
 mod document;
 use crate::{clipboard, files, keymap, monitors, notice, png_io, settings};
 use document::{Document, Place};
-pub use document::{PROBE, SAVED_EDITABLE, open};
+pub use document::{PROBE, open};
 use shotoshot_core::{Modifiers, Point, settings::Settings};
 use shotoshot_raster::{Raster, pixmap_from_bgra};
+use shotoshot_text::{Key, Text, tr};
 use shotoshot_ui::{
     Capture, CursorKind, DimensionFields, DimensionKey, FieldKey, Host, Image, Monitor, TextField,
     caret, draw_notice, keys::KeyOutcome, notice_size, toolbar::Action, top_center, wheel,
@@ -223,17 +224,20 @@ fn start(
 ) -> Result<(), Box<dyn Error>> {
     let backdrop = pixmap_from_bgra(&image).map_err(|e| e.0)?;
     // Diagnostics run with defaults and never touch the user's preferences.
-    let (settings, persist, notice) = match diagnostic {
+    let (settings, persist, unreadable) = match diagnostic {
         Some(_) => (Settings::default(), false, None),
         None => match settings::load() {
             Ok(settings) => (settings, true, None),
-            Err(error) => (
-                Settings::default(),
-                false,
-                Some(format!("Settings could not be read: {error}")),
-            ),
+            Err(error) => (Settings::default(), false, Some(error)),
         },
     };
+    // Diagnostics stay in English so that their output does not depend on the PC; unreadable
+    // settings leave the session's language, in which the damage is then reported.
+    if diagnostic.is_none() {
+        crate::language::apply(&settings);
+    }
+    let notice = unreadable
+        .map(|error| Text::with(Key::ErrorSettingsUnreadable, &[("detail", &error)]).to_string());
     let mut editor = Editor {
         frame: backdrop.clone(),
         backdrop,
@@ -294,7 +298,9 @@ pub(crate) fn present(
 
 /// The capture flattened with its annotations, cropped to its region.
 fn flattened(raster: &mut Raster, capture: &Capture) -> Result<Image, Box<dyn Error>> {
-    let region = capture.region.ok_or("select a capture region first")?;
+    let region = capture
+        .region
+        .ok_or_else(|| crate::failure::visible(Text::new(Key::ErrorNoRegion)))?;
     let editor = &capture.editor;
     Ok(raster
         .export(
@@ -369,7 +375,8 @@ impl Editor {
             .custom_color_changed
             .then_some(self.capture.custom_color);
         if let Err(error) = settings::save_editor(width, eraser, color) {
-            notice::report(&format!("Shotoshot: preferences not saved: {error}"));
+            let message = Text::with(Key::ErrorSettingsUnsaved, &[("detail", &error)]);
+            notice::report(&format!("Shotoshot: {message}"));
         }
     }
     /// Starts the capture with the remembered stroke width, eraser size and custom colour.
@@ -441,6 +448,11 @@ impl Editor {
         }
     }
     fn paint(&mut self) -> Result<(), Box<dyn Error>> {
+        // A redraw can come before `about_to_wait`: start the toolbar's motion before the
+        // frame that shows the change.
+        let now = Instant::now();
+        let current = toolbar_color(&self.capture, self.native.field.as_ref().map(|f| f.color));
+        self.capture.observe_toolbar(current, now);
         self.native.layout_badge(&mut self.capture);
         self.frame.data_mut().copy_from_slice(self.backdrop.data());
         let capture = &self.capture;
@@ -454,7 +466,6 @@ impl Editor {
                 [2, a, b, c]
             })
             .or_else(|| native.dimensions.as_ref().map(|d| d.caret_state()));
-        let now = Instant::now();
         let caret = state.is_some_and(|state| native.caret.follow(now, state));
         native.caret_due = state.and_then(|_| native.caret.next_change(now));
         let mut canvas = native.raster.canvas(&mut self.frame);
@@ -473,18 +484,9 @@ impl Editor {
                 .draw_frame(&mut canvas, native.field.is_none())
                 .map_err(|e| e.0)?;
             if !capture.selecting {
-                let current = capture
-                    .picker
-                    .as_ref()
-                    .map(|p| p.color())
-                    .unwrap_or_else(|| {
-                        native
-                            .field
-                            .as_ref()
-                            .map_or(capture.editor.style.color, |f| f.color)
-                    });
+                let current = toolbar_color(capture, native.field.as_ref().map(|f| f.color));
                 capture
-                    .draw_toolbar(&mut canvas, current)
+                    .draw_toolbar(&mut canvas, current, now)
                     .map_err(|e| e.0)?;
                 let over_toolbar = capture.toolbar_contains(capture.pointer);
                 let feedback = capture.picker.is_none()
@@ -585,8 +587,10 @@ impl Editor {
         match action {
             Action::Save | Action::SaveAs => match self.save(action == Action::SaveAs, None) {
                 Ok((_, editable)) => {
+                    // No Save window names the file type here: this is where the user
+                    // reads that the file holds more than the selection.
                     if editable && self.diagnostic.is_none() {
-                        notice::confirm(SAVED_EDITABLE);
+                        notice::confirm(tr(Key::NoticeSavedEditable));
                     }
                     event_loop.exit()
                 }
@@ -869,6 +873,16 @@ fn follow_up(
     Ok(())
 }
 
+/// The colour the toolbar marks: the wheel's while it is open, the text's while typing, else
+/// the drawing colour.
+fn toolbar_color(capture: &Capture, text: Option<[u8; 3]>) -> [u8; 3] {
+    capture
+        .picker
+        .as_ref()
+        .map(|p| p.color())
+        .unwrap_or_else(|| text.unwrap_or(capture.editor.style.color))
+}
+
 fn pictures_dir() -> PathBuf {
     user_dir("XDG_PICTURES_DIR", "Pictures")
 }
@@ -1021,11 +1035,12 @@ impl ApplicationHandler for Editor {
         if let Err(error) = self.place(event_loop) {
             return self.fail(event_loop, error);
         }
-        // Wake only for hover-hint delays and fades, caret blinks and the placing limit;
-        // otherwise sleep until input.
+        // Wake only for hover-hint delays and fades, the toolbar's one-shot motion, caret
+        // blinks and the placing limit; otherwise sleep until input.
         let now = Instant::now();
-        let hint = (self.capture.hover_hint.next_tick(now))
-            .map(|ms| now + Duration::from_millis(ms as u64));
+        let current = toolbar_color(&self.capture, self.native.field.as_ref().map(|f| f.color));
+        self.capture.observe_toolbar(current, now);
+        let hint = (self.capture.next_tick(now)).map(|ms| now + Duration::from_millis(ms as u64));
         let due = hint.into_iter().chain(self.native.caret_due);
         match due.chain(self.placing).min() {
             Some(at) => {

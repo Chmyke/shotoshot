@@ -365,7 +365,8 @@ fn scene(scale: f64) -> Vec<Op> {
 
     c.draw_underlay(&mut canvas).unwrap();
     c.draw_frame(&mut canvas, true).unwrap();
-    c.draw_toolbar(&mut canvas, [1, 2, 3]).unwrap();
+    c.draw_toolbar(&mut canvas, [1, 2, 3], Instant::now())
+        .unwrap();
 
     let button = c.buttons()[0].bounds.center();
     c.pointer_move(&mut host, button, m);
@@ -374,7 +375,7 @@ fn scene(scale: f64) -> Vec<Op> {
     let shown = now + Duration::from_millis(HINT_DELAY_MS);
     c.draw_hover_hint(&mut canvas, shown, false).unwrap();
 
-    c.draw_dimensions(&mut canvas, false, Some("Too large"))
+    c.draw_dimensions(&mut canvas, false, Some(shotoshot_text::Key::CropOutside))
         .unwrap();
     let mut fields = DimensionFields::open(&c).expect("size fields");
     c.measure_badge(Some(fields.texts()), |t, size| {

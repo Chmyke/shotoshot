@@ -1,0 +1,11 @@
+[package]
+name = "shotoshot-text"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Writes packaging/languages.isi, the installer's messages; `cargo test` runs its check that
+# the committed file is current.
+[[example]]
+name = "inno"
+test = true

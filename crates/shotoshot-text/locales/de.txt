@@ -1,0 +1,223 @@
+# Oberflächentexte von Shotoshot, Deutsch. Das Format steht in en.txt.
+
+language.menu = Sprache
+
+tooltip.with_shortcut = {label} · {shortcut}
+
+key.ctrl = Strg
+key.shift = Umschalt
+key.alt == Alt
+key.win == Win
+key.esc == Esc
+key.delete = Entf
+key.backspace = Rücktaste
+key.tab == Tab
+key.enter = Eingabe
+key.caps_lock = Feststell
+key.space = Leertaste
+key.page_up = Bild↑
+key.page_down = Bild↓
+key.end = Ende
+key.home = Pos1
+key.left = Links
+key.up = Oben
+key.right = Rechts
+key.down = Unten
+key.insert = Einfg
+key.numpad = Num {key}
+key.num_lock = Num
+key.scroll_lock = Rollen
+key.pause == Pause
+key.break = Unterbr
+key.print_screen = Druck
+key.code = Taste {code}
+
+toolbar.select = Auswählen · {shortcut} · Bild↑/↓ nach vorn oder hinten
+toolbar.rectangle = Rechteck
+toolbar.ellipse == Ellipse
+toolbar.line = Linie
+toolbar.arrow = Pfeil
+toolbar.pen = Stift
+toolbar.highlighter = Textmarker
+toolbar.text == Text
+toolbar.eraser = Radierer
+toolbar.live_capture = Live-Aufnahme · {shortcut} · beim Kopieren oder Speichern aktualisiert
+toolbar.red = Rot
+toolbar.yellow = Gelb
+toolbar.green = Grün
+toolbar.blue = Blau
+toolbar.white = Weiß
+toolbar.black = Schwarz
+toolbar.custom_color = Eigene Farbe
+toolbar.eyedropper = Pipette
+toolbar.fill = Strich, Form oder Hintergrund färben · {shortcut} · Rechtsklick oder Alt+Klick entfernt die Farbe
+toolbar.undo = Rückgängig
+toolbar.redo = Wiederholen
+toolbar.google_lens = Mit Google Lens suchen
+toolbar.copy_image = Bild kopieren
+toolbar.save = Speichern
+toolbar.close = Schließen
+toolbar.clear_board = Board leeren · {shortcut} stellt es wieder her
+
+capture.nothing_to_undo = Nichts rückgängig zu machen
+capture.nothing_to_redo = Nichts zu wiederholen
+capture.google_search_in_progress = Google-Suche läuft
+capture.live_on = Live-Aufnahme an · {shortcut} zum Einfrieren
+capture.live_frozen = Aufnahme eingefroren · {shortcut} für Live-Aufnahme
+capture.live_for_new_captures = Live-Aufnahme gibt es nur für neue Aufnahmen
+capture.full_screen = Vollbild
+capture.restore_selection = Zurück zur vorherigen Auswahl
+capture.edit_dimensions = Abmessungen bearbeiten · Ausdrücke: 800+20, 1920/2
+
+overlay.select_area = Bereich auswählen
+overlay.cancel = {shortcut} zum Abbrechen
+overlay.stroke_width == {width} px
+magnifier.pick = Klick nimmt auf · {shortcut}
+picker.apply = Klick daneben: anwenden · {shortcut}: Abbruch
+
+crop.invalid = Geben Sie eine ganze Pixelzahl (mindestens 2) oder einen Ausdruck wie 800+20 ein.
+crop.outside = Die Aufnahme muss innerhalb des Desktops bleiben. Verringern Sie Breite oder Höhe.
+
+menu.take_screenshot = Screenshot aufnehmen
+menu.edit_board = Board bearbeiten
+menu.show_board = Board anzeigen
+menu.clear_board = Board leeren
+menu.presentation = Präsentation
+menu.pointer_halo = Zeiger-Halo
+menu.keyboard = Tastatur
+menu.mouse = Maus
+menu.keyboard_layout = Tastaturlayout
+menu.input_size = Größe von Tastatur und Maus
+menu.temporary_shapes = Temporäre Formen
+menu.shape_duration = Anzeigedauer der Formen
+menu.shortcuts = Tastenkürzel · zum Ändern klicken
+menu.capture = Aufnahme
+menu.instant_screenshot = Sofort-Screenshot
+menu.board == Board
+menu.options = Optionen
+menu.screenshot_sound = Screenshot-Ton
+menu.live_capture_default = Standardmäßig Live-Aufnahme
+menu.start_with_windows = Mit Windows starten
+menu.quit = Shotoshot beenden
+menu.duration_1 = 1 Sekunde
+menu.duration_3 = 3 Sekunden
+menu.duration_5 = 5 Sekunden
+menu.layout_full = Vollständig
+menu.layout_compact = Kompakt
+menu.layout_gaming == Gaming
+menu.seconds = {n} s
+menu.percent = {n} %
+menu.shortcut_in_use = {shortcut} (belegt)
+menu.language_auto = Windows-Sprache
+menu.language_system = Systemsprache
+
+setup.title_capture = Tastenkürzel für Aufnahme
+setup.title_instant = Tastenkürzel für Sofort-Screenshot
+setup.title_arrow = Tastenkürzel für Pfeil
+setup.title_rectangle = Tastenkürzel für Rechteck
+setup.title_ellipse = Tastenkürzel für Ellipse
+setup.title_board = Tastenkürzel für Board
+setup.press = Tastenkürzel drücken…
+setup.waiting = …
+setup.choose = Tastenkürzel wählen
+setup.cancel = Abbrechen
+setup.save = Speichern
+setup.any_key_hint = Jede Taste ist möglich, allein oder mit Strg, Umschalt, Alt oder Windows.
+setup.board_hint = Eine Taste mit Strg oder Alt. Umschalt oder Windows kann hinzukommen.
+setup.shape_hint = Ein Buchstabe mit Strg oder Alt. Umschalt kann hinzukommen.
+setup.print_screen_hint = Druck öffnet dann Shotoshot statt des Snipping Tools von Windows. Klicken Sie auf die Taste, um eine andere zu wählen.
+setup.change_hint = Klicken Sie auf die Tasten, um sie zu ändern.
+setup.used_for_instant = Dieses Tastenkürzel ist schon für Sofort-Screenshots belegt.
+setup.used_for_capture = Diese Kombination ist schon für die Aufnahme belegt.
+setup.used_by_presentation = Dieses Tastenkürzel ist schon im Präsentationsmodus belegt. Wählen Sie ein anderes.
+setup.used_by_board = Dieses Tastenkürzel ist schon für das Board belegt.
+setup.used_by_shotoshot = Dieses Tastenkürzel ist schon von Shotoshot belegt.
+setup.register_failed = Das Tastenkürzel lässt sich nicht registrieren ({code}). Es ist vielleicht reserviert oder schon belegt.
+setup.unavailable = Tastenkürzel nicht verfügbar ({code}). Wählen Sie eine andere Taste.
+setup.invalid = Tastenkürzel nicht verfügbar oder ungültig: {detail}
+setup.print_screen_held = Druck ist noch belegt, von einer anderen App oder von Windows, bis Sie sich ab- und wieder anmelden. Schließen Sie diese App oder wählen Sie eine andere Taste.
+
+tray.tooltip = Shotoshot: aufnehmen und kommentieren
+
+setup.invalid_shape = Ungültiges Tastenkürzel für Form
+setup.invalid_board = Ungültiges Board-Tastenkürzel
+setup.shape_needs_modifier = Wählen Sie ein Tastenkürzel mit Strg oder Alt, damit beim Tippen keine Formen ausgelöst werden.
+setup.board_needs_modifier = Wählen Sie ein Tastenkürzel mit Strg oder Alt, damit sich das Board beim Tippen nicht öffnet.
+setup.reserved = Strg+Alt+Esc ist reserviert
+setup.duplicate_shape = Doppeltes Tastenkürzel für Form
+
+notice.copied = Screenshot in die Zwischenablage kopiert.
+notice.saved = Bild gespeichert.
+notice.searching = Google-Suche läuft…
+notice.preferences = Einstellungen gespeichert.
+notice.saved_editable = Bearbeitbares Bild gespeichert, Bildschirm inklusive.
+notice.instant_unavailable = Tastenkürzel für Sofort-Screenshot nicht verfügbar. Im Shotoshot-Menü ändern.
+notice.board_unavailable = Board-Tastenkürzel nicht verfügbar. Im Shotoshot-Menü ändern.
+notice.shortcuts_unavailable = Tastenkürzel nicht verfügbar: {names}
+notice.names_separator == {before}, {after}
+notice.screenshot_failed = Screenshot fehlgeschlagen: Datei nicht gespeichert
+notice.screenshot_error = Screenshot fehlgeschlagen: {detail}
+
+presentation.stop = Alles ausschalten
+
+error.unexpected = Etwas ist schiefgelaufen.\n{detail}
+error.stopped = Unerwarteter interner Fehler. Shotoshot wurde beendet.
+error.already_running = Shotoshot läuft bereits. Verwenden Sie das Symbol im Infobereich.
+error.editor_start = Der Editor konnte nicht starten. Bitte versuchen Sie eine neue Aufnahme.
+error.screenshot_refused = Der Desktop hat den Screenshot abgelehnt.
+error.capture_shortcut_in_use = Das Tastenkürzel für die Aufnahme ist schon belegt. Wählen Sie eine andere Kombination.
+error.shortcut_in_use = Das Tastenkürzel {shortcut} ist schon belegt. Es wurde keine weitere Funktion aktiviert.
+error.presentation_busy = Schließen Sie die laufende Aufnahme ab, bevor Sie die Präsentationseinstellungen ändern.
+error.presentation_stopped = Die Präsentation wurde nach einem Fehler beendet. Sie können sie im Shotoshot-Menü wieder aktivieren.
+error.display_changed = Die Bildschirmkonfiguration hat sich geändert. Starten Sie eine neue Aufnahme.
+error.display_changed_board = Die Bildschirmkonfiguration hat sich geändert. Das Board wurde gespeichert.
+error.no_region = Wählen Sie zuerst einen Aufnahmebereich
+error.settings_unreadable = Einstellungen nicht unterstützt oder beschädigt. Die Originaldatei bleibt erhalten.\n{detail}
+error.settings_unsaved = Einstellungen konnten nicht gespeichert werden: {detail}
+error.settings_busy = Die Einstellungen sind gerade belegt. Bitte erneut versuchen.
+error.save_dialog = Das Speichern-Dialogfeld ließ sich nicht öffnen ({code})
+error.not_editable_capture = Diese Aufnahme kann nicht als bearbeitbares Bild gespeichert werden.
+error.text_layout = Textlayout fehlgeschlagen
+error.lens_browser = Der Browser ließ sich nicht öffnen. Ihre Aufnahme bleibt geöffnet.
+error.lens_failed = Die Google-Suche ist fehlgeschlagen. Ihre Aufnahme bleibt geöffnet.\n{detail}
+error.lens_interrupted = Die Google-Suche wurde unterbrochen. Ihre Aufnahme bleibt geöffnet.
+error.lens_too_large = Das Bild überschreitet die Grenze von 20 MB für Google Lens.
+error.document_unread = {path} ließ sich nicht öffnen: {detail}
+error.document_too_large = Dieses Bild ({width} × {height}) ist größer als dieser Bildschirm. Als PNG lässt es sich weiterhin öffnen.
+error.board_unsaved = Das Board konnte nicht gespeichert werden: {detail}
+error.wallpaper_unchanged = Die Notizen sind gespeichert, aber das Hintergrundbild wurde nicht aktualisiert: {detail}
+error.board_unopened = Das Board konnte nicht geöffnet werden.
+error.board_in_use = Das Board ist zum Bearbeiten geöffnet: Schließen Sie es zuerst und leeren Sie es dann.
+error.board_base_damaged = Die Basisdatei des Boards ist beschädigt. Sie wurde nicht verändert.
+
+board.newer = Dieses Board wurde von einer neueren Shotoshot-Version geschrieben.
+board.damaged = Die Board-Datei ist beschädigt. Sie wurde nicht verändert.
+
+document.not_editable = Diese Datei enthält keine bearbeitbaren Shotoshot-Daten.
+document.newer = Dieses Bild wurde mit einer neueren Shotoshot-Version gespeichert. Aktualisieren Sie Shotoshot, um es zu bearbeiten. Als PNG lässt es sich weiterhin öffnen.
+document.damaged = Dieses bearbeitbare Bild ist beschädigt und lässt sich nicht zum Bearbeiten öffnen.
+
+save.png = PNG-Bild
+save.jpeg = JPEG-Bild
+save.shoto = Bearbeitbares Shotoshot-Bild, behält den ganzen Bildschirm
+
+lens.sending = Aufnahme wird an Google Lens gesendet…
+lens.needs_script = Zum Senden der Aufnahme wird JavaScript benötigt.
+
+keycap.esc == Esc
+keycap.ctrl = Strg
+keycap.alt == Alt
+keycap.alt_gr == Gr
+keycap.caps = ⇪
+keycap.num == Num
+keycap.scroll = Roll
+keycap.print == Prt
+keycap.end = ↘
+keycap.insert = Einf
+keycap.delete = Entf
+
+# Installer
+installer.language.title = Sprache von Shotoshot
+installer.language.description = Sie können sie später über das Shotoshot-Symbol im Infobereich ändern.
+installer.language.auto = Windows-Sprache
+installer.shoto_file = Bearbeitbares Shotoshot-Bild

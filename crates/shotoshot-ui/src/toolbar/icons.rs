@@ -68,50 +68,77 @@ impl<C: Canvas> Pen<'_, C> {
     }
 }
 
-/// A paint too close to the dark panel to show by itself: its drop keeps a light rim.
-fn faint_on_panel(rgb: [u8; 3]) -> bool {
+/// A paint too close to the fill under the glyph to show by itself: its drop keeps a rim.
+fn faint_on(rgb: [u8; 3], ground: [u8; 3]) -> bool {
     let luma = |c: [u8; 3]| 0.2126 * c[0] as f64 + 0.7152 * c[1] as f64 + 0.0722 * c[2] as f64;
-    (luma(rgb) - luma([32, 32, 32])).abs() < 40.
+    (luma(rgb) - luma(ground)).abs() < 40.
 }
 
 pub(super) fn draw<C: Canvas>(
     canvas: &mut C,
     b: &Button,
-    (current, tint): ([u8; 3], [u8; 3]),
-    selected: bool,
+    colors: ([u8; 3], [u8; 3]),
+    (selected, swatch): (bool, Option<SwatchLook>),
     scale: f64,
 ) -> Result<(), C::Error> {
-    let foreground = if !b.enabled {
-        [100, 100, 100]
+    let (foreground, ground) = if !b.enabled {
+        ([100, 100, 100], PANEL)
     } else if selected {
-        [153, 218, 255]
+        (CHOSEN_GLYPH, CHOSEN_FILL)
     } else {
-        [235, 235, 235]
+        ([235, 235, 235], PANEL)
     };
-    glyph(
-        canvas,
-        b.action,
-        b.bounds.min
-            + Point {
-                x: 5. * scale,
-                y: 5. * scale,
-            },
-        scale,
+    let origin = b.bounds.min
+        + Point {
+            x: 5. * scale,
+            y: 5. * scale,
+        };
+    let look = Look {
         foreground,
-        (current, tint),
-    )
+        ground,
+        swatch,
+    };
+    paint(canvas, b.action, origin, scale, look, colors)
+}
+
+/// How a glyph sits on its button: its ink, the fill under it, and a swatch's dot and ring.
+struct Look {
+    foreground: [u8; 3],
+    ground: [u8; 3],
+    swatch: Option<SwatchLook>,
 }
 
 /// One action's glyph with its top-left corner at `origin`: 20 px wide at scale 1.
 /// `current` is the drawing colour the colour swatches mark. `tint` paints the pen and
 /// highlighter tips, the highlighter's swath and the bucket's paint: the drawing colour, or the
 /// one under the eyedropper while it hovers.
+/// Swatches are still: the drawing colour's sits in its ring.
 pub fn glyph<C: Canvas>(
     canvas: &mut C,
     action: Action,
     origin: Point,
     scale: f64,
     foreground: [u8; 3],
+    (current, tint): ([u8; 3], [u8; 3]),
+) -> Result<(), C::Error> {
+    let look = Look {
+        foreground,
+        ground: PANEL,
+        swatch: Some(SwatchLook::rest(motion::marks_colour(action, current))),
+    };
+    paint(canvas, action, origin, scale, look, (current, tint))
+}
+
+fn paint<C: Canvas>(
+    canvas: &mut C,
+    action: Action,
+    origin: Point,
+    scale: f64,
+    Look {
+        foreground,
+        ground,
+        swatch,
+    }: Look,
     (current, tint): ([u8; 3], [u8; 3]),
 ) -> Result<(), C::Error> {
     let mut g = Pen {
@@ -129,18 +156,19 @@ pub fn glyph<C: Canvas>(
             } else {
                 current
             };
+            // The chosen colour sits smaller inside a white ring; the custom swatch's ring is
+            // its rainbow.
+            let look = swatch.unwrap_or(SwatchLook::rest(false));
             let center = g.p(10., 10.);
-            let radius = g.r(8., 8.);
+            let radius = g.r(8. * look.dot, 8. * look.dot);
             g.canvas.fill_ellipse(center, radius, Ink::solid(rgb))?;
             g.canvas.stroke_ellipse(center, radius, g.ink, scale)?;
-            if rgb == current || matches!(action, Action::CustomColor) {
-                let contrast = if rgb.iter().map(|x| *x as u32).sum::<u32>() > 380 {
-                    [15, 15, 15]
-                } else {
-                    [255, 255, 255]
-                };
-                g.stroke(g.p(6., 10.), g.p(9., 13.), contrast, 1.5)?;
-                g.stroke(g.p(9., 13.), g.p(14., 7.), contrast, 1.5)?;
+            if let Some((alpha, size)) = look.ring
+                && matches!(action, Action::Color(_))
+            {
+                let ring = g.r(10.2 * size, 10.2 * size);
+                let white = Ink::with_alpha([255, 255, 255], alpha);
+                g.canvas.stroke_ellipse(center, ring, white, 1.8 * scale)?;
             }
             if matches!(action, Action::CustomColor) {
                 let hues = [
@@ -290,7 +318,7 @@ pub fn glyph<C: Canvas>(
             g.outline(&[(9., 4.), (6., 1.)], false)?;
             let (center, radius) = (g.p(17.5, 16.5), g.r(1.8, 2.4));
             g.canvas.fill_ellipse(center, radius, paint)?;
-            if faint_on_panel(tint) {
+            if faint_on(tint, ground) {
                 g.canvas.stroke_ellipse(center, radius, g.ink, scale)?;
             }
         }
@@ -396,16 +424,35 @@ mod tests {
                 .any(|op| op.name == "fill_polygon" && op.fixed == tinted);
             assert!(painted, "{action:?} shows the tint");
         }
-        let checks = |rgb| {
+        let circles = |rgb| {
             let ops = record(Action::Color(rgb), (current, tint)).ops;
-            ops.iter().filter(|op| op.name == "line").count()
+            ops.iter().filter(|op| op.name == "stroke_ellipse").count()
         };
-        assert_eq!(
-            checks(current),
-            2,
-            "the drawing colour keeps its check mark"
-        );
-        assert_eq!(checks(tint), 0, "the hovered colour gets none");
+        assert_eq!(circles(current), 2, "the drawing colour sits in its ring");
+        assert_eq!(circles(tint), 1, "the hovered colour gets none");
+    }
+
+    #[test]
+    fn a_drop_the_blue_of_a_chosen_button_keeps_a_rim_there() {
+        let blue = COLORS[3];
+        let bucket = Button {
+            bounds: Rect::new(Point::default(), Point { x: 30., y: 30. }).unwrap(),
+            label: Key::ToolbarFill,
+            action: Action::Fill,
+            panel: 1,
+            active: true,
+            enabled: true,
+        };
+        let rim = |selected| {
+            let mut canvas = Recorder {
+                size: Point { x: 30., y: 30. },
+                ops: Vec::new(),
+            };
+            draw(&mut canvas, &bucket, (blue, blue), (selected, None), 1.).unwrap();
+            canvas.ops.iter().any(|op| op.name == "stroke_ellipse")
+        };
+        assert!(rim(true), "on the chosen fill");
+        assert!(!rim(false), "on the panel");
     }
 
     #[test]

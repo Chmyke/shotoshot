@@ -45,6 +45,14 @@ pub fn reports_errors_on_stderr(mut args: impl Iterator<Item = String>) -> bool 
     })
 }
 
+/// Speaks the language of the saved settings in a process that shows its errors in a message
+/// box without starting from the settings itself; English when they cannot be read.
+fn apply_saved_language() {
+    if let Ok(settings) = Settings::load() {
+        crate::language::apply(&settings);
+    }
+}
+
 pub fn run() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if let Some(i) = args
@@ -85,6 +93,7 @@ pub fn run() -> Result<()> {
     if std::env::args().any(|a| a == "--board-bake") {
         // Spawned by the resident: no window and no mutex of the roles below, only the
         // bake's own lock. Screen rectangles need the DPI awareness set above.
+        apply_saved_language();
         return crate::board::bake::process();
     }
     if std::env::args().any(|a| a == RESTORE_WALLPAPER) {
@@ -93,6 +102,7 @@ pub fn run() -> Result<()> {
     }
     if std::env::args().any(|a| a == "--board-clear") {
         // Spawned by the resident's Clear board: the same footing as a bake.
+        apply_saved_language();
         return crate::board::clear::process();
     }
     if std::env::args().any(|a| a == "--board-diagnostic") {
@@ -183,10 +193,8 @@ pub fn run() -> Result<()> {
             if prepared_editor {
                 return Err(Error::new(E_FAIL, "An editor already exists"));
             }
-            message(
-                HWND::default(),
-                "Shotoshot is already running. Use its notification-area icon.",
-            );
+            apply_saved_language();
+            message(HWND::default(), &Text::new(Key::ErrorAlreadyRunning));
             return Ok(());
         }
         if !diagnostic && !editor_process {
@@ -195,8 +203,29 @@ pub fn run() -> Result<()> {
         let mut settings = if diagnostic || first_frame {
             Settings::default()
         } else {
-            Settings::load().map_err(|e| Error::new(E_FAIL, e))?
+            let settings = Settings::load().map_err(|error| {
+                // The saved choice is unknown: the error speaks the language of Windows.
+                crate::language::apply(&Settings::default());
+                crate::settings::unreadable(error)
+            })?;
+            // Resident, prepared editor, document editor and board session all start here;
+            // diagnostics stay in English so that their output does not depend on the PC.
+            crate::language::apply(&settings);
+            settings
         };
+        if !diagnostic && !editor_process {
+            // The language chosen on the installer's page, if it left one, before any window.
+            // Kept for this run even if it cannot be stored: the resident still starts.
+            if let Some(folder) = Settings::path()?.parent() {
+                crate::language::start_with_installer_choice(
+                    &mut settings,
+                    folder,
+                    |s| s.save(),
+                    crate::language::apply,
+                    |detail| report(HWND::default(), &crate::settings::unsaved(detail)),
+                );
+            }
+        }
         if first_frame && std::env::args().any(|a| a == "--live-diagnostic") {
             settings.live_capture = true;
         }
@@ -294,12 +323,7 @@ pub fn run() -> Result<()> {
                 hIcon: tray_icon,
                 ..Default::default()
             };
-            for (i, c) in "Shotoshot — capture and annotate"
-                .encode_utf16()
-                .enumerate()
-            {
-                app.tray.szTip[i] = c;
-            }
+            app.tray.szTip = tray_tip(shotoshot_text::tr(shotoshot_text::Key::TrayTooltip));
             if !editor_process && !Shell_NotifyIconW(NIM_ADD, &app.tray).as_bool() {
                 return Err(Error::new(E_FAIL, "Cannot create the notification icon"));
             }
@@ -310,10 +334,16 @@ pub fn run() -> Result<()> {
                 let (mods, key) = (app.settings.modifiers, app.settings.key);
                 if let Err(error) = app.hotkey.replace(free, mods, key, || Ok(())) {
                     app.setup = true;
-                    let text = setup::print_screen_error(mods, key, &error).unwrap_or_else(|| {
-                        "The capture shortcut is already in use. Choose another combination.".into()
-                    });
-                    message(hwnd, &text);
+                    let language = shotoshot_text::language();
+                    let held = setup::print_screen_error(mods, key, &error, language).is_some();
+                    message(
+                        hwnd,
+                        &Text::new(if held {
+                            Key::SetupPrintScreenHeld
+                        } else {
+                            Key::ErrorCaptureShortcutInUse
+                        }),
+                    );
                 }
             }
             if !diagnostic && !editor_process {
@@ -333,11 +363,8 @@ pub fn run() -> Result<()> {
                         .replace(free, shortcut.modifiers, shortcut.key, || Ok(()))
                         .is_err()
                 {
-                    app.toast = notice::Toast::new(
-                        "Instant screenshot shortcut unavailable. Change it in the Shotoshot menu.",
-                        true,
-                    )
-                    .ok();
+                    app.toast =
+                        notice::Toast::new(&Text::new(Key::NoticeInstantUnavailable), true).ok();
                 }
                 let shortcut = app.settings.board_shortcut;
                 let reserved = app
@@ -355,11 +382,8 @@ pub fn run() -> Result<()> {
                         .replace(free, shortcut.modifiers, shortcut.key, || Ok(()))
                         .is_err()
                 {
-                    app.toast = notice::Toast::new(
-                        "Board shortcut unavailable. Change it in the Shotoshot menu.",
-                        true,
-                    )
-                    .ok();
+                    app.toast =
+                        notice::Toast::new(&Text::new(Key::NoticeBoardUnavailable), true).ok();
                 }
                 if app.settings.board_visible {
                     let _ = crate::board::bake::spawn();
@@ -372,13 +396,12 @@ pub fn run() -> Result<()> {
                 app.presentation = Some(presentation);
                 match activation {
                     Ok(conflicts) if !conflicts.is_empty() => {
-                        app.toast = notice::Toast::new(
-                            &format!("Shortcut unavailable: {}", conflicts.join(", ")),
-                            true,
-                        )
-                        .ok();
+                        let names = notice::names_in(&conflicts, shotoshot_text::language());
+                        let text =
+                            Text::with(Key::NoticeShortcutsUnavailable, &[("names", &names)]);
+                        app.toast = notice::Toast::new(&text, true).ok();
                     }
-                    Err(error) => message(hwnd, &error.message()),
+                    Err(error) => message(hwnd, &crate::failure::brief_text(&error)),
                     _ => {}
                 }
             }
@@ -427,10 +450,7 @@ pub fn run() -> Result<()> {
             }
             if result == 0 {
                 if msg.wParam.0 != 0 {
-                    return Err(Error::new(
-                        E_FAIL,
-                        "Unexpected internal failure. Shotoshot has stopped.",
-                    ));
+                    return Err(crate::failure::visible(Key::ErrorStopped, &[]));
                 }
                 break;
             }

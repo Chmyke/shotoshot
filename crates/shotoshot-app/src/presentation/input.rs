@@ -2,6 +2,15 @@
 //! OWNER: Presentation; registrations are released on stop and process teardown.
 //! INVARIANTS: Only selected conflicting drawing shortcuts may be consumed; no input history.
 use super::*;
+use shotoshot_text::Key;
+
+/// The names of the stop shortcut and of the three shape shortcuts, in registration order.
+pub(crate) const SHORTCUT_NAMES: [Key; 4] = [
+    Key::PresentationStop,
+    Key::ToolbarArrow,
+    Key::ToolbarRectangle,
+    Key::ToolbarEllipse,
+];
 
 /// Ctrl+Alt+Esc, reserved by `PresentationSettings::validate_shape_shortcuts`.
 const STOP_SHORTCUT: crate::settings::Shortcut = crate::settings::Shortcut {
@@ -67,12 +76,9 @@ impl Bindings {
                                 let _ = UnregisterHotKey(Some(self.owner), HOTKEY_BASE + j as i32);
                             }
                         }
-                        return Err(Error::new(
-                            E_FAIL,
-                            format!(
-                                "Shortcut {} is already in use. No additional feature was enabled.",
-                                self.name(i)
-                            ),
+                        return Err(crate::failure::visible(
+                            Key::ErrorShortcutInUse,
+                            &[("shortcut", &self.name(i))],
                         ));
                     }
                     added[i] = true;
@@ -107,20 +113,14 @@ impl Bindings {
         };
         (HOT_KEY_MODIFIERS(s.modifiers), s.key)
     }
+    /// The keys of shortcut `index`, as the interface writes them.
     fn name(&self, index: usize) -> String {
-        if index == 0 && self.stop == STOP_SHORTCUT {
-            "Ctrl+Alt+Esc".into()
-        } else {
-            let (mods, key) = self.combination(index);
-            format!(
-                "{} (modifiers {}, key {})",
-                ["Turn everything off", "Arrow", "Rectangle", "Ellipse"][index],
-                mods.0,
-                key
-            )
-        }
+        let (mods, key) = self.combination(index);
+        crate::app::shortcut_text(mods.0, key)
     }
-    pub fn available(&mut self, enabled: Enabled) -> Result<Vec<&'static str>> {
+    /// Registers the shortcuts `enabled` needs; returns the names (`SHORTCUT_NAMES`) of those
+    /// another application holds.
+    pub fn available(&mut self, enabled: Enabled) -> Result<Vec<Key>> {
         self.set(Enabled::default())?;
         let mut conflicts = Vec::new();
         let mut priority = [None; 3];
@@ -141,7 +141,7 @@ impl Bindings {
                         priority[i - 1] = Some((self.shortcuts[i - 1], HOTKEY_BASE + i as i32));
                     } else {
                         self.conflicts[i] = true;
-                        conflicts.push(["Turn everything off", "Arrow", "Rectangle", "Ellipse"][i]);
+                        conflicts.push(SHORTCUT_NAMES[i]);
                     }
                 }
             }

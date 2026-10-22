@@ -213,25 +213,32 @@ fn portable_renderer_paints_the_whole_capture_overlay() {
         canvas.annotations(capture.editor.objects(), None).unwrap();
         capture.draw_frame(&mut canvas, true).unwrap();
         let color = capture.editor.style.color;
-        capture.draw_toolbar(&mut canvas, color).unwrap();
+        let now = std::time::Instant::now();
+        capture.draw_toolbar(&mut canvas, color, now).unwrap();
         capture.draw_width_ring(&mut canvas).unwrap();
     }
     let image = shotoshot_raster::image_from_pixmap(&frame, 0, 0);
     let target = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
     save_png(&image, &target.join("shotoshot-portable-interface.png")).unwrap();
-    // Every toolbar button shows a light icon over its dark cell.
+    // Every toolbar button shows an icon that stands out from its cell: light over the dark
+    // cells, dark over the chosen one's blue.
     for button in capture.buttons() {
         let r = button.bounds;
+        let pixel = |x: usize, y: usize| {
+            let i = (y * 900 + x) * 4;
+            [image.pixels[i], image.pixels[i + 1], image.pixels[i + 2]]
+        };
+        // Left of the 20 px glyph grid, which starts 5 px in.
+        let cell = pixel(r.min.x as usize + 2, r.center().y as usize);
         let lit = (r.min.y as usize..r.max.y as usize)
             .flat_map(|y| (r.min.x as usize..r.max.x as usize).map(move |x| (x, y)))
             .filter(|(x, y)| {
-                let i = (y * 900 + x) * 4;
-                let p = &image.pixels[i..i + 3];
-                // Cells are rgb(32..55); disabled icons are grey 100, enabled ones light.
-                p.iter().any(|c| *c > 80)
+                let p = pixel(*x, *y);
+                // Disabled icons are grey 100 over cells of 32.
+                (0..3).any(|c| p[c].abs_diff(cell[c]) > 60)
             })
             .count();
-        assert!(lit > 8, "{} has no visible icon", button.label);
+        assert!(lit > 8, "{:?} has no visible icon", button.label);
     }
     // The committed text is drawn in the annotation colour inside the region.
     let red = (380..420usize)

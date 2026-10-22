@@ -203,6 +203,11 @@ impl EditorProcess {
             let _ = TerminateJobObject(self.child._job.0, 1);
         }
     }
+    /// Stops an idle editor so that a new one replaces it once it has exited.
+    pub fn restart(&mut self) {
+        self.activation.restart();
+        self.stop();
+    }
     /// Give an active editor time to flush pending preferences before closing its job.
     /// A hung/modal editor is still bounded; a resident crash simply closes the job.
     pub fn shutdown(self) {
@@ -269,8 +274,15 @@ enum Phase {
 struct Activation {
     phase: Phase,
     pending: bool,
+    /// Stopped to be replaced: its exit prepares the next editor, and a capture asked in the
+    /// meantime waits for that one.
+    restarting: bool,
 }
 impl Activation {
+    fn restart(&mut self) {
+        self.phase = Phase::Preparing;
+        self.restarting = true;
+    }
     fn request(&mut self) -> Option<HWND> {
         match self.phase {
             Phase::Preparing => {
@@ -285,7 +297,8 @@ impl Activation {
         }
     }
     fn ready(&mut self, window: HWND) -> Option<HWND> {
-        if !matches!(self.phase, Phase::Preparing) {
+        // A READY queued before the restart comes from the editor being stopped.
+        if self.restarting || !matches!(self.phase, Phase::Preparing) {
             return None;
         }
         self.phase = Phase::Ready(window);
@@ -305,14 +318,54 @@ impl Activation {
         }
     }
     fn replenish(&self, exit_code: u32) -> bool {
-        exit_code == 0 && matches!(self.phase, Phase::Active(_))
+        self.restarting || (exit_code == 0 && matches!(self.phase, Phase::Active(_)))
     }
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use std::time::Duration;
+
+    /// A prepared editor that is idle: a child that only waits, then is ready.
+    pub(in crate::app) fn idle_editor() -> EditorProcess {
+        let mut editor = EditorProcess {
+            child: child_fixture("waiting_child"),
+            activation: Activation::default(),
+            prepared: true,
+        };
+        editor.activation.ready(HWND(17 as _));
+        editor
+    }
+    /// Whether `editor`'s process ends within three seconds.
+    pub(in crate::app) fn ends(editor: &EditorProcess) -> bool {
+        unsafe { WaitForSingleObject(editor.handle(), 3000) == WAIT_OBJECT_0 }
+    }
+
+    #[test]
+    fn a_restarted_editor_is_replaced_and_keeps_a_later_capture() {
+        let mut activation = Activation::default();
+        let window = HWND(17 as _);
+        activation.ready(window);
+        activation.restart();
+        assert!(!activation.busy());
+        assert_eq!(
+            activation.ready(window),
+            None,
+            "a READY from the stopped editor"
+        );
+        assert!(activation.replenish(1), "its exit prepares the next editor");
+        assert_eq!(activation.request(), None, "never the stopped window");
+        assert!(activation.busy(), "the capture waits for the next editor");
+
+        let mut editor = idle_editor();
+        editor.restart();
+        assert!(ends(&editor), "the idle editor was not stopped");
+        assert!(editor.replenish(editor.exit_code().unwrap().unwrap()));
+        assert!(!editor.retry_cold());
+        editor.request();
+        assert!(editor.retry_cold(), "a capture asked meanwhile starts cold");
+    }
 
     fn fixture_arguments(name: &str) -> String {
         let scope = module_path!().split_once("::").unwrap().1;

@@ -6,6 +6,7 @@
 //! before each frame, from the badge (`place`), as wide as the texts.
 use crate::{Canvas, Capture, FieldKey, Ink, TextField, caret, crop, keys, text_field::SELECTION};
 use shotoshot_core::{Modifiers, Point, Rect};
+use shotoshot_text::Key;
 
 const FIELD_SIZE: f64 = 14.;
 const FIELD_INK: [u8; 3] = [240, 240, 240];
@@ -35,7 +36,7 @@ pub struct DimensionFields {
     slots: [Slot; 2],
     focus: usize,
     /// Why the last `apply` was refused; shown under the badge until the next press.
-    pub error: Option<&'static str>,
+    pub error: Option<Key>,
 }
 
 impl DimensionFields {
@@ -332,7 +333,7 @@ mod tests {
         );
         assert_eq!(fields.texts()[0], "123");
         place(&mut capture, &mut fields);
-        fields.error = Some("bad");
+        fields.error = Some(Key::CropInvalid);
         let height = Point {
             x: fields.badge.max.x - 10.,
             y: fields.badge.center().y,

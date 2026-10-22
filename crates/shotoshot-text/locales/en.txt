@@ -1,0 +1,261 @@
+# Shotoshot interface texts, English: the source. This file defines the keys and their order.
+#
+# Format: UTF-8 without BOM, one entry per line, `key = text`. `#` starts a comment line.
+# Key: lowercase letters, digits and `_`, dot-separated (`toolbar.rectangle`).
+# Text: trimmed; `\n` is a line break, `\\` a backslash; `{name}` is a variable that every
+# language must keep, with the same name. Never build a sentence from pieces: one key, one
+# whole sentence.
+# In another language, `key == text` declares a text that stays identical to the English on
+# purpose (proper name, "OK", an extension). Without `==`, a copy of the English fails the build.
+
+language.menu = Language
+
+# Hints: a label, then the keys it answers to (`{shortcut}`, assembled by the code).
+tooltip.with_shortcut = {label} · {shortcut}
+
+# Key names, as printed on keyboards of the language. Letters, digits and F1-F24 stay as is;
+# keys Windows names (letters, punctuation) follow the keyboard layout. `{key}` is a digit or
+# a sign of the numeric keypad, `{code}` a hexadecimal key code.
+key.ctrl = Ctrl
+key.shift = Shift
+key.alt = Alt
+key.win = Win
+key.esc = Esc
+key.delete = Delete
+key.backspace = Backspace
+key.tab = Tab
+key.enter = Enter
+key.caps_lock = Caps Lock
+key.space = Space
+key.page_up = Page Up
+key.page_down = Page Down
+key.end = End
+key.home = Home
+key.left = Left
+key.up = Up
+key.right = Right
+key.down = Down
+key.insert = Insert
+key.numpad = Numpad {key}
+key.num_lock = Num Lock
+key.scroll_lock = Scroll Lock
+key.pause = Pause
+key.break = Break
+key.print_screen = Print Screen
+key.code = Key {code}
+
+# toolbar.* and capture.*: hints of the capture buttons. Each one is measured: at most
+# 600 px at 12 px Segoe UI (`every_tooltip_fits`). A `{shortcut}` places the keys in the sentence.
+toolbar.select = Select · {shortcut} · Page Up/Down forward or back
+toolbar.rectangle = Rectangle
+toolbar.ellipse = Ellipse
+toolbar.line = Line
+toolbar.arrow = Arrow
+toolbar.pen = Pen
+toolbar.highlighter = Highlighter
+toolbar.text = Text
+toolbar.eraser = Eraser
+toolbar.live_capture = Live capture · {shortcut} · refresh on copy or save
+toolbar.red = Red
+toolbar.yellow = Yellow
+toolbar.green = Green
+toolbar.blue = Blue
+toolbar.white = White
+toolbar.black = Black
+toolbar.custom_color = Custom color
+toolbar.eyedropper = Eyedropper
+toolbar.fill = Color a stroke, a shape or the background · {shortcut} · Right-click or Alt+click clears
+toolbar.undo = Undo
+toolbar.redo = Redo
+toolbar.google_lens = Search with Google Lens
+toolbar.copy_image = Copy image
+toolbar.save = Save
+toolbar.close = Close
+toolbar.clear_board = Clear board · {shortcut} restores
+
+# The hint a button takes in a capture state, and the buttons beside the size badge.
+capture.nothing_to_undo = Nothing to undo
+capture.nothing_to_redo = Nothing to redo
+capture.google_search_in_progress = Google search in progress
+capture.live_on = Live capture on · {shortcut} to freeze
+capture.live_frozen = Capture frozen · {shortcut} for live capture
+capture.live_for_new_captures = Live capture is for new captures
+capture.full_screen = Full screen
+capture.restore_selection = Back to previous selection
+capture.edit_dimensions = Edit dimensions · expressions: 800+20, 1920/2
+
+# Pointer hints, loupe and colour wheel. A zone keeps its English size and grows only for a
+# longer text, except the loupe and the wheel, which a text must fit (`text_fit` tests):
+# loupe at most 110 px at 10 px, wheel labels at most 230 px. `{shortcut}` is the Esc key.
+overlay.select_area = Select an area
+overlay.cancel = {shortcut} to cancel
+overlay.stroke_width = {width} px
+magnifier.pick = Click to pick · {shortcut}
+picker.apply = Click outside to apply · {shortcut} to cancel
+
+# Errors of the crop-size fields.
+crop.invalid = Enter a whole number of pixels (at least 2), or an expression such as 800+20.
+crop.outside = The capture must stay inside the desktop. Reduce its width or height.
+
+# Notification-area menu. Each menu (the main one and every submenu) is at most 480 px
+# wide at 13 px (`every_menu_fits`). Languages are listed under their own names, in code.
+menu.take_screenshot = Take a screenshot
+menu.edit_board = Edit board
+menu.show_board = Show board
+menu.clear_board = Clear board
+menu.presentation = Presentation
+menu.pointer_halo = Pointer halo
+menu.keyboard = Keyboard
+menu.mouse = Mouse
+menu.keyboard_layout = Keyboard layout
+menu.input_size = Keyboard and mouse size
+menu.temporary_shapes = Temporary shapes
+menu.shape_duration = Shape duration
+menu.shortcuts = Shortcuts · click to change
+menu.capture = Capture
+menu.instant_screenshot = Instant screenshot
+menu.board = Board
+menu.options = Options
+menu.screenshot_sound = Screenshot sound
+menu.live_capture_default = Live capture by default
+menu.start_with_windows = Start with Windows
+menu.quit = Quit Shotoshot
+menu.duration_1 = 1 second
+menu.duration_3 = 3 seconds
+menu.duration_5 = 5 seconds
+menu.layout_full = Full
+menu.layout_compact = Compact
+menu.layout_gaming = Gaming
+menu.seconds = {n} s
+menu.percent = {n}%
+menu.shortcut_in_use = {shortcut} (in use)
+menu.language_auto = Windows language
+menu.language_system = System language
+
+# Shortcut window. It keeps its English size and grows only for a longer text, up to 640×400 px
+# (`setup_layout_fits_every_language`): titles at 16 px, buttons at 13 px, the hint wrapped
+# at 12 px. `{code}` is a Windows error number, `{detail}` the reason, as given.
+setup.title_capture = Capture shortcut
+setup.title_instant = Instant screenshot shortcut
+setup.title_arrow = Arrow shortcut
+setup.title_rectangle = Rectangle shortcut
+setup.title_ellipse = Ellipse shortcut
+setup.title_board = Board shortcut
+setup.press = Press your shortcut…
+setup.waiting = …
+setup.choose = Choose a shortcut
+setup.cancel = Cancel
+setup.save = Save
+setup.any_key_hint = Any key works, alone or with Ctrl, Shift, Alt or Windows.
+setup.board_hint = A key with Ctrl or Alt. Shift or Windows can also be added.
+setup.shape_hint = A letter with Ctrl or Alt. Shift can also be added.
+setup.print_screen_hint = Print Screen will open Shotoshot instead of the Windows Snipping Tool. Click the key to choose another one.
+setup.change_hint = Click the keys to change them.
+setup.used_for_instant = This shortcut is already used for instant screenshots.
+setup.used_for_capture = This combination is already used for capture.
+setup.used_by_presentation = This shortcut is already used by presentation mode. Choose another shortcut.
+setup.used_by_board = This shortcut is already used by the board.
+setup.used_by_shotoshot = This shortcut is already used by Shotoshot.
+setup.register_failed = Unable to register this shortcut ({code}). It may be reserved or already in use.
+setup.unavailable = Shortcut unavailable ({code}). Choose another key.
+setup.invalid = Shortcut unavailable or invalid: {detail}
+setup.print_screen_held = Print Screen is still in use, by another app or by Windows until you sign out and back in. Close that app or choose another key.
+
+# Hint of the notification-area icon: at most 127 characters (`tray_tip_fits`).
+tray.tooltip = Shotoshot: capture and annotate
+
+# Setup reasons given by the settings themselves, shown alone or as `{detail}` of setup.invalid.
+setup.invalid_shape = Invalid shape shortcut
+setup.invalid_board = Invalid board shortcut
+setup.shape_needs_modifier = Choose a shortcut with Ctrl or Alt to avoid triggering shapes while typing.
+setup.board_needs_modifier = Choose a shortcut with Ctrl or Alt to avoid opening the board while typing.
+setup.reserved = Ctrl+Alt+Escape is reserved
+setup.duplicate_shape = Duplicate shape shortcut
+
+# Notifications: one line at 14 px Segoe UI. A notification keeps the English 360 px and grows
+# with its text up to 640 px (`every_notice_fits_one_line`): a longer text is shortened.
+# `{names}` lists presentation.stop, toolbar.arrow, toolbar.rectangle or toolbar.ellipse.
+notice.copied = Screenshot copied to clipboard.
+notice.saved = Image saved.
+notice.searching = Searching Google…
+notice.preferences = Settings saved.
+notice.saved_editable = Editable image saved, screen included.
+notice.instant_unavailable = Instant screenshot shortcut unavailable. Change it in the Shotoshot menu.
+notice.board_unavailable = Board shortcut unavailable. Change it in the Shotoshot menu.
+notice.shortcuts_unavailable = Shortcut unavailable: {names}
+# How the names of a list are joined, two at a time: what stands between `{before}` and
+# `{after}` (a separator alone would lose its space).
+notice.names_separator = {before}, {after}
+notice.screenshot_failed = Screenshot failed: file not saved
+notice.screenshot_error = Screenshot failed: {detail}
+presentation.stop = Turn everything off
+
+# Message boxes. `{detail}` is the technical reason as Windows or the file gave it, `{code}` a
+# Windows error number, `{path}` a file, `{shortcut}` keys assembled by the code.
+error.unexpected = Something went wrong.\n{detail}
+error.stopped = Unexpected internal failure. Shotoshot has stopped.
+error.already_running = Shotoshot is already running. Use its notification-area icon.
+error.editor_start = The editor could not start. Please try another capture.
+error.screenshot_refused = The desktop refused the screenshot.
+error.capture_shortcut_in_use = The capture shortcut is already in use. Choose another combination.
+error.shortcut_in_use = Shortcut {shortcut} is already in use. No additional feature was enabled.
+error.presentation_busy = Finish the current capture before changing presentation settings.
+error.presentation_stopped = Presentation stopped after an error. You can enable it again from the Shotoshot menu.
+error.display_changed = The display configuration changed. Start a new capture.
+error.display_changed_board = The display configuration changed. The board was saved.
+error.no_region = Select a capture region first
+error.settings_unreadable = Unsupported or damaged settings. The original file was preserved.\n{detail}
+error.settings_unsaved = Could not save settings: {detail}
+error.settings_busy = Settings are busy. Please try again.
+error.save_dialog = Could not open the Save dialog ({code})
+error.not_editable_capture = This capture cannot be saved as an editable image.
+error.text_layout = Text layout failed
+error.lens_browser = Could not open the browser. Your capture is still open.
+error.lens_failed = Google search failed. Your capture is still open.\n{detail}
+error.lens_interrupted = Google search was interrupted. Your capture is still open.
+error.lens_too_large = The image exceeds the Google Lens limit of 20 MB.
+error.document_unread = Could not open {path}: {detail}
+error.document_too_large = This image ({width} × {height}) is larger than this screen. It still opens as a PNG.
+error.board_unsaved = The board could not be saved: {detail}
+error.wallpaper_unchanged = The notes are saved, but the wallpaper was not updated: {detail}
+error.board_unopened = The board could not be opened.
+error.board_in_use = The board is open for editing: close it first, then clear it.
+error.board_base_damaged = The board base file is damaged. It was left untouched.
+
+# Why a board file or an editable image does not open (shotoshot-core).
+board.newer = This board was written by a newer version of Shotoshot.
+board.damaged = The board file is damaged. It was left untouched.
+document.not_editable = This file has no editable Shotoshot data.
+document.newer = This image was saved by a newer Shotoshot. Update Shotoshot to edit it. It still opens as a PNG.
+document.damaged = This editable image is damaged and cannot be opened for editing.
+
+# Type list of the Save dialog, in this order.
+save.png = PNG image
+save.jpeg = JPEG image
+save.shoto = Editable Shotoshot image, keeps the whole screen
+
+# The local page that hands a capture to Google Lens in the browser.
+lens.sending = Sending the capture to Google Lens...
+lens.needs_script = JavaScript is needed to send the capture.
+
+# Labels on the keycaps of the presentation keyboard: at most 4 characters, and they must fit
+# their keycap at 7.5 px (`keycap_labels_fit_their_keys`). Keep the English where keyboards of the
+# language print it.
+keycap.esc = Esc
+keycap.ctrl = Ctrl
+keycap.alt = Alt
+keycap.alt_gr = Gr
+keycap.caps = Caps
+keycap.num = Num
+keycap.scroll = Scr
+keycap.print = Prt
+keycap.end = End
+keycap.insert = Ins
+keycap.delete = Del
+
+# The Windows installer (packaging/languages.isi, written by `cargo run -p shotoshot-text --example inno`):
+# one line each, no `%`. Its language page lists the languages under their own names.
+installer.language.title = Shotoshot language
+installer.language.description = You can change it later from the Shotoshot icon in the notification area.
+installer.language.auto = Windows language
+installer.shoto_file = Shotoshot editable image

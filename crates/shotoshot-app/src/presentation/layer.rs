@@ -106,30 +106,11 @@ impl Layer {
                 .dc
                 .CreateSolidColorBrush(&color([255; 3], 1.), None)?;
             let write: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
-            let label_format = write.CreateTextFormat(
-                w!("Segoe UI"),
-                None,
-                DWRITE_FONT_WEIGHT_SEMI_BOLD,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                11. * scale,
-                w!("fr-FR"),
-            )?;
-            label_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;
-            label_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
-            label_format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
-            let small_label_format = write.CreateTextFormat(
-                w!("Segoe UI"),
-                None,
-                DWRITE_FONT_WEIGHT_SEMI_BOLD,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                7.5 * scale,
-                w!("fr-FR"),
-            )?;
-            small_label_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;
-            small_label_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
-            small_label_format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
+            let language = shotoshot_text::language();
+            let label_format =
+                diagram::label_format(&write, diagram::LABEL_SIZE * scale, language)?;
+            let small_label_format =
+                diagram::label_format(&write, diagram::SMALL_LABEL_SIZE * scale, language)?;
             let outlines = diagram::Outlines::new(&renderer.dc.GetFactory()?, scale, plan)?;
             let arrow_head = renderer.dc.GetFactory()?.CreatePathGeometry()?;
             let sink = arrow_head.Open()?;

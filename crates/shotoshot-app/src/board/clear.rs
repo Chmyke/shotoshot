@@ -29,9 +29,9 @@ pub fn spawn() -> Result<()> {
 /// on each screen. An open session is refused with a message: the user closes it first.
 pub fn process() -> Result<()> {
     if session_open()? {
-        return Err(Error::new(
-            E_FAIL,
-            "The board is open for editing: close it first, then clear it.",
+        return Err(crate::failure::visible(
+            shotoshot_text::Key::ErrorBoardInUse,
+            &[],
         ));
     }
     let folder = super::folder()?;
@@ -40,7 +40,7 @@ pub fn process() -> Result<()> {
     let _lock = bake::Lock::acquire()?;
     clear_document(&folder)?;
     let visible = Settings::load()
-        .map_err(|e| Error::new(E_FAIL, e))?
+        .map_err(crate::settings::unreadable)?
         .board_visible;
     if visible {
         bake::bake(&folder, &Wallpaper::new()?)?;

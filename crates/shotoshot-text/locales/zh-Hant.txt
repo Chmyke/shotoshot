@@ -1,0 +1,223 @@
+# Shotoshot 介面文字，繁體中文。格式說明見 en.txt。
+
+language.menu = 語言
+
+tooltip.with_shortcut = {label} · {shortcut}
+
+key.ctrl == Ctrl
+key.shift == Shift
+key.alt == Alt
+key.win == Win
+key.esc == Esc
+key.delete == Delete
+key.backspace == Backspace
+key.tab == Tab
+key.enter == Enter
+key.caps_lock == Caps Lock
+key.space = 空白鍵
+key.page_up == Page Up
+key.page_down == Page Down
+key.end == End
+key.home == Home
+key.left = ←
+key.up = ↑
+key.right = →
+key.down = ↓
+key.insert == Insert
+key.numpad = 數字鍵台 {key}
+key.num_lock == Num Lock
+key.scroll_lock == Scroll Lock
+key.pause == Pause
+key.break == Break
+key.print_screen == Print Screen
+key.code = 按鍵 {code}
+
+toolbar.select = 選取 · {shortcut} · Page Up/Down 上移或下移一層
+toolbar.rectangle = 矩形
+toolbar.ellipse = 橢圓
+toolbar.line = 直線
+toolbar.arrow = 箭頭
+toolbar.pen = 畫筆
+toolbar.highlighter = 螢光筆
+toolbar.text = 文字
+toolbar.eraser = 橡皮擦
+toolbar.live_capture = 即時擷取 · {shortcut} · 複製或儲存時重新整理
+toolbar.red = 紅色
+toolbar.yellow = 黃色
+toolbar.green = 綠色
+toolbar.blue = 藍色
+toolbar.white = 白色
+toolbar.black = 黑色
+toolbar.custom_color = 自訂色彩
+toolbar.eyedropper = 滴管
+toolbar.fill = 為線條、圖形或背景著色 · {shortcut} · 按右鍵或 Alt+按一下移除色彩
+toolbar.undo = 復原
+toolbar.redo = 重做
+toolbar.google_lens = 使用 Google 智慧鏡頭搜尋
+toolbar.copy_image = 複製影像
+toolbar.save = 儲存
+toolbar.close = 關閉
+toolbar.clear_board = 清除 Board · {shortcut} 可復原
+
+capture.nothing_to_undo = 沒有可復原的動作
+capture.nothing_to_redo = 沒有可重做的動作
+capture.google_search_in_progress = Google 搜尋進行中
+capture.live_on = 即時擷取已開啟 · {shortcut} 凍結
+capture.live_frozen = 擷取已凍結 · {shortcut} 恢復即時擷取
+capture.live_for_new_captures = 即時擷取僅適用於新的擷取
+capture.full_screen = 全螢幕
+capture.restore_selection = 還原上一個選取範圍
+capture.edit_dimensions = 編輯尺寸 · 運算式：800+20, 1920/2
+
+overlay.select_area = 選取區域
+overlay.cancel = {shortcut} 取消
+overlay.stroke_width == {width} px
+magnifier.pick = 按一下取色 · {shortcut}
+picker.apply = 按一下外部套用 · {shortcut} 取消
+
+crop.invalid = 請輸入至少為 2 的整數像素，或 800+20 之類的運算式。
+crop.outside = 擷取範圍必須在桌面內。請縮小寬度或高度。
+
+menu.take_screenshot = 擷取畫面
+menu.edit_board = 編輯 Board
+menu.show_board = 顯示 Board
+menu.clear_board = 清除 Board
+menu.presentation = 簡報
+menu.pointer_halo = 指標光暈
+menu.keyboard = 鍵盤
+menu.mouse = 滑鼠
+menu.keyboard_layout = 鍵盤樣式
+menu.input_size = 鍵盤與滑鼠大小
+menu.temporary_shapes = 暫時圖形
+menu.shape_duration = 圖形顯示時間
+menu.shortcuts = 快速鍵 · 按一下以變更
+menu.capture = 擷取
+menu.instant_screenshot = 即時擷取畫面
+menu.board == Board
+menu.options = 選項
+menu.screenshot_sound = 擷取音效
+menu.live_capture_default = 預設即時擷取
+menu.start_with_windows = 隨 Windows 啟動
+menu.quit = 結束 Shotoshot
+menu.duration_1 = 1 秒
+menu.duration_3 = 3 秒
+menu.duration_5 = 5 秒
+menu.layout_full = 完整
+menu.layout_compact = 精簡
+menu.layout_gaming = 遊戲
+menu.seconds = {n} 秒
+menu.percent = {n}%
+menu.shortcut_in_use = {shortcut}（使用中）
+menu.language_auto = Windows 語言
+menu.language_system = 系統語言
+
+setup.title_capture = 擷取快速鍵
+setup.title_instant = 即時擷取畫面快速鍵
+setup.title_arrow = 箭頭快速鍵
+setup.title_rectangle = 矩形快速鍵
+setup.title_ellipse = 橢圓快速鍵
+setup.title_board = Board 快速鍵
+setup.press = 請按下快速鍵…
+setup.waiting = …
+setup.choose = 選擇快速鍵
+setup.cancel = 取消
+setup.save = 儲存
+setup.any_key_hint = 任何按鍵皆可，可單獨使用，也可搭配 Ctrl、Shift、Alt 或 Windows。
+setup.board_hint = 一個按鍵搭配 Ctrl 或 Alt，也可再加上 Shift 或 Windows。
+setup.shape_hint = 一個字母搭配 Ctrl 或 Alt，也可再加上 Shift。
+setup.print_screen_hint = Print Screen 將開啟 Shotoshot，而非 Windows 剪取工具。按一下該按鍵可改選其他按鍵。
+setup.change_hint = 按一下按鍵即可變更。
+setup.used_for_instant = 此快速鍵已用於即時擷取畫面。
+setup.used_for_capture = 此組合鍵已用於擷取。
+setup.used_by_presentation = 此快速鍵已由簡報模式使用。請選擇其他快速鍵。
+setup.used_by_board = 此快速鍵已由 Board 使用。
+setup.used_by_shotoshot = 此快速鍵已由 Shotoshot 使用。
+setup.register_failed = 無法註冊此快速鍵（{code}）。它可能已保留或正在使用中。
+setup.unavailable = 快速鍵無法使用（{code}）。請選擇其他按鍵。
+setup.invalid = 快速鍵無法使用或無效：{detail}
+setup.print_screen_held = Print Screen 仍在使用中：可能是其他應用程式，或是 Windows（需登出再重新登入）。請關閉該應用程式或選擇其他按鍵。
+
+tray.tooltip = Shotoshot：擷取與標註
+
+setup.invalid_shape = 圖形快速鍵無效
+setup.invalid_board = Board 快速鍵無效
+setup.shape_needs_modifier = 請選擇含 Ctrl 或 Alt 的快速鍵，以免打字時觸發圖形。
+setup.board_needs_modifier = 請選擇含 Ctrl 或 Alt 的快速鍵，以免打字時開啟 Board。
+setup.reserved = Ctrl+Alt+Esc 已保留
+setup.duplicate_shape = 圖形快速鍵重複
+
+notice.copied = 已將擷取畫面複製到剪貼簿。
+notice.saved = 影像已儲存。
+notice.searching = 正在搜尋 Google…
+notice.preferences = 設定已儲存。
+notice.saved_editable = 可編輯影像已儲存，包含整個畫面。
+notice.instant_unavailable = 即時擷取快速鍵無法使用。請在 Shotoshot 選單中變更。
+notice.board_unavailable = Board 快速鍵無法使用。請在 Shotoshot 選單中變更。
+notice.shortcuts_unavailable = 快速鍵無法使用：{names}
+notice.names_separator = {before}、{after}
+notice.screenshot_failed = 擷取畫面失敗：檔案未儲存
+notice.screenshot_error = 擷取畫面失敗：{detail}
+
+presentation.stop = 全部關閉
+
+error.unexpected = 發生問題。\n{detail}
+error.stopped = 發生未預期的內部錯誤。Shotoshot 已停止。
+error.already_running = Shotoshot 已在執行。請使用其通知區域圖示。
+error.editor_start = 無法啟動編輯器。請重新擷取。
+error.screenshot_refused = 桌面拒絕了擷取畫面。
+error.capture_shortcut_in_use = 擷取快速鍵已在使用中。請選擇其他組合。
+error.shortcut_in_use = 快速鍵 {shortcut} 已在使用中。未啟用任何其他功能。
+error.presentation_busy = 請先完成目前的擷取，再變更簡報設定。
+error.presentation_stopped = 簡報因錯誤而停止。可從 Shotoshot 選單重新啟用。
+error.display_changed = 顯示器設定已變更。請重新擷取。
+error.display_changed_board = 顯示器設定已變更。Board 已儲存。
+error.no_region = 請先選取擷取範圍
+error.settings_unreadable = 設定不受支援或已損毀。原始檔案已保留。\n{detail}
+error.settings_unsaved = 無法儲存設定：{detail}
+error.settings_busy = 設定正在使用中。請再試一次。
+error.save_dialog = 無法開啟儲存對話方塊（{code}）
+error.not_editable_capture = 此擷取無法儲存為可編輯影像。
+error.text_layout = 文字版面配置失敗
+error.lens_browser = 無法開啟瀏覽器。擷取仍保持開啟。
+error.lens_failed = Google 搜尋失敗。擷取仍保持開啟。\n{detail}
+error.lens_interrupted = Google 搜尋已中斷。擷取仍保持開啟。
+error.lens_too_large = 影像超過 Google 智慧鏡頭的 20 MB 上限。
+error.document_unread = 無法開啟 {path}：{detail}
+error.document_too_large = 此影像（{width} × {height}）大於此螢幕。它仍可當作 PNG 開啟。
+error.board_unsaved = 無法儲存 Board：{detail}
+error.wallpaper_unchanged = 筆記已儲存，但桌布未更新：{detail}
+error.board_unopened = 無法開啟 Board。
+error.board_in_use = Board 正在編輯中：請先關閉，再清除。
+error.board_base_damaged = Board 底圖檔案已損毀，未作變更。
+
+board.newer = 此 Board 由較新版本的 Shotoshot 寫入。
+board.damaged = Board 檔案已損毀，未作變更。
+
+document.not_editable = 此檔案不含可編輯的 Shotoshot 資料。
+document.newer = 此影像由較新版本的 Shotoshot 儲存。請更新 Shotoshot 後再編輯。它仍可當作 PNG 開啟。
+document.damaged = 此可編輯影像已損毀，無法開啟以進行編輯。
+
+save.png = PNG 影像
+save.jpeg = JPEG 影像
+save.shoto = 可編輯的 Shotoshot 影像，保留整個畫面
+
+lens.sending = 正在將擷取傳送至 Google 智慧鏡頭…
+lens.needs_script = 傳送擷取需要 JavaScript。
+
+keycap.esc == Esc
+keycap.ctrl == Ctrl
+keycap.alt == Alt
+keycap.alt_gr == Gr
+keycap.caps == Caps
+keycap.num == Num
+keycap.scroll == Scr
+keycap.print == Prt
+keycap.end == End
+keycap.insert == Ins
+keycap.delete == Del
+
+# Installer
+installer.language.title = Shotoshot 語言
+installer.language.description = 之後可以從通知區域中的 Shotoshot 圖示變更。
+installer.language.auto = Windows 語言
+installer.shoto_file = 可編輯的 Shotoshot 影像

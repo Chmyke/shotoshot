@@ -6,3 +6,4 @@ license.workspace = true
 
 [dependencies]
 shotoshot-core = { path = "../shotoshot-core" }
+shotoshot-text = { path = "../shotoshot-text" }

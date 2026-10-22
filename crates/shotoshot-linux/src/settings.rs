@@ -3,6 +3,7 @@
 //! INVARIANTS: Writers hold an exclusive lock on `settings.lock` in the same folder; a
 //! damaged file is reported and never overwritten.
 use shotoshot_core::settings::{Settings, rename};
+use shotoshot_text::LanguageChoice;
 use std::path::{Path, PathBuf};
 
 fn folder() -> PathBuf {
@@ -60,6 +61,20 @@ fn save_editor_in(
     Settings::save_editor_to(&path, color, width, eraser, None, rename)
 }
 
+/// Stores the interface language chosen in the menu, keeping every other preference as stored.
+pub fn save_language(choice: LanguageChoice) -> Result<(), String> {
+    save_language_in(&folder(), choice)
+}
+fn save_language_in(folder: &Path, choice: LanguageChoice) -> Result<(), String> {
+    std::fs::create_dir_all(folder).map_err(|e| e.to_string())?;
+    let lock = std::fs::File::create(folder.join("settings.lock")).map_err(|e| e.to_string())?;
+    lock.lock().map_err(|e| e.to_string())?;
+    let path = folder.join("settings.txt");
+    let mut settings = Settings::load_from(&path)?;
+    settings.language = choice;
+    settings.save_to(&path, None, None, rename)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,6 +101,26 @@ mod tests {
         std::fs::write(&path, "damaged settings").unwrap();
         assert!(load_in(&folder).is_err());
         assert!(save_editor_in(&folder, Some(9), None, None).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "damaged settings");
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn the_language_persists_with_the_other_preferences_and_a_damaged_file_is_kept() {
+        use shotoshot_text::Language;
+        let folder =
+            std::env::temp_dir().join(format!("shotoshot-language-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        save_editor_in(&folder, Some(7), None, None).unwrap();
+        save_language_in(&folder, LanguageChoice::Fixed(Language::Ja)).unwrap();
+        let stored = load_in(&folder).unwrap();
+        assert_eq!(stored.language, LanguageChoice::Fixed(Language::Ja));
+        assert_eq!(stored.capture_stroke_width, 7);
+        save_language_in(&folder, LanguageChoice::Auto).unwrap();
+        assert_eq!(load_in(&folder).unwrap().language, LanguageChoice::Auto);
+        let path = folder.join("settings.txt");
+        std::fs::write(&path, "damaged settings").unwrap();
+        assert!(save_language_in(&folder, LanguageChoice::Fixed(Language::De)).is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "damaged settings");
         std::fs::remove_dir_all(&folder).unwrap();
     }

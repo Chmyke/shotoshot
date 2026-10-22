@@ -135,7 +135,7 @@ impl App {
         let before = rendering::shown_pictures(&wallpaper).unwrap_or_default();
         let baked = bake::run(&folder, &wallpaper)?;
         if self.persist_preferences {
-            Settings::save_board_visible(true).map_err(|e| Error::new(E_FAIL, e))?;
+            Settings::save_board_visible(true).map_err(crate::settings::unsaved)?;
         }
         rendering::wait_until_shown(&before, &baked, rendering::SHOWN_WAIT);
         Ok(())

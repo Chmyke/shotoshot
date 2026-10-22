@@ -8,6 +8,7 @@ license.workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 shotoshot-core = { path = "../shotoshot-core" }
 shotoshot-ui = { path = "../shotoshot-ui" }
+shotoshot-text = { path = "../shotoshot-text" }
 shotoshot-raster = { path = "../shotoshot-raster" }
 # D-Bus for the desktop portal (screenshots under Wayland).
 zbus = "5"

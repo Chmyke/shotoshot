@@ -12,6 +12,33 @@ pub const WIDTH: i32 = Plan::FULL.width();
 pub const HEIGHT: i32 = 140;
 pub const LOCK_SIZE: i32 = 17;
 const PITCH: f32 = 18.;
+/// Height of a keycap label of one or two characters, in logical pixels.
+pub const LABEL_SIZE: f32 = 11.;
+/// Height of a longer keycap label (`Caps`, `Ctrl`, `F12`).
+pub const SMALL_LABEL_SIZE: f32 = 7.5;
+
+/// The format of the keycap labels, `size` high, shaped for `language`.
+pub fn label_format(
+    write: &IDWriteFactory,
+    size: f32,
+    language: shotoshot_text::Language,
+) -> windows::core::Result<IDWriteTextFormat> {
+    unsafe {
+        let format = write.CreateTextFormat(
+            windows::core::w!("Segoe UI"),
+            None,
+            DWRITE_FONT_WEIGHT_SEMI_BOLD,
+            DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL,
+            size,
+            &windows::core::HSTRING::from(language.locale_name()),
+        )?;
+        format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;
+        format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+        format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
+        Ok(format)
+    }
+}
 /// Left edge of the mouse body beside the full keyboard, where its outlines are authored.
 const MOUSE_X: i32 = 455;
 
@@ -571,6 +598,60 @@ mod tests {
             boxes.push((28, false, [255.5, 68., 275., 86.]));
         }
         boxes
+    }
+    #[test]
+    fn keycap_labels_fit_their_keys() {
+        use super::super::devices::special_label_in;
+        use shotoshot_text::Language;
+        let write: IDWriteFactory =
+            unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED) }.unwrap();
+        // The width `label` is drawn at, with the format `label` picks.
+        let width = |label: &str, language| {
+            let units: Vec<u16> = label.encode_utf16().collect();
+            let size = if units.len() >= 3 {
+                SMALL_LABEL_SIZE
+            } else {
+                LABEL_SIZE
+            };
+            let format = label_format(&write, size, language).unwrap();
+            let mut metrics = DWRITE_TEXT_METRICS::default();
+            unsafe {
+                write
+                    .CreateTextLayout(&units, &format, 1000., 100.)
+                    .unwrap()
+                    .GetMetrics(&mut metrics)
+                    .unwrap();
+            }
+            metrics.width
+        };
+        let mut overflows = Vec::new();
+        for language in Language::ALL {
+            let tag = language.tag();
+            for (scan, extended, [left, _, right, _]) in boxes(Plan::FULL, false)
+                .into_iter()
+                .chain(boxes(Plan::FULL, true))
+            {
+                let label = special_label_in(scan, extended, language);
+                assert!(
+                    label.encode_utf16().count() <= 4,
+                    "{tag}: `{label}` has more than 4 characters"
+                );
+                if label.is_empty() {
+                    continue;
+                }
+                // English is the measure: a label may reach the edges of its key, or take as
+                // much room as the English one already does.
+                let english = special_label_in(scan, extended, Language::En);
+                let room = (right - left).max(width(english, Language::En));
+                let drawn = width(label, language);
+                if drawn > room {
+                    overflows.push(format!(
+                        "{tag}: `{label}` is {drawn} px where `{english}` leaves {room} px"
+                    ));
+                }
+            }
+        }
+        assert!(overflows.is_empty(), "{overflows:#?}");
     }
     fn scans(plan: Plan, ansi: bool) -> Vec<(u16, bool)> {
         let mut scans: Vec<_> = boxes(plan, ansi)

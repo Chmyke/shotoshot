@@ -1,10 +1,10 @@
 [workspace]
-members = ["crates/shotoshot-core", "crates/shotoshot-ui", "crates/shotoshot-raster", "crates/shotoshot-linux", "crates/shotoshot-app"]
+members = ["crates/shotoshot-core", "crates/shotoshot-text", "crates/shotoshot-ui", "crates/shotoshot-raster", "crates/shotoshot-linux", "crates/shotoshot-app"]
 resolver = "2"
 
 [workspace.package]
 edition = "2024"
-version = "0.3.7"
+version = "0.3.8"
 license = "GPL-3.0-only"
 
 [profile.release]

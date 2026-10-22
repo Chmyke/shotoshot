@@ -156,10 +156,7 @@ impl Base {
     pub fn read(folder: &Path) -> Result<Option<Self>> {
         match std::fs::read_to_string(super::base_path(folder)) {
             Ok(text) => Self::decode(&text).map(Some).ok_or_else(|| {
-                Error::new(
-                    E_FAIL,
-                    "The board base file is damaged. It was left untouched.",
-                )
+                crate::failure::visible(shotoshot_text::Key::ErrorBoardBaseDamaged, &[])
             }),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(Error::new(E_FAIL, e.to_string())),

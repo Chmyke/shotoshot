@@ -1,0 +1,223 @@
+# Shotoshot 界面文本，简体中文。格式说明见 en.txt。
+
+language.menu = 语言
+
+tooltip.with_shortcut = {label} · {shortcut}
+
+key.ctrl == Ctrl
+key.shift == Shift
+key.alt == Alt
+key.win == Win
+key.esc == Esc
+key.delete == Delete
+key.backspace == Backspace
+key.tab == Tab
+key.enter == Enter
+key.caps_lock == Caps Lock
+key.space = 空格
+key.page_up == Page Up
+key.page_down == Page Down
+key.end == End
+key.home == Home
+key.left = ←
+key.up = ↑
+key.right = →
+key.down = ↓
+key.insert == Insert
+key.numpad = 小键盘 {key}
+key.num_lock == Num Lock
+key.scroll_lock == Scroll Lock
+key.pause == Pause
+key.break == Break
+key.print_screen == Print Screen
+key.code = 按键 {code}
+
+toolbar.select = 选择 · {shortcut} · Page Up/Down 上移或下移一层
+toolbar.rectangle = 矩形
+toolbar.ellipse = 椭圆
+toolbar.line = 直线
+toolbar.arrow = 箭头
+toolbar.pen = 画笔
+toolbar.highlighter = 荧光笔
+toolbar.text = 文本
+toolbar.eraser = 橡皮擦
+toolbar.live_capture = 实时截图 · {shortcut} · 复制或保存时刷新
+toolbar.red = 红色
+toolbar.yellow = 黄色
+toolbar.green = 绿色
+toolbar.blue = 蓝色
+toolbar.white = 白色
+toolbar.black = 黑色
+toolbar.custom_color = 自定义颜色
+toolbar.eyedropper = 取色器
+toolbar.fill = 为线条、形状或背景着色 · {shortcut} · 右键单击或 Alt+单击移除颜色
+toolbar.undo = 撤销
+toolbar.redo = 重做
+toolbar.google_lens = 用 Google 智能镜头搜索
+toolbar.copy_image = 复制图像
+toolbar.save = 保存
+toolbar.close = 关闭
+toolbar.clear_board = 清空 Board · {shortcut} 可恢复
+
+capture.nothing_to_undo = 没有可撤销的操作
+capture.nothing_to_redo = 没有可重做的操作
+capture.google_search_in_progress = 正在进行 Google 搜索
+capture.live_on = 实时截图已开启 · {shortcut} 冻结
+capture.live_frozen = 截图已冻结 · {shortcut} 恢复实时截图
+capture.live_for_new_captures = 实时截图仅适用于新截图
+capture.full_screen = 全屏
+capture.restore_selection = 恢复上一个选区
+capture.edit_dimensions = 编辑尺寸 · 表达式：800+20, 1920/2
+
+overlay.select_area = 选择区域
+overlay.cancel = {shortcut} 取消
+overlay.stroke_width == {width} px
+magnifier.pick = 单击取色 · {shortcut}
+picker.apply = 单击外部应用 · {shortcut} 取消
+
+crop.invalid = 请输入不小于 2 的整数像素值，或 800+20 这样的表达式。
+crop.outside = 截图必须位于桌面范围内。请减小宽度或高度。
+
+menu.take_screenshot = 截取屏幕
+menu.edit_board = 编辑 Board
+menu.show_board = 显示 Board
+menu.clear_board = 清空 Board
+menu.presentation = 演示
+menu.pointer_halo = 指针光圈
+menu.keyboard = 键盘
+menu.mouse = 鼠标
+menu.keyboard_layout = 键盘样式
+menu.input_size = 键盘和鼠标大小
+menu.temporary_shapes = 临时图形
+menu.shape_duration = 图形显示时长
+menu.shortcuts = 快捷键 · 单击更改
+menu.capture = 截图
+menu.instant_screenshot = 即时截图
+menu.board == Board
+menu.options = 选项
+menu.screenshot_sound = 截图提示音
+menu.live_capture_default = 默认实时截图
+menu.start_with_windows = 随 Windows 启动
+menu.quit = 退出 Shotoshot
+menu.duration_1 = 1 秒
+menu.duration_3 = 3 秒
+menu.duration_5 = 5 秒
+menu.layout_full = 完整
+menu.layout_compact = 紧凑
+menu.layout_gaming = 游戏
+menu.seconds = {n} 秒
+menu.percent = {n}%
+menu.shortcut_in_use = {shortcut}（已占用）
+menu.language_auto = Windows 语言
+menu.language_system = 系统语言
+
+setup.title_capture = 截图快捷键
+setup.title_instant = 即时截图快捷键
+setup.title_arrow = 箭头快捷键
+setup.title_rectangle = 矩形快捷键
+setup.title_ellipse = 椭圆快捷键
+setup.title_board = Board 快捷键
+setup.press = 请按下快捷键…
+setup.waiting = …
+setup.choose = 选择快捷键
+setup.cancel = 取消
+setup.save = 保存
+setup.any_key_hint = 任意键均可，可单独使用，也可搭配 Ctrl、Shift、Alt 或 Windows。
+setup.board_hint = 一个键加 Ctrl 或 Alt，还可加上 Shift 或 Windows。
+setup.shape_hint = 一个字母加 Ctrl 或 Alt，还可加上 Shift。
+setup.print_screen_hint = Print Screen 将打开 Shotoshot，而不是 Windows 截图工具。单击该键可改选其他键。
+setup.change_hint = 单击按键即可更改。
+setup.used_for_instant = 此快捷键已用于即时截图。
+setup.used_for_capture = 此组合键已用于截图。
+setup.used_by_presentation = 此快捷键已被演示模式使用。请选择其他快捷键。
+setup.used_by_board = 此快捷键已被 Board 使用。
+setup.used_by_shotoshot = 此快捷键已被 Shotoshot 使用。
+setup.register_failed = 无法注册此快捷键（{code}）。它可能已被保留或占用。
+setup.unavailable = 快捷键不可用（{code}）。请选择其他键。
+setup.invalid = 快捷键不可用或无效：{detail}
+setup.print_screen_held = Print Screen 仍被占用：可能是其他应用，或是 Windows（需注销并重新登录）。请关闭该应用或选择其他键。
+
+tray.tooltip = Shotoshot：截图与标注
+
+setup.invalid_shape = 形状快捷键无效
+setup.invalid_board = Board 快捷键无效
+setup.shape_needs_modifier = 请选择带 Ctrl 或 Alt 的快捷键，以免打字时触发形状。
+setup.board_needs_modifier = 请选择带 Ctrl 或 Alt 的快捷键，以免打字时打开 Board。
+setup.reserved = Ctrl+Alt+Esc 已保留
+setup.duplicate_shape = 形状快捷键重复
+
+notice.copied = 截图已复制到剪贴板。
+notice.saved = 图像已保存。
+notice.searching = 正在搜索 Google…
+notice.preferences = 设置已保存。
+notice.saved_editable = 可编辑图像已保存，包含整个屏幕。
+notice.instant_unavailable = 即时截图快捷键不可用。请在 Shotoshot 菜单中更改。
+notice.board_unavailable = Board 快捷键不可用。请在 Shotoshot 菜单中更改。
+notice.shortcuts_unavailable = 快捷键不可用：{names}
+notice.names_separator = {before}、{after}
+notice.screenshot_failed = 截图失败：文件未保存
+notice.screenshot_error = 截图失败：{detail}
+
+presentation.stop = 全部关闭
+
+error.unexpected = 出现问题。\n{detail}
+error.stopped = 发生意外的内部错误。Shotoshot 已停止。
+error.already_running = Shotoshot 已在运行。请使用其通知区域图标。
+error.editor_start = 编辑器无法启动。请重新截图。
+error.screenshot_refused = 桌面拒绝了截图。
+error.capture_shortcut_in_use = 截图快捷键已被占用。请选择其他组合。
+error.shortcut_in_use = 快捷键 {shortcut} 已被占用。未启用任何新功能。
+error.presentation_busy = 请先完成当前截图，再更改演示设置。
+error.presentation_stopped = 演示因出错而停止。可从 Shotoshot 菜单重新启用。
+error.display_changed = 显示配置已更改。请重新截图。
+error.display_changed_board = 显示配置已更改。Board 已保存。
+error.no_region = 请先选择截图区域
+error.settings_unreadable = 设置不受支持或已损坏。原文件已保留。\n{detail}
+error.settings_unsaved = 无法保存设置：{detail}
+error.settings_busy = 设置正忙。请重试。
+error.save_dialog = 无法打开保存对话框（{code}）
+error.not_editable_capture = 此截图无法保存为可编辑图像。
+error.text_layout = 文本排版失败
+error.lens_browser = 无法打开浏览器。截图仍保持打开。
+error.lens_failed = Google 搜索失败。截图仍保持打开。\n{detail}
+error.lens_interrupted = Google 搜索已中断。截图仍保持打开。
+error.lens_too_large = 图像超过 Google 智能镜头 20 MB 的上限。
+error.document_unread = 无法打开 {path}：{detail}
+error.document_too_large = 此图像（{width} × {height}）大于此屏幕。它仍可作为 PNG 打开。
+error.board_unsaved = 无法保存 Board：{detail}
+error.wallpaper_unchanged = 笔记已保存，但壁纸未更新：{detail}
+error.board_unopened = 无法打开 Board。
+error.board_in_use = Board 正在编辑中：请先关闭，再清空。
+error.board_base_damaged = Board 底图文件已损坏，未作改动。
+
+board.newer = 此 Board 由更新版本的 Shotoshot 写入。
+board.damaged = Board 文件已损坏，未作改动。
+
+document.not_editable = 此文件不含可编辑的 Shotoshot 数据。
+document.newer = 此图像由更新版本的 Shotoshot 保存。请更新 Shotoshot 后再编辑。它仍可作为 PNG 打开。
+document.damaged = 此可编辑图像已损坏，无法打开编辑。
+
+save.png = PNG 图像
+save.jpeg = JPEG 图像
+save.shoto = 可编辑的 Shotoshot 图像，保留整个屏幕
+
+lens.sending = 正在将截图发送到 Google 智能镜头…
+lens.needs_script = 发送截图需要 JavaScript。
+
+keycap.esc == Esc
+keycap.ctrl == Ctrl
+keycap.alt == Alt
+keycap.alt_gr == Gr
+keycap.caps == Caps
+keycap.num == Num
+keycap.scroll == Scr
+keycap.print == Prt
+keycap.end == End
+keycap.insert == Ins
+keycap.delete == Del
+
+# Installer
+installer.language.title = Shotoshot 语言
+installer.language.description = 以后可以通过通知区域中的 Shotoshot 图标更改。
+installer.language.auto = Windows 语言
+installer.shoto_file = 可编辑的 Shotoshot 图像

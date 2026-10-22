@@ -60,12 +60,13 @@ fn capture_shortcut_cannot_steal_a_suspended_shape_shortcut() {
     );
     // A shape shortcut only hides the window, so closing can be observed without quitting.
     app.setup_ui = setup::Setup::change(setup::ShortcutTarget::Arrow, Some((1, 0x46)));
-    paint_image(setup::WIDTH as u32, setup::HEIGHT as u32, |dc| {
+    let size = app.setup_ui.layout.size;
+    paint_image(size.x as u32, size.y as u32, |dc| {
         app.setup_ui.draw(
             dc,
             RECT {
-                right: setup::WIDTH,
-                bottom: setup::HEIGHT,
+                right: size.x as i32,
+                bottom: size.y as i32,
                 ..Default::default()
             },
         )
@@ -100,11 +101,7 @@ fn diagnostics_and_the_document_probe_never_write_the_settings() {
 
 #[test]
 fn the_uninstaller_runs_exactly_the_restores_the_app_offers() {
-    let script = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../packaging/shotoshot.iss"
-    ))
-    .unwrap();
+    let script = installer_script();
     let section = script
         .split("[UninstallRun]")
         .nth(1)
@@ -125,16 +122,59 @@ fn the_uninstaller_runs_exactly_the_restores_the_app_offers() {
     assert_eq!(run, runtime::UNINSTALL_RESTORES);
 }
 
-/// Updating is downloading the installer again and running it (2026-10-15): no task page to
-/// answer, no desktop shortcut offered. Only a pre-0.2.0 one is carried over.
-#[test]
-fn the_installer_asks_nothing_and_offers_no_desktop_shortcut() {
-    let script = std::fs::read_to_string(concat!(
+fn installer_script() -> String {
+    std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../packaging/shotoshot.iss"
     ))
-    .unwrap();
+    .unwrap()
+}
+
+/// Updating is downloading the installer again and running it (2026-10-15): no task page to
+/// answer, no desktop shortcut offered. Only a pre-0.2.0 one is carried over. The one question
+/// is the language (2026-10-17), on a page of its own.
+#[test]
+fn the_installer_asks_only_the_language_and_offers_no_desktop_shortcut() {
+    let script = installer_script();
     assert!(!script.contains("[Tasks]"), "a task page is back");
+    let code = script.split("\n[Code]").nth(1).expect("a [Code] section");
+    let pages: Vec<&str> = code
+        .lines()
+        .filter(|line| {
+            line.split("Create")
+                .skip(1)
+                .any(|rest| rest.split('(').next().is_some_and(|f| f.ends_with("Page")))
+        })
+        .collect();
+    assert_eq!(pages.len(), 1, "exactly one page of our own: {pages:?}");
+    assert!(pages[0].contains("CreateInputOptionPage"), "{}", pages[0]);
+    assert!(script.contains("\nShowLanguageDialog=no\n"));
+    // Every language of the wizard has its messages in the generated include, and the other
+    // way round (shotoshot-text, example `inno`).
+    let languages = script
+        .split("\n[Languages]\n")
+        .nth(1)
+        .and_then(|rest| rest.split("\n[").next())
+        .expect("a [Languages] section");
+    let mut names: Vec<&str> = languages
+        .lines()
+        .filter_map(|line| line.strip_prefix("Name: \""))
+        .map(|rest| rest.split('"').next().unwrap())
+        .collect();
+    names.sort_unstable();
+    let messages = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../packaging/languages.isi"
+    ))
+    .unwrap();
+    let mut translated: Vec<&str> = messages
+        .lines()
+        .filter_map(|line| line.split_once(".LanguagePageTitle="))
+        .map(|(name, _)| name)
+        .collect();
+    translated.sort_unstable();
+    assert_eq!(names, translated);
+    assert!(script.contains("#include \"languages.isi\""));
     let desktop: Vec<&str> = script
         .lines()
         .filter(|line| line.starts_with("Name: \"{autodesktop}"))
@@ -145,6 +185,48 @@ fn the_installer_asks_nothing_and_offers_no_desktop_shortcut() {
             "Name: \"{autodesktop}\\{#AppName}\"; Filename: \"{app}\\{#AppExeName}\"; Check: KeepsOldDesktopLink"
         ]
     );
+}
+
+/// The language page is prefilled from `settings.txt`, read by the installer's own Pascal
+/// code: it must accept the format `Settings::encode` writes and read its language line.
+#[test]
+fn installer_reads_the_language_line_of_the_current_settings_format() {
+    let script = installer_script();
+    let constant = |name: &str| -> String {
+        let line = script
+            .lines()
+            .find(|line| line.trim_start().starts_with(&format!("{name} = ")))
+            .unwrap_or_else(|| panic!("constant {name} in [Code]"));
+        line.split(" = ")
+            .nth(1)
+            .unwrap()
+            .trim_end_matches(';')
+            .trim_matches('\'')
+            .to_string()
+    };
+    let defaults = Settings::default().encode();
+    let header = defaults.lines().next().unwrap();
+    let (prefix, version) = header.rsplit_once('-').unwrap();
+    assert_eq!(constant("SettingsHeader"), format!("{prefix}-"));
+    let known = constant("KnownSettingsVersions");
+    assert!(
+        known.split(',').any(|v| v == version),
+        "version {version} of Settings::encode is not in KnownSettingsVersions = '{known}'"
+    );
+    let czech = Settings {
+        language: shotoshot_text::LanguageChoice::Fixed(shotoshot_text::Language::Cs),
+        ..Default::default()
+    }
+    .encode();
+    let changed: Vec<usize> = defaults
+        .lines()
+        .zip(czech.lines())
+        .enumerate()
+        .filter(|(_, (a, b))| a != b)
+        .map(|(index, _)| index)
+        .collect();
+    assert_eq!(changed.len(), 1, "the language is one line");
+    assert_eq!(constant("SettingsLanguageLine"), changed[0].to_string());
 }
 
 #[test]
@@ -285,6 +367,76 @@ fn the_other_shortcuts_refuse_the_board_combination() {
 }
 
 #[test]
+fn language_change_restarts_the_prepared_editor() {
+    use shotoshot_text::{Key, Language, LanguageChoice, tr_in};
+    let owner = hidden_window();
+    let mut app = resident(owner.0);
+    app.worker = Some(editor_process::tests::idle_editor());
+    // English: the process-wide language other tests read stays the same.
+    let choice = tray_menu::on_language_choice(152).unwrap();
+    assert_eq!(choice, LanguageChoice::Fixed(Language::En));
+    app.choose_language(owner.0, choice).unwrap();
+    assert_eq!(app.settings.language, choice, "the choice is kept");
+    let worker = app.worker.as_ref().unwrap();
+    assert!(
+        editor_process::tests::ends(worker),
+        "the prepared editor kept its old texts"
+    );
+    assert!(worker.replenish(1), "its exit prepares the next editor");
+    let tip = String::from_utf16_lossy(&app.tray.szTip);
+    assert_eq!(
+        tip.trim_end_matches('\0'),
+        tr_in(Language::En, Key::TrayTooltip)
+    );
+}
+
+#[test]
+fn presentation_preferences_reapply_the_language_only_after_reading_the_settings_back() {
+    use shotoshot_text::{Language, LanguageChoice};
+    let owner = hidden_window();
+    let mut app = resident(owner.0);
+    // A diagnostic resident: nothing is read back, so its language stays as it is.
+    app.settings.language = LanguageChoice::Fixed(Language::De);
+    let mut preferences = app.settings.presentation.clone();
+    preferences.stroke_width = 9;
+    preferences.input_locked = true;
+    preferences.input_offset = Some([12, 34]);
+    let reloaded = app.store_presentation_preferences(&preferences).unwrap();
+    assert!(
+        !reloaded,
+        "nothing was read back: the language is not applied"
+    );
+    assert_eq!(app.settings.presentation.stroke_width, 9);
+    assert!(app.settings.presentation.input_locked);
+    assert_eq!(app.settings.presentation.input_offset, Some([12, 34]));
+    assert_eq!(app.settings.language, LanguageChoice::Fixed(Language::De));
+}
+
+#[test]
+fn tray_tip_fits() {
+    use shotoshot_text::{Key, Language, tr_in};
+    for language in Language::ALL {
+        let text = tr_in(language, Key::TrayTooltip);
+        assert!(text.encode_utf16().count() <= 127, "{}", language.tag());
+        let tip = tray_tip(text);
+        assert_eq!(
+            String::from_utf16_lossy(&tip[..text.encode_utf16().count()]),
+            text
+        );
+        assert!(
+            tip[text.encode_utf16().count()..]
+                .iter()
+                .all(|&unit| unit == 0)
+        );
+    }
+    assert_eq!(tray_tip(&"x".repeat(300))[127], 0, "always terminated");
+    assert_eq!(
+        tr_in(Language::En, Key::TrayTooltip),
+        "Shotoshot: capture and annotate"
+    );
+}
+
+#[test]
 fn the_menu_stays_open_for_settings_and_the_icon_closes_it() {
     let owner = hidden_window();
     let mut app = resident(owner.0);
@@ -321,6 +473,16 @@ fn the_menu_stays_open_for_settings_and_the_icon_closes_it() {
     app.menu = Some(open(&app));
     app.menu_closed(root, false);
     assert!(app.menu.is_some());
+    // A language is a setting too: the menu stays, in the chosen language. English keeps
+    // the process-wide language other tests read. An idle editor stands for the prepared one,
+    // so that restarting it launches no real process.
+    app.worker = Some(editor_process::tests::idle_editor());
+    app.menu_command(owner.0, 152, true).unwrap();
+    assert_eq!(
+        app.settings.language,
+        shotoshot_text::LanguageChoice::Fixed(shotoshot_text::Language::En)
+    );
+    assert!(app.menu.is_some(), "a language keeps the menu open");
     // A command closes the menu before it runs.
     app.menu_command(owner.0, 0, false).unwrap();
     assert!(app.menu.is_none());
@@ -510,8 +672,9 @@ fn shortcut_recorder_accepts_pause_single_keys_and_combinations_without_saving()
     setup.recording = true;
     setup.record(2, 17);
     assert!(setup.recording, "a modifier waits for its companion key");
-    assert_eq!(super::setup::key_label(0, 19), "Pause");
-    assert_eq!(super::setup::key_label(6, 19), "Ctrl + Shift + Pause");
+    let english = |mods, key| super::setup::key_label_in(mods, key, shotoshot_text::Language::En);
+    assert_eq!(english(0, 19), "Pause");
+    assert_eq!(english(6, 19), "Ctrl + Shift + Pause");
 }
 
 #[test]
@@ -520,11 +683,17 @@ fn first_run_proposes_print_screen_and_explains_the_snipping_tool() {
     assert_eq!(first.pending, Some((0, 0x2C)));
     assert!(!first.recording, "Save confirms the proposal directly");
     assert_eq!(first.focus, 2);
-    assert_eq!(super::setup::key_label(0, 0x2C), "Print Screen");
+    assert_eq!(
+        super::setup::key_label_in(0, 0x2C, shotoshot_text::Language::En),
+        "Print Screen"
+    );
     let held = Error::from_hresult(HRESULT::from_win32(ERROR_HOTKEY_ALREADY_REGISTERED.0));
-    assert!(super::setup::print_screen_error(0, 0x2C, &held).is_some());
-    assert!(super::setup::print_screen_error(4, 0x2C, &held).is_none());
-    assert!(super::setup::print_screen_error(0, 19, &held).is_none());
+    let error = |mods, key| {
+        super::setup::print_screen_error(mods, key, &held, shotoshot_text::Language::En)
+    };
+    assert!(error(0, 0x2C).is_some());
+    assert!(error(4, 0x2C).is_none());
+    assert!(error(0, 19).is_none());
 }
 
 fn packed(x: i32, y: i32) -> LPARAM {

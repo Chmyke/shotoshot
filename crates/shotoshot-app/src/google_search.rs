@@ -5,6 +5,7 @@
 //! network request and leaves the clipboard alone; the page lives a minute in the temp folder.
 //! PITFALL: Google refuses the form from another site's origin (HTTP 403), and a local server is
 //! one; a page opened from a file posts with the origin `null`, which it accepts.
+use shotoshot_text::{Key, Language, tr_in};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use windows::{
@@ -15,7 +16,8 @@ use windows::{
     core::*,
 };
 
-const FORM_ACTION: &str = "https://lens.google.com/v3/upload?ep=cntpubb&hl=en";
+/// Followed by `&hl=` and the language of Google's page.
+const FORM_ACTION: &str = "https://lens.google.com/v3/upload?ep=cntpubb";
 const PAGE_PREFIX: &str = "lens-";
 const PAGE_EXTENSION: &str = "html";
 /// Started by `open`: waits `PAGE_LIFETIME`, then deletes the page it was given.
@@ -46,16 +48,38 @@ fn base64(bytes: &[u8]) -> String {
     out
 }
 
-/// A page that hands `png` to Google Lens as soon as it opens, with the fields of Chrome's form.
-fn page(png: &[u8], start_ms: u128) -> String {
-    let action = format!("{FORM_ACTION}&st={start_ms}").replace('&', "&amp;");
+/// `text` as HTML character data or attribute value.
+fn escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// Google's name for `language` in `hl`: its Chinese codes name the region, not the script.
+fn google_hl(language: Language) -> &'static str {
+    match language {
+        Language::ZhHans => "zh-CN",
+        Language::ZhHant => "zh-TW",
+        _ => language.tag(),
+    }
+}
+
+/// A page that hands `png` to Google Lens as soon as it opens, with the fields of Chrome's form;
+/// what it says while it sends, and Google's page after it, are in `language`.
+fn page_in(png: &[u8], start_ms: u128, language: Language) -> String {
+    let hl = google_hl(language);
+    let action = format!("{FORM_ACTION}&hl={hl}&st={start_ms}").replace('&', "&amp;");
     let image = base64(png);
+    let tag = language.tag();
+    let sending = escape(tr_in(language, Key::LensSending));
+    let needs_script = escape(tr_in(language, Key::LensNeedsScript));
     format!(
         r#"<!doctype html>
-<html lang="en"><meta charset="utf-8"><title>Google Lens</title>
+<html lang="{tag}"><meta charset="utf-8"><title>Google Lens</title>
 <body style="background:#202124;color:#e8eaed;font:15px 'Segoe UI',sans-serif;margin:40px">
-<p>Sending the capture to Google Lens...</p>
-<noscript><p>JavaScript is needed to send the capture.</p></noscript>
+<p>{sending}</p>
+<noscript><p>{needs_script}</p></noscript>
 <form id="lens" method="post" enctype="multipart/form-data" action="{action}">
 <input id="image" type="file" name="encoded_image" accept="image/png" hidden>
 </form>
@@ -115,7 +139,8 @@ pub(crate) fn prepare(image: &crate::Image) -> Result<PathBuf> {
         std::process::id(),
         now.as_nanos()
     ));
-    std::fs::write(&path, page(&png, now.as_millis())).map_err(io)?;
+    let page = page_in(&png, now.as_millis(), shotoshot_text::language());
+    std::fs::write(&path, page).map_err(io)?;
     Ok(path)
 }
 
@@ -226,7 +251,7 @@ mod tests {
     #[test]
     fn page_posts_the_png_with_the_fields_of_chromes_lens_form() {
         let png = [0x89, b'P', b'N', b'G', 0, 255, 13, 10];
-        let html = page(&png, 1234);
+        let html = page_in(&png, 1234, Language::En);
         assert!(html.contains(
             r#"action="https://lens.google.com/v3/upload?ep=cntpubb&amp;hl=en&amp;st=1234""#
         ));
@@ -236,6 +261,39 @@ mod tests {
         let end = start + html[start..].find('"').unwrap();
         assert_eq!(decode(&html[start..end]), png);
         assert!(html.contains(".submit()"));
+    }
+    #[test]
+    fn lens_page_declares_the_language() {
+        for language in Language::ALL {
+            let html = page_in(b"png", 1, language);
+            assert!(
+                html.contains(&format!(r#"<html lang="{}">"#, language.tag())),
+                "{}",
+                language.tag()
+            );
+            for key in [Key::LensSending, Key::LensNeedsScript] {
+                assert!(html.contains(&escape(tr_in(language, key))), "{}", key.id());
+            }
+        }
+        let english = page_in(b"png", 1, Language::En);
+        assert!(english.contains("<p>Sending the capture to Google Lens...</p>"));
+        assert_eq!(escape(r#"a<b>&"c""#), "a&lt;b&gt;&amp;&quot;c&quot;");
+    }
+    #[test]
+    fn google_page_opens_in_the_chosen_language() {
+        for (language, hl) in [
+            (Language::Fr, "fr"),
+            (Language::PtBr, "pt-BR"),
+            (Language::ZhHans, "zh-CN"),
+            (Language::ZhHant, "zh-TW"),
+        ] {
+            let html = page_in(b"png", 7, language);
+            assert!(
+                html.contains(&format!("?ep=cntpubb&amp;hl={hl}&amp;st=7\"")),
+                "{}",
+                language.tag()
+            );
+        }
     }
     #[test]
     fn stale_pages_are_deleted_and_nothing_else() {

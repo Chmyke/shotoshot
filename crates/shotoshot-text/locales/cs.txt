@@ -1,0 +1,223 @@
+# Texty rozhraní Shotoshot, čeština. Formát je popsán v en.txt.
+
+language.menu = Jazyk
+
+tooltip.with_shortcut = {label} · {shortcut}
+
+key.ctrl == Ctrl
+key.shift == Shift
+key.alt == Alt
+key.win == Win
+key.esc == Esc
+key.delete == Delete
+key.backspace == Backspace
+key.tab == Tab
+key.enter == Enter
+key.caps_lock == Caps Lock
+key.space = Mezerník
+key.page_up == Page Up
+key.page_down == Page Down
+key.end == End
+key.home == Home
+key.left = Vlevo
+key.up = Nahoru
+key.right = Vpravo
+key.down = Dolů
+key.insert == Insert
+key.numpad = Num {key}
+key.num_lock == Num Lock
+key.scroll_lock == Scroll Lock
+key.pause == Pause
+key.break == Break
+key.print_screen == Print Screen
+key.code = Klávesa {code}
+
+toolbar.select = Výběr · {shortcut} · Page Up/Down: dopředu nebo dozadu
+toolbar.rectangle = Obdélník
+toolbar.ellipse = Elipsa
+toolbar.line = Čára
+toolbar.arrow = Šipka
+toolbar.pen = Pero
+toolbar.highlighter = Zvýrazňovač
+toolbar.text == Text
+toolbar.eraser = Guma
+toolbar.live_capture = Živé snímání · {shortcut} · obnoví se při kopírování nebo uložení
+toolbar.red = Červená
+toolbar.yellow = Žlutá
+toolbar.green = Zelená
+toolbar.blue = Modrá
+toolbar.white = Bílá
+toolbar.black = Černá
+toolbar.custom_color = Vlastní barva
+toolbar.eyedropper = Kapátko
+toolbar.fill = Obarvit tah, tvar nebo pozadí · {shortcut} · Pravý klik nebo Alt+klik barvu odebere
+toolbar.undo = Zpět
+toolbar.redo = Znovu
+toolbar.google_lens = Hledat pomocí Google Lens
+toolbar.copy_image = Kopírovat obrázek
+toolbar.save = Uložit
+toolbar.close = Zavřít
+toolbar.clear_board = Vymazat Board · {shortcut} jej obnoví
+
+capture.nothing_to_undo = Není co vrátit
+capture.nothing_to_redo = Není co opakovat
+capture.google_search_in_progress = Probíhá hledání Google
+capture.live_on = Živé snímání zapnuto · {shortcut} zmrazí
+capture.live_frozen = Snímek zmrazen · {shortcut} pro živé snímání
+capture.live_for_new_captures = Živé snímání je jen pro nové snímky
+capture.full_screen = Celá obrazovka
+capture.restore_selection = Zpět na předchozí výběr
+capture.edit_dimensions = Upravit rozměry · výrazy: 800+20, 1920/2
+
+overlay.select_area = Vyberte oblast
+overlay.cancel = {shortcut} zruší
+overlay.stroke_width == {width} px
+magnifier.pick = Klik nabere · {shortcut}
+picker.apply = Klik mimo použije · {shortcut} zruší
+
+crop.invalid = Zadejte celý počet pixelů (alespoň 2) nebo výraz, např. 800+20.
+crop.outside = Snímek musí zůstat uvnitř plochy. Zmenšete šířku nebo výšku.
+
+menu.take_screenshot = Pořídit snímek obrazovky
+menu.edit_board = Upravit Board
+menu.show_board = Zobrazit Board
+menu.clear_board = Vymazat Board
+menu.presentation = Prezentace
+menu.pointer_halo = Zvýraznění ukazatele
+menu.keyboard = Klávesnice
+menu.mouse = Myš
+menu.keyboard_layout = Podoba klávesnice
+menu.input_size = Velikost klávesnice a myši
+menu.temporary_shapes = Dočasné tvary
+menu.shape_duration = Doba zobrazení tvarů
+menu.shortcuts = Klávesové zkratky · kliknutím změníte
+menu.capture = Snímání
+menu.instant_screenshot = Okamžitý snímek obrazovky
+menu.board == Board
+menu.options = Možnosti
+menu.screenshot_sound = Zvuk snímku
+menu.live_capture_default = Výchozí živé snímání
+menu.start_with_windows = Spouštět s Windows
+menu.quit = Ukončit Shotoshot
+menu.duration_1 = 1 sekunda
+menu.duration_3 = 3 sekundy
+menu.duration_5 = 5 sekund
+menu.layout_full = Plná
+menu.layout_compact = Kompaktní
+menu.layout_gaming = Herní
+menu.seconds = {n} s
+menu.percent = {n} %
+menu.shortcut_in_use = {shortcut} (obsazeno)
+menu.language_auto = Jazyk Windows
+menu.language_system = Jazyk systému
+
+setup.title_capture = Zkratka pro snímání
+setup.title_instant = Zkratka pro okamžitý snímek obrazovky
+setup.title_arrow = Zkratka pro šipku
+setup.title_rectangle = Zkratka pro obdélník
+setup.title_ellipse = Zkratka pro elipsu
+setup.title_board = Zkratka pro Board
+setup.press = Stiskněte zkratku…
+setup.waiting = …
+setup.choose = Zvolte zkratku
+setup.cancel = Zrušit
+setup.save = Uložit
+setup.any_key_hint = Funguje libovolná klávesa, samotná nebo s Ctrl, Shift, Alt či Windows.
+setup.board_hint = Klávesa s Ctrl nebo Alt. Lze přidat i Shift nebo Windows.
+setup.shape_hint = Písmeno s Ctrl nebo Alt. Lze přidat i Shift.
+setup.print_screen_hint = Print Screen otevře Shotoshot místo Výstřižků Windows. Kliknutím na klávesu zvolíte jinou.
+setup.change_hint = Kliknutím na klávesy je změníte.
+setup.used_for_instant = Tuto zkratku už používá okamžitý snímek obrazovky.
+setup.used_for_capture = Tuto kombinaci už používá snímání.
+setup.used_by_presentation = Tuto zkratku už používá režim prezentace. Zvolte jinou zkratku.
+setup.used_by_board = Tuto zkratku už používá Board.
+setup.used_by_shotoshot = Tuto zkratku už používá Shotoshot.
+setup.register_failed = Zkratku nelze zaregistrovat ({code}). Může být vyhrazená nebo už používaná.
+setup.unavailable = Zkratka není k dispozici ({code}). Zvolte jinou klávesu.
+setup.invalid = Zkratka není k dispozici nebo je neplatná: {detail}
+setup.print_screen_held = Print Screen je stále obsazená jinou aplikací nebo systémem Windows, dokud se neodhlásíte a znovu nepřihlásíte. Zavřete tuto aplikaci nebo zvolte jinou klávesu.
+
+tray.tooltip = Shotoshot: snímky a poznámky
+
+setup.invalid_shape = Neplatná zkratka tvaru
+setup.invalid_board = Neplatná zkratka Board
+setup.shape_needs_modifier = Zvolte zkratku s Ctrl nebo Alt, aby se při psaní nespouštěly tvary.
+setup.board_needs_modifier = Zvolte zkratku s Ctrl nebo Alt, aby se při psaní neotevíral Board.
+setup.reserved = Ctrl+Alt+Esc je vyhrazeno
+setup.duplicate_shape = Duplicitní zkratka tvaru
+
+notice.copied = Snímek zkopírován do schránky.
+notice.saved = Obrázek uložen.
+notice.searching = Hledání na Googlu…
+notice.preferences = Nastavení uloženo.
+notice.saved_editable = Upravitelný obrázek uložen i s obrazovkou.
+notice.instant_unavailable = Zkratka okamžitého snímku není k dispozici. Změňte ji v nabídce Shotoshot.
+notice.board_unavailable = Zkratka Board není k dispozici. Změňte ji v nabídce Shotoshot.
+notice.shortcuts_unavailable = Zkratka není k dispozici: {names}
+notice.names_separator == {before}, {after}
+notice.screenshot_failed = Snímek se nezdařil: soubor nebyl uložen
+notice.screenshot_error = Snímek se nezdařil: {detail}
+
+presentation.stop = Vypnout vše
+
+error.unexpected = Něco se pokazilo.\n{detail}
+error.stopped = Neočekávaná vnitřní chyba. Shotoshot se zastavil.
+error.already_running = Shotoshot už běží. Použijte jeho ikonu v oznamovací oblasti.
+error.editor_start = Editor se nepodařilo spustit. Zkuste snímat znovu.
+error.screenshot_refused = Pracovní prostředí snímek odmítlo.
+error.capture_shortcut_in_use = Zkratka pro snímání se už používá. Zvolte jinou kombinaci.
+error.shortcut_in_use = Zkratka {shortcut} se už používá. Žádná další funkce nebyla zapnuta.
+error.presentation_busy = Před změnou nastavení prezentace dokončete aktuální snímání.
+error.presentation_stopped = Prezentace se po chybě zastavila. Znovu ji zapnete v nabídce Shotoshot.
+error.display_changed = Konfigurace obrazovek se změnila. Začněte nové snímání.
+error.display_changed_board = Konfigurace obrazovek se změnila. Board byl uložen.
+error.no_region = Nejprve vyberte oblast snímání
+error.settings_unreadable = Nastavení není podporováno nebo je poškozené. Původní soubor zůstal zachován.\n{detail}
+error.settings_unsaved = Nastavení nelze uložit: {detail}
+error.settings_busy = Nastavení je právě používáno. Zkuste to znovu.
+error.save_dialog = Dialog Uložit nelze otevřít ({code})
+error.not_editable_capture = Tento snímek nelze uložit jako upravitelný obrázek.
+error.text_layout = Rozvržení textu se nezdařilo
+error.lens_browser = Prohlížeč nelze otevřít. Snímek zůstává otevřený.
+error.lens_failed = Hledání Google se nezdařilo. Snímek zůstává otevřený.\n{detail}
+error.lens_interrupted = Hledání Google bylo přerušeno. Snímek zůstává otevřený.
+error.lens_too_large = Obrázek přesahuje limit Google Lens 20 MB.
+error.document_unread = {path} nelze otevřít: {detail}
+error.document_too_large = Tento obrázek ({width} × {height}) je větší než tato obrazovka. Jako PNG se otevře i nadále.
+error.board_unsaved = Board nelze uložit: {detail}
+error.wallpaper_unchanged = Poznámky jsou uložené, ale tapeta se neaktualizovala: {detail}
+error.board_unopened = Board nelze otevřít.
+error.board_in_use = Board je otevřený k úpravám: nejprve ho zavřete, pak vymažte.
+error.board_base_damaged = Základní soubor Board je poškozený. Zůstal beze změny.
+
+board.newer = Tento Board zapsala novější verze Shotoshotu.
+board.damaged = Soubor Board je poškozený. Zůstal beze změny.
+
+document.not_editable = Tento soubor neobsahuje upravitelná data Shotoshotu.
+document.newer = Tento obrázek uložila novější verze Shotoshotu. Pro úpravy Shotoshot aktualizujte. Jako PNG se otevře i nadále.
+document.damaged = Tento upravitelný obrázek je poškozený a nelze ho otevřít k úpravám.
+
+save.png = Obrázek PNG
+save.jpeg = Obrázek JPEG
+save.shoto = Upravitelný obrázek Shotoshot, uchová celou obrazovku
+
+lens.sending = Odesílání snímku do Google Lens…
+lens.needs_script = K odeslání snímku je potřeba JavaScript.
+
+keycap.esc == Esc
+keycap.ctrl == Ctrl
+keycap.alt == Alt
+keycap.alt_gr == Gr
+keycap.caps == Caps
+keycap.num == Num
+keycap.scroll == Scr
+keycap.print == Prt
+keycap.end == End
+keycap.insert == Ins
+keycap.delete == Del
+
+# Installer
+installer.language.title = Jazyk aplikace Shotoshot
+installer.language.description = Později ho můžete změnit pomocí ikony Shotoshot v oznamovací oblasti.
+installer.language.auto = Jazyk Windows
+installer.shoto_file = Upravitelný obrázek Shotoshot

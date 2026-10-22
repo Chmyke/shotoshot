@@ -29,7 +29,7 @@ impl Session {
         screens: Vec<Screen>,
         folder: PathBuf,
     ) -> Result<Self> {
-        let damaged = || Error::new(E_FAIL, "The board could not be opened.");
+        let damaged = || crate::failure::visible(shotoshot_text::Key::ErrorBoardUnopened, &[]);
         let scene = Scene {
             width: frame.width,
             height: frame.height,

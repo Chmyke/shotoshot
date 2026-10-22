@@ -55,6 +55,15 @@ fn load(write: &IDWriteFactory) -> Result<IDWriteFontCollection> {
 
 /// The text format of annotations at `size`.
 pub fn format(write: &IDWriteFactory, size: f32) -> Result<IDWriteTextFormat> {
+    format_in(write, size, shotoshot_text::language())
+}
+
+/// The text format of annotations at `size`, shaped for `language`.
+pub fn format_in(
+    write: &IDWriteFactory,
+    size: f32,
+    language: shotoshot_text::Language,
+) -> Result<IDWriteTextFormat> {
     unsafe {
         write.CreateTextFormat(
             &HSTRING::from(FAMILY),
@@ -63,7 +72,7 @@ pub fn format(write: &IDWriteFactory, size: f32) -> Result<IDWriteTextFormat> {
             DWRITE_FONT_STYLE_NORMAL,
             DWRITE_FONT_STRETCH_NORMAL,
             size,
-            w!("en-US"),
+            &HSTRING::from(language.locale_name()),
         )
     }
 }

@@ -3,10 +3,11 @@
 //! OWNER: One capture; dropped when it ends.
 use crate::{
     Image,
-    toolbar::{self, Action, Button, HoverHint},
+    toolbar::{self, Action, Button, HoverHint, Motion},
     wheel,
 };
 use shotoshot_core::{Editor, FillChange, Object, Point, Rect, Shape, Tool, arrow_points};
+use shotoshot_text::Key;
 
 /// Margin of the size badge on each side of what it shows, in logical pixels.
 const BADGE_PADDING: f64 = 8.;
@@ -66,6 +67,7 @@ pub enum CursorKind {
 
 pub struct Capture {
     pub hover_hint: HoverHint,
+    pub toolbar_motion: Motion,
     pub custom_color: [u8; 3],
     pub custom_color_changed: bool,
     pub copied_objects: Vec<Object>,
@@ -118,6 +120,7 @@ impl Capture {
         let editor = Editor::default();
         Self {
             hover_hint: HoverHint::default(),
+            toolbar_motion: Motion::default(),
             custom_color: editor.style.color,
             custom_color_changed: false,
             copied_objects: Vec::new(),
@@ -196,25 +199,21 @@ impl Capture {
             match b.action {
                 Action::Undo => {
                     b.enabled = self.editor.can_undo();
-                    b.label = if b.enabled {
-                        "Undo · Ctrl+Z"
-                    } else {
-                        "Nothing to undo · Ctrl+Z"
-                    };
+                    if !b.enabled {
+                        b.label = Key::CaptureNothingToUndo;
+                    }
                 }
                 Action::Redo => {
                     b.enabled = self.editor.can_redo();
-                    b.label = if b.enabled {
-                        "Redo · Ctrl+Y / Ctrl+Shift+Z"
-                    } else {
-                        "Nothing to redo · Ctrl+Y / Ctrl+Shift+Z"
-                    };
+                    if !b.enabled {
+                        b.label = Key::CaptureNothingToRedo;
+                    }
                 }
                 _ => {}
             }
             if matches!(b.action, Action::GoogleSearch) && self.searching {
                 b.active = true;
-                b.label = "Google search in progress · Ctrl+G";
+                b.label = Key::CaptureGoogleSearchInProgress;
             }
             if matches!(b.action, Action::Fill) {
                 b.active = self.bucket;
@@ -223,11 +222,11 @@ impl Capture {
                 b.active = self.live;
                 b.enabled = !self.reopened;
                 b.label = if self.reopened {
-                    "Live capture is for new captures"
+                    Key::CaptureLiveForNewCaptures
                 } else if self.live {
-                    "Live capture on · F2 to freeze"
+                    Key::CaptureLiveOn
                 } else {
-                    "Capture frozen · F2 for live capture"
+                    Key::CaptureLiveFrozen
                 };
             }
         }
@@ -288,6 +287,31 @@ impl Capture {
             self.sample_color(self.loupe_center())
         } else {
             current
+        }
+    }
+    /// Starts the toolbar's one-shot motion when what it marks has changed. Call it after each
+    /// input and before asking `next_tick`; while the toolbar is hidden, nothing is recorded.
+    pub fn observe_toolbar(&mut self, current_color: [u8; 3], now: std::time::Instant) {
+        if self.region.is_none() || self.selecting {
+            return;
+        }
+        let (buttons, state) = (self.buttons(), self.toolbar_state(current_color));
+        self.toolbar_motion.observe(&buttons, state, now);
+    }
+    /// Milliseconds to the next toolbar or hint frame; `None` when nothing moves.
+    pub fn next_tick(&self, now: std::time::Instant) -> Option<u32> {
+        let ticks = [
+            self.hover_hint.next_tick(now),
+            self.toolbar_motion.next_tick(now),
+        ];
+        ticks.into_iter().flatten().min()
+    }
+    pub(crate) fn toolbar_state(&self, current: [u8; 3]) -> toolbar::Chosen {
+        toolbar::Chosen {
+            tool: self.editor.tool,
+            eyedropper: self.eyedropper,
+            current,
+            pointer: self.pointer,
         }
     }
     pub fn rotation_handle(&self) -> Option<Point> {
@@ -429,7 +453,7 @@ impl Capture {
         }
         self.dimensions_bounds().map(|bounds| Button {
             bounds,
-            label: "Edit dimensions · expressions: 800+20, 1920/2",
+            label: Key::CaptureEditDimensions,
             action: Action::Dimensions,
             panel: 2,
             active: false,
@@ -1090,6 +1114,46 @@ mod tests {
         c.toggle_screen();
         let button = c.screen_button().unwrap();
         assert!(button.active && button.label == toolbar::RESTORE_SELECTION_LABEL);
+    }
+    #[test]
+    fn every_state_hint_is_among_the_measured_ones() {
+        use shotoshot_text::Language;
+        let listed = toolbar::all_tooltips_in(Language::En);
+        let mut c = capture();
+        let mut seen = Vec::new();
+        for (live, reopened, searching, board) in [
+            (false, false, false, false),
+            (true, false, true, true),
+            (false, true, false, false),
+        ] {
+            (c.live, c.reopened, c.searching, c.board) = (live, reopened, searching, board);
+            for filled in [false, true] {
+                if c.screen_filled() != filled {
+                    c.toggle_screen();
+                }
+                let buttons = c.buttons().into_iter().chain(c.screen_button());
+                seen.extend(
+                    buttons
+                        .chain(c.dimensions_button())
+                        .map(|b| toolbar::tooltip_in(&b, Language::En)),
+                );
+            }
+        }
+        for hint in &seen {
+            assert!(listed.contains(hint), "{hint} is never measured");
+        }
+        for hint in [
+            "Nothing to undo · Ctrl+Z",
+            "Google search in progress · Ctrl+G",
+            "Live capture is for new captures",
+            "Live capture on · F2 to freeze",
+            "Capture frozen · F2 for live capture",
+            "Back to previous selection · F",
+            "Edit dimensions · expressions: 800+20, 1920/2",
+            "Clear board · Ctrl+Z restores",
+        ] {
+            assert!(seen.iter().any(|s| s == hint), "{hint} not shown");
+        }
     }
     #[test]
     fn sampled_color_is_rgb_from_bgra_and_clamped() {

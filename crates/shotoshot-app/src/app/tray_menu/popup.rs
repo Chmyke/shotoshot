@@ -661,15 +661,26 @@ mod tests {
                 // Switches: the menu stays open to set several in a row.
                 101..=104 | 4 | 5 | 7 | 9 => Effect::Apply(row.id),
                 // They open a submenu, which stays open on its choices too.
-                120 | 130 | 140 => Effect::Open,
+                120 | 130 | 140 | 150 => Effect::Open,
                 // Each opens or runs something else.
                 1 | 2 | 3 | 6 | 8 | 10 | 13 | 110..=112 => Effect::Run(row.id),
                 _ => Effect::None,
             };
-            assert_eq!(effect(row), expected, "{}", row.label);
+            assert_eq!(effect(row), expected, "{}", label_in(row, Language::En));
         }
-        for choice in DURATIONS.iter().chain(LAYOUTS).chain(SIZES) {
-            assert_eq!(effect(choice), Effect::Apply(choice.id), "{}", choice.label);
+        // A language is a setting too: the menu shows it at once.
+        for choice in DURATIONS
+            .iter()
+            .chain(LAYOUTS)
+            .chain(SIZES)
+            .chain(&LANGUAGES)
+        {
+            assert_eq!(
+                effect(choice),
+                Effect::Apply(choice.id),
+                "{}",
+                label_in(choice, Language::En)
+            );
         }
     }
 
@@ -680,8 +691,9 @@ mod tests {
         // From the last board row down to the first switch, over the title.
         assert_eq!(step(ROOT, Some(index(10)), true), Some(index(101)));
         assert_eq!(step(ROOT, Some(index(101)), false), Some(index(10)));
-        // Over the separator, and around.
-        assert_eq!(step(ROOT, Some(index(4)), true), Some(index(3)));
+        // Down to the language, over the separator, and around.
+        assert_eq!(step(ROOT, Some(index(4)), true), Some(index(150)));
+        assert_eq!(step(ROOT, Some(index(150)), true), Some(index(3)));
         assert_eq!(step(ROOT, Some(index(3)), true), Some(0));
         assert_eq!(step(&[], None, true), None);
         let all_inert = &ROOT[index(90)..=index(90)];

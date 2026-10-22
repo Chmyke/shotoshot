@@ -308,13 +308,9 @@ pub(crate) fn resident_message(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> Op
             let _ = PostMessageW(Some(hwnd), msg, w, l);
         }
         if failed {
-            MessageBoxW(
-                Some(hwnd),
-                w!(
-                    "Presentation stopped after an error. You can enable it again from the Shotoshot menu."
-                ),
-                w!("Shotoshot"),
-                MB_OK | MB_ICONINFORMATION,
+            crate::app::message(
+                hwnd,
+                &shotoshot_text::Text::new(shotoshot_text::Key::ErrorPresentationStopped),
             );
         }
         Some(if msg == WM_INPUT {

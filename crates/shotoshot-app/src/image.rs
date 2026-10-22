@@ -298,9 +298,9 @@ impl DesktopSample {
                 image.height as i32,
             ) != screen.bounds()
             {
-                return Err(Error::new(
-                    windows::Win32::Foundation::E_FAIL,
-                    "Display configuration changed. Start a new capture.",
+                return Err(crate::failure::visible(
+                    shotoshot_text::Key::ErrorDisplayChanged,
+                    &[],
                 ));
             }
             let rect = sample_bounds(image, pointer);

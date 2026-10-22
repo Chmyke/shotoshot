@@ -53,19 +53,7 @@ impl Session {
         let capture = &self.capture;
         if capture.region.is_some() {
             if !capture.selecting {
-                let current = self
-                    .capture
-                    .picker
-                    .as_ref()
-                    .map(|p| p.color())
-                    .unwrap_or_else(|| {
-                        self.native
-                            .text
-                            .as_ref()
-                            .map(|t| t.color)
-                            .unwrap_or(capture.editor.style.color)
-                    });
-                capture.draw_toolbar(canvas, current)?;
+                capture.draw_toolbar(canvas, self.toolbar_color(), std::time::Instant::now())?;
                 self.draw_pointer_feedback(canvas)?;
                 if let Some(picker) = &self.capture.picker {
                     picker.draw(canvas)?;
@@ -79,6 +67,23 @@ impl Session {
             )?;
         }
         capture.draw_selection_hint(canvas, self.pointer_monitor())
+    }
+
+    /// The colour the toolbar marks: the wheel's while it is open, the text's while typing,
+    /// else the drawing colour.
+    pub(crate) fn toolbar_color(&self) -> [u8; 3] {
+        let capture = &self.capture;
+        capture
+            .picker
+            .as_ref()
+            .map(|p| p.color())
+            .unwrap_or_else(|| {
+                self.native
+                    .text
+                    .as_ref()
+                    .map(|t| t.color)
+                    .unwrap_or(capture.editor.style.color)
+            })
     }
 
     fn draw_pointer_feedback(&self, canvas: &mut crate::render::D2dCanvas) -> Result<()> {

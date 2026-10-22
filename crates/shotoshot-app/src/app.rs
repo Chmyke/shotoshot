@@ -23,6 +23,7 @@ use crate::{
 };
 pub use runtime::{reports_errors_on_stderr, run};
 use shotoshot_core::Point;
+use shotoshot_text::{Key, Text};
 use std::cell::RefCell;
 use windows::{
     Win32::{
@@ -117,15 +118,33 @@ struct App {
 pub(crate) fn menu_probe() -> Result<()> {
     tray_menu::probe()
 }
-fn message(hwnd: HWND, text: &str) {
+/// A message box over `hwnd`: only a translated text can be shown.
+pub(crate) fn message(hwnd: HWND, text: &Text) {
     unsafe {
         MessageBoxW(
             Some(hwnd),
-            &HSTRING::from(text),
+            &HSTRING::from(text.as_str()),
             w!("Shotoshot"),
             MB_OK | MB_ICONINFORMATION,
         );
     }
+}
+/// `error` in a message box, as `failure::text` words it.
+fn report(hwnd: HWND, error: &Error) {
+    message(hwnd, &crate::failure::text(error));
+}
+/// The combination `mods` + `key` on one line as the menu writes it (`Ctrl+Alt+A`), in the
+/// interface language.
+pub(crate) fn shortcut_text(mods: u32, key: u32) -> String {
+    setup::key_label_in(mods, key, shotoshot_text::language()).replace(" + ", "+")
+}
+/// The hint of the notification-area icon, cut to the 127 characters Windows keeps.
+fn tray_tip(text: &str) -> [u16; 128] {
+    let mut tip = [0; 128];
+    for (slot, unit) in tip[..127].iter_mut().zip(text.encode_utf16()) {
+        *slot = unit;
+    }
+    tip
 }
 fn invalidate(hwnd: HWND) {
     unsafe {
@@ -171,7 +190,7 @@ unsafe extern "system" fn window_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM
                 Ok(Some(value)) => return value,
                 Ok(None) => {}
                 Err(error) => {
-                    message(hwnd, &error.to_string());
+                    report(hwnd, &error);
                     if app.quit_after_capture && app.session.is_none() {
                         PostQuitMessage(1);
                     }
@@ -210,9 +229,26 @@ impl App {
     /// Whether the board is shown, as last saved: a board session's own process saves it.
     fn board_visible(&mut self) -> Result<bool> {
         if self.persist_preferences {
-            self.settings = Settings::load().map_err(|e| Error::new(E_FAIL, e))?;
+            self.reload_settings()?;
         }
         Ok(self.settings.board_visible)
+    }
+    /// Reads the settings another process may have saved, the language included.
+    fn reload_settings(&mut self) -> Result<()> {
+        self.settings = Settings::load().map_err(crate::settings::unreadable)?;
+        crate::language::apply(&self.settings);
+        Ok(())
+    }
+    /// Replaces the prepared editor, whose texts were laid out in the previous language.
+    /// A busy one is left alone: its capture goes on, and the editor prepared after it
+    /// reads the new language at start.
+    fn restart_prepared_editor(&mut self, hwnd: HWND) {
+        match &mut self.worker {
+            // The replacement starts once this one has exited (`editor_exited`).
+            Some(worker) if !worker.busy() => worker.restart(),
+            Some(_) => {}
+            None => self.prepare_editor(hwnd),
+        }
     }
     fn prepare_editor(&mut self, hwnd: HWND) {
         // Preparation is optional: an unavailable renderer must never show a boot dialog
@@ -268,10 +304,7 @@ impl App {
         } else if replenish {
             self.prepare_editor(hwnd);
         } else if failed_request {
-            return Err(Error::new(
-                E_FAIL,
-                "The editor could not start. Please try another capture.",
-            ));
+            return Err(crate::failure::visible(Key::ErrorEditorStart, &[]));
         }
         Ok(())
     }
@@ -280,7 +313,7 @@ impl App {
     }
     fn show_shortcut_setup(&mut self, hwnd: HWND, target: setup::ShortcutTarget) -> Result<()> {
         if self.persist_preferences {
-            self.settings = Settings::load().map_err(|e| Error::new(E_FAIL, e))?;
+            self.reload_settings()?;
         }
         unsafe {
             if let Some(p) = &self.presentation {
@@ -323,10 +356,13 @@ impl App {
                 (&dark as *const i32).cast(),
                 std::mem::size_of_val(&dark) as u32,
             );
+            // Never fails: a window that cannot measure keeps the English layout.
+            self.setup_ui.fit(shotoshot_text::language());
+            let size = self.setup_ui.layout.size;
             let dpi = GetDpiForWindow(hwnd);
             let mut bounds = RECT {
-                right: setup::WIDTH * dpi as i32 / 96,
-                bottom: setup::HEIGHT * dpi as i32 / 96,
+                right: size.x as i32 * dpi as i32 / 96,
+                bottom: size.y as i32 * dpi as i32 / 96,
                 ..Default::default()
             };
             AdjustWindowRectExForDpi(
@@ -393,9 +429,10 @@ impl App {
             key,
         };
         let result = (|| -> Result<()> {
+            let refused = |key| crate::failure::visible(key, &[]);
             next.presentation
                 .validate_shape_shortcuts()
-                .map_err(|e| Error::new(E_INVALIDARG, e))?;
+                .map_err(refused)?;
             if (self.settings.modifiers == mods && self.settings.key == key)
                 || self.settings.instant_shortcut
                     == (crate::settings::Shortcut {
@@ -403,10 +440,7 @@ impl App {
                         key,
                     })
             {
-                return Err(Error::new(
-                    E_INVALIDARG,
-                    "This combination is already used for capture.",
-                ));
+                return Err(refused(Key::SetupUsedForCapture));
             }
             if self.settings.board_shortcut
                 == (crate::settings::Shortcut {
@@ -414,10 +448,7 @@ impl App {
                     key,
                 })
             {
-                return Err(Error::new(
-                    E_INVALIDARG,
-                    "This shortcut is already used by the board.",
-                ));
+                return Err(refused(Key::SetupUsedByBoard));
             }
             // A real collision is allowed: drawing shortcuts now take priority through the hook.
             let reserved = match unsafe {
@@ -432,7 +463,7 @@ impl App {
                 Err(error) => return Err(error),
             };
             let save = if self.persist_preferences {
-                next.save().map_err(|e| Error::new(E_FAIL, e))
+                next.save().map_err(crate::settings::unsaved)
             } else {
                 Ok(())
             };
@@ -449,7 +480,13 @@ impl App {
             Ok(())
         })();
         if let Err(error) = result {
-            self.setup_ui.error = format!("Shortcut unavailable or invalid: {}", error.message());
+            let language = self.setup_ui.language;
+            self.setup_ui.error = Text::with_in(
+                language,
+                Key::SetupInvalid,
+                &[("detail", &crate::failure::reason_in(&error, language))],
+            )
+            .to_string();
             invalidate(hwnd);
             return Ok(false);
         }
@@ -486,7 +523,7 @@ impl App {
             return Ok(());
         }
         if self.persist_preferences {
-            self.settings = Settings::load().map_err(|e| Error::new(E_FAIL, e))?;
+            self.reload_settings()?;
         }
         let live = self.settings.live_capture;
         let image = if live {
@@ -580,7 +617,7 @@ impl App {
         save: impl FnOnce(shotoshot_core::settings::Brush) -> std::result::Result<(), String>,
     ) -> Result<()> {
         if let Some((brush, _)) = self.pending_brush {
-            save(brush).map_err(|error| Error::new(E_FAIL, error))?;
+            save(brush).map_err(crate::settings::unsaved)?;
             self.pending_brush = None;
         }
         Ok(())
@@ -611,20 +648,25 @@ impl App {
     }
     /// Ends the session. A board session first writes its notes and stays open if it cannot;
     /// then it bakes them and, once the window is hidden, shows `board_saved` if all went well.
-    fn close_session_saying(&mut self, hwnd: HWND, board_saved: Option<&str>) {
+    fn close_session_saying(&mut self, hwnd: HWND, board_saved: Option<Key>) {
         let board_saved = if self.session.as_ref().is_some_and(|s| s.board.is_some()) {
             if let Err(error) = self.save_board(hwnd) {
                 // Nothing is lost: Escape tries again, Ctrl+S still exports the picture.
-                message(hwnd, &format!("The board could not be saved: {error}"));
+                let detail = crate::failure::detail(&error);
+                message(
+                    hwnd,
+                    &Text::with(Key::ErrorBoardUnsaved, &[("detail", &detail)]),
+                );
                 invalidate(hwnd);
                 return;
             }
             match self.apply_board() {
                 Ok(()) => board_saved,
                 Err(error) => {
+                    let detail = crate::failure::detail(&error);
                     message(
                         hwnd,
-                        &format!("The notes are saved, but the wallpaper was not updated: {error}"),
+                        &Text::with(Key::ErrorWallpaperUnchanged, &[("detail", &detail)]),
                     );
                     None
                 }
@@ -633,14 +675,14 @@ impl App {
             None
         };
         if let Err(error) = self.persist_brush(hwnd).and_then(|_| self.flush_brush()) {
-            message(hwnd, &format!("Could not save settings: {error}"));
+            report(hwnd, &error);
         }
         unsafe {
             let _ = KillTimer(Some(hwnd), crate::toolbar::HINT_TIMER);
             let _ = KillTimer(Some(hwnd), BRUSH_TIMER);
         }
         if let Err(error) = self.persist_custom_color() {
-            message(hwnd, &error.to_string());
+            report(hwnd, &error);
         }
         if let Some(s) = &mut self.session {
             s.native.finish_text(&mut s.capture, hwnd, false);
@@ -652,7 +694,7 @@ impl App {
         }
         if let Some(text) = board_saved {
             // Before the quit request below: a message box shown after it closes at once.
-            message(hwnd, text);
+            message(hwnd, &Text::new(text));
         }
         if self.quit_after_capture {
             unsafe {
@@ -699,7 +741,7 @@ impl App {
                     .spawn(move || {
                         let result = crate::google_search::prepare(&image)
                             .map(|page| page.to_string_lossy().into_owned())
-                            .map_err(|e| e.message());
+                            .map_err(|e| crate::failure::reason(&e));
                         if tx.send(result).is_ok() {
                             unsafe {
                                 let _ = PostMessageW(
@@ -731,7 +773,7 @@ impl App {
                             self.settings.save_format,
                         )
                     {
-                        message(hwnd, &format!("Could not save settings: {error}"));
+                        report(hwnd, &crate::settings::unsaved(error));
                     }
                     self.notify(if saved == Saved::Document {
                         Notice::SavedEditable
@@ -763,7 +805,7 @@ impl App {
         {
             if self.persist_preferences {
                 Settings::save_custom_color(session.capture.custom_color)
-                    .map_err(|error| Error::new(E_FAIL, error))?;
+                    .map_err(crate::settings::unsaved)?;
             }
             self.settings.last_custom_color = session.capture.custom_color;
             session.capture.custom_color_changed = false;

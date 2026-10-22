@@ -26,7 +26,8 @@ impl SettingsLock {
                 WAIT_OBJECT_0 | WAIT_ABANDONED => Ok(Self(handle)),
                 _ => {
                     let _ = CloseHandle(handle);
-                    Err("Settings are busy. Please try again.".into())
+                    // Shown as the `{detail}` of `unsaved`: already a translated sentence.
+                    Err(shotoshot_text::tr(shotoshot_text::Key::ErrorSettingsBusy).into())
                 }
             }
         }
@@ -39,6 +40,21 @@ impl Drop for SettingsLock {
             let _ = CloseHandle(self.0);
         }
     }
+}
+
+/// Settings that could not be read, `detail` saying why: the file is left as it is.
+pub(crate) fn unreadable(detail: String) -> Error {
+    crate::failure::visible(
+        shotoshot_text::Key::ErrorSettingsUnreadable,
+        &[("detail", &detail)],
+    )
+}
+/// Settings that could not be written, `detail` saying why.
+pub(crate) fn unsaved(detail: String) -> Error {
+    crate::failure::visible(
+        shotoshot_text::Key::ErrorSettingsUnsaved,
+        &[("detail", &detail)],
+    )
 }
 
 pub fn known_folder(id: &GUID) -> Result<PathBuf> {

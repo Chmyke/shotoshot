@@ -25,7 +25,7 @@ impl App {
     /// Remembers whether the board is shown, here and for the other processes.
     fn save_board_visible(&mut self, visible: bool) -> Result<()> {
         if self.persist_preferences {
-            Settings::save_board_visible(visible).map_err(|e| Error::new(E_FAIL, e))?;
+            Settings::save_board_visible(visible).map_err(crate::settings::unsaved)?;
         }
         self.settings.board_visible = visible;
         Ok(())
@@ -73,6 +73,32 @@ impl App {
         invalidate(hwnd);
         Ok(())
     }
+    /// Saves the language chosen in the menu and shows it at once: the resident's own texts,
+    /// its icon's hint, and an editor prepared again, since a prepared one keeps its texts.
+    pub(super) fn choose_language(
+        &mut self,
+        hwnd: HWND,
+        choice: shotoshot_text::LanguageChoice,
+    ) -> Result<()> {
+        let mut next = self.settings.clone();
+        next.language = choice;
+        if self.persist_preferences {
+            let path = Settings::path()?;
+            let folder = path.parent().unwrap_or(&path);
+            crate::language::store_menu_choice(&next, folder, |s| s.save())
+                .map_err(crate::settings::unsaved)?;
+        }
+        self.settings = next;
+        crate::language::apply(&self.settings);
+        self.tray.szTip = tray_tip(shotoshot_text::tr(shotoshot_text::Key::TrayTooltip));
+        if !self.tray.hWnd.is_invalid() {
+            unsafe {
+                let _ = Shell_NotifyIconW(NIM_MODIFY, &self.tray);
+            }
+        }
+        self.restart_prepared_editor(hwnd);
+        Ok(())
+    }
     /// What the menu rows show for the current settings.
     pub(super) fn menu_values(&self) -> Result<tray_menu::Values> {
         let (enabled, conflicts) = self
@@ -114,6 +140,7 @@ impl App {
                 self.settings.board_shortcut,
                 !self.board_hotkey.active(),
             ),
+            language: self.settings.language,
         })
     }
     /// A click on the notification icon: opens the menu, or closes the open one.
@@ -140,7 +167,7 @@ impl App {
     fn menu(&mut self, hwnd: HWND) -> Result<()> {
         if self.persist_preferences {
             // A completed editor worker may have changed the last save folder.
-            self.settings = Settings::load().map_err(|error| Error::new(E_FAIL, error))?;
+            self.reload_settings()?;
         }
         if self.presentation.is_none() {
             self.presentation = Some(crate::presentation::Presentation::new(
@@ -183,10 +210,7 @@ impl App {
     fn run_menu_command(&mut self, hwnd: HWND, chosen: u32) -> Result<()> {
         unsafe {
             if (101..=143).contains(&chosen) && self.worker_busy() {
-                message(
-                    hwnd,
-                    "Finish the current capture before changing presentation settings.",
-                );
+                message(hwnd, &Text::new(Key::ErrorPresentationBusy));
                 return Ok(());
             }
             match chosen {
@@ -205,7 +229,7 @@ impl App {
                         let mut next = self.settings.clone();
                         next.presentation = preferences.clone();
                         if self.persist_preferences {
-                            next.save().map_err(|error| Error::new(E_FAIL, error))?;
+                            next.save().map_err(crate::settings::unsaved)?;
                         }
                         self.settings = next;
                         if let Some(presentation) = &self.presentation {
@@ -259,7 +283,7 @@ impl App {
                     let mut next = self.settings.clone();
                     next.instant_sound = !next.instant_sound;
                     if self.persist_preferences {
-                        next.save().map_err(|e| Error::new(E_FAIL, e))?;
+                        next.save().map_err(crate::settings::unsaved)?;
                     }
                     self.settings = next;
                 }
@@ -268,7 +292,7 @@ impl App {
                     crate::startup::set_enabled(enabled)?;
                     self.settings.start_with_windows = enabled;
                     if self.persist_preferences {
-                        self.settings.save().map_err(|e| Error::new(E_FAIL, e))?;
+                        self.settings.save().map_err(crate::settings::unsaved)?;
                     }
                 }
                 5 => {
@@ -276,11 +300,15 @@ impl App {
                     self.settings.live_capture = !previous;
                     if let Err(error) = self.settings.save() {
                         self.settings.live_capture = previous;
-                        return Err(Error::new(E_FAIL, error));
+                        return Err(crate::settings::unsaved(error));
                     }
                 }
                 3 => PostQuitMessage(0),
-                _ => {}
+                _ => {
+                    if let Some(choice) = tray_menu::on_language_choice(chosen) {
+                        self.choose_language(hwnd, choice)?;
+                    }
+                }
             }
             Ok(())
         }

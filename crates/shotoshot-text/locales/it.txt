@@ -1,0 +1,223 @@
+# Testi dell'interfaccia di Shotoshot, italiano. Il formato è descritto in en.txt.
+
+language.menu = Lingua
+
+tooltip.with_shortcut = {label} · {shortcut}
+
+key.ctrl == Ctrl
+key.shift = Maiusc
+key.alt == Alt
+key.win == Win
+key.esc == Esc
+key.delete = Canc
+key.backspace == Backspace
+key.tab == Tab
+key.enter = Invio
+key.caps_lock = Bloc Maiusc
+key.space = Spazio
+key.page_up = Pag↑
+key.page_down = Pag↓
+key.end = Fine
+key.home == Home
+key.left = Sinistra
+key.up = Su
+key.right = Destra
+key.down = Giù
+key.insert = Ins
+key.numpad = Tast. num. {key}
+key.num_lock = Bloc Num
+key.scroll_lock = Bloc Scorr
+key.pause = Pausa
+key.break = Interr
+key.print_screen = Stamp
+key.code = Tasto {code}
+
+toolbar.select = Selezione · {shortcut} · Pag↑/Pag↓: avanti o indietro
+toolbar.rectangle = Rettangolo
+toolbar.ellipse = Ellisse
+toolbar.line = Linea
+toolbar.arrow = Freccia
+toolbar.pen = Penna
+toolbar.highlighter = Evidenziatore
+toolbar.text = Testo
+toolbar.eraser = Gomma
+toolbar.live_capture = Acquisizione live · {shortcut} · si aggiorna copiando o salvando
+toolbar.red = Rosso
+toolbar.yellow = Giallo
+toolbar.green = Verde
+toolbar.blue = Blu
+toolbar.white = Bianco
+toolbar.black = Nero
+toolbar.custom_color = Colore personalizzato
+toolbar.eyedropper = Contagocce
+toolbar.fill = Colora un tratto, una forma o lo sfondo · {shortcut} · Clic destro o Alt+clic rimuove il colore
+toolbar.undo = Annulla
+toolbar.redo = Ripeti
+toolbar.google_lens = Cerca con Google Lens
+toolbar.copy_image = Copia immagine
+toolbar.save = Salva
+toolbar.close = Chiudi
+toolbar.clear_board = Svuota il Board · {shortcut} lo ripristina
+
+capture.nothing_to_undo = Niente da annullare
+capture.nothing_to_redo = Niente da ripetere
+capture.google_search_in_progress = Ricerca Google in corso
+capture.live_on = Acquisizione live attiva · {shortcut} per bloccare
+capture.live_frozen = Acquisizione bloccata · {shortcut} per tornare live
+capture.live_for_new_captures = L’acquisizione live è solo per le nuove acquisizioni
+capture.full_screen = Schermo intero
+capture.restore_selection = Torna alla selezione precedente
+capture.edit_dimensions = Modifica dimensioni · espressioni: 800+20, 1920/2
+
+overlay.select_area = Seleziona un’area
+overlay.cancel = {shortcut} per annullare
+overlay.stroke_width == {width} px
+magnifier.pick = Clic: preleva · {shortcut}
+picker.apply = Clic fuori: applica · {shortcut}: annulla
+
+crop.invalid = Inserisci un numero intero di pixel (almeno 2) o un’espressione come 800+20.
+crop.outside = L’acquisizione deve restare all’interno del desktop. Riduci la larghezza o l’altezza.
+
+menu.take_screenshot = Acquisisci schermata
+menu.edit_board = Modifica il Board
+menu.show_board = Mostra il Board
+menu.clear_board = Svuota il Board
+menu.presentation = Presentazione
+menu.pointer_halo = Alone del puntatore
+menu.keyboard = Tastiera
+menu.mouse == Mouse
+menu.keyboard_layout = Formato della tastiera
+menu.input_size = Dimensione di tastiera e mouse
+menu.temporary_shapes = Forme temporanee
+menu.shape_duration = Durata delle forme
+menu.shortcuts = Scorciatoie · fai clic per cambiare
+menu.capture = Acquisizione
+menu.instant_screenshot = Schermata istantanea
+menu.board == Board
+menu.options = Opzioni
+menu.screenshot_sound = Suono della schermata
+menu.live_capture_default = Acquisizione live predefinita
+menu.start_with_windows = Avvia con Windows
+menu.quit = Esci da Shotoshot
+menu.duration_1 = 1 secondo
+menu.duration_3 = 3 secondi
+menu.duration_5 = 5 secondi
+menu.layout_full = Completa
+menu.layout_compact = Compatta
+menu.layout_gaming = Da gioco
+menu.seconds = {n} s
+menu.percent = {n}%
+menu.shortcut_in_use = {shortcut} (in uso)
+menu.language_auto = Lingua di Windows
+menu.language_system = Lingua di sistema
+
+setup.title_capture = Scorciatoia di acquisizione
+setup.title_instant = Scorciatoia della schermata istantanea
+setup.title_arrow = Scorciatoia della freccia
+setup.title_rectangle = Scorciatoia del rettangolo
+setup.title_ellipse = Scorciatoia dell’ellisse
+setup.title_board = Scorciatoia del Board
+setup.press = Premi la scorciatoia…
+setup.waiting = …
+setup.choose = Scegli una scorciatoia
+setup.cancel = Annulla
+setup.save = Salva
+setup.any_key_hint = Va bene qualsiasi tasto, da solo o con Ctrl, Maiusc, Alt o Windows.
+setup.board_hint = Un tasto con Ctrl o Alt. Puoi aggiungere anche Maiusc o Windows.
+setup.shape_hint = Una lettera con Ctrl o Alt. Puoi aggiungere anche Maiusc.
+setup.print_screen_hint = Stamp aprirà Shotoshot al posto dello Strumento di cattura di Windows. Fai clic sul tasto per sceglierne un altro.
+setup.change_hint = Fai clic sui tasti per cambiarli.
+setup.used_for_instant = Questa scorciatoia è già usata per la schermata istantanea.
+setup.used_for_capture = Questa combinazione è già usata per l’acquisizione.
+setup.used_by_presentation = Questa scorciatoia è già usata dalla modalità presentazione. Scegline un’altra.
+setup.used_by_board = Questa scorciatoia è già usata dal Board.
+setup.used_by_shotoshot = Questa scorciatoia è già usata da Shotoshot.
+setup.register_failed = Impossibile registrare questa scorciatoia ({code}). Potrebbe essere riservata o già in uso.
+setup.unavailable = Scorciatoia non disponibile ({code}). Scegli un altro tasto.
+setup.invalid = Scorciatoia non disponibile o non valida: {detail}
+setup.print_screen_held = Stamp è ancora in uso, da un’altra app o da Windows finché non esci e rientri. Chiudi quell’app o scegli un altro tasto.
+
+tray.tooltip = Shotoshot: acquisisci e annota
+
+setup.invalid_shape = Scorciatoia della forma non valida
+setup.invalid_board = Scorciatoia del Board non valida
+setup.shape_needs_modifier = Scegli una scorciatoia con Ctrl o Alt per non attivare forme mentre scrivi.
+setup.board_needs_modifier = Scegli una scorciatoia con Ctrl o Alt per non aprire il Board mentre scrivi.
+setup.reserved = Ctrl+Alt+Esc è riservato
+setup.duplicate_shape = Scorciatoia della forma duplicata
+
+notice.copied = Schermata copiata negli appunti.
+notice.saved = Immagine salvata.
+notice.searching = Ricerca su Google…
+notice.preferences = Impostazioni salvate.
+notice.saved_editable = Immagine modificabile salvata, schermo incluso.
+notice.instant_unavailable = Scorciatoia della schermata istantanea non disponibile. Cambiala nel menu di Shotoshot.
+notice.board_unavailable = Scorciatoia del Board non disponibile. Cambiala nel menu di Shotoshot.
+notice.shortcuts_unavailable = Scorciatoia non disponibile: {names}
+notice.names_separator == {before}, {after}
+notice.screenshot_failed = Schermata non riuscita: file non salvato
+notice.screenshot_error = Schermata non riuscita: {detail}
+
+presentation.stop = Disattiva tutto
+
+error.unexpected = Si è verificato un problema.\n{detail}
+error.stopped = Errore interno imprevisto. Shotoshot si è arrestato.
+error.already_running = Shotoshot è già in esecuzione. Usa la sua icona nell’area di notifica.
+error.editor_start = Impossibile avviare l’editor. Prova un’altra acquisizione.
+error.screenshot_refused = Il desktop ha rifiutato la schermata.
+error.capture_shortcut_in_use = La scorciatoia di acquisizione è già in uso. Scegli un’altra combinazione.
+error.shortcut_in_use = La scorciatoia {shortcut} è già in uso. Non è stata attivata nessuna funzione aggiuntiva.
+error.presentation_busy = Termina l’acquisizione in corso prima di modificare le impostazioni della presentazione.
+error.presentation_stopped = La presentazione si è interrotta dopo un errore. Puoi riattivarla dal menu di Shotoshot.
+error.display_changed = La configurazione degli schermi è cambiata. Avvia una nuova acquisizione.
+error.display_changed_board = La configurazione degli schermi è cambiata. Il Board è stato salvato.
+error.no_region = Seleziona prima un’area di acquisizione
+error.settings_unreadable = Impostazioni non supportate o danneggiate. Il file originale è stato conservato.\n{detail}
+error.settings_unsaved = Impossibile salvare le impostazioni: {detail}
+error.settings_busy = Le impostazioni sono occupate. Riprova.
+error.save_dialog = Impossibile aprire la finestra Salva ({code})
+error.not_editable_capture = Questa acquisizione non può essere salvata come immagine modificabile.
+error.text_layout = Impaginazione del testo non riuscita
+error.lens_browser = Impossibile aprire il browser. L’acquisizione resta aperta.
+error.lens_failed = La ricerca Google non è riuscita. L’acquisizione resta aperta.\n{detail}
+error.lens_interrupted = La ricerca Google è stata interrotta. L’acquisizione resta aperta.
+error.lens_too_large = L’immagine supera il limite di 20 MB di Google Lens.
+error.document_unread = Impossibile aprire {path}: {detail}
+error.document_too_large = Questa immagine ({width} × {height}) è più grande di questo schermo. Si apre comunque come PNG.
+error.board_unsaved = Impossibile salvare il Board: {detail}
+error.wallpaper_unchanged = Le note sono salvate, ma lo sfondo non è stato aggiornato: {detail}
+error.board_unopened = Impossibile aprire il Board.
+error.board_in_use = Il Board è aperto in modifica: chiudilo prima, poi svuotalo.
+error.board_base_damaged = Il file di base del Board è danneggiato. È stato lasciato intatto.
+
+board.newer = Questo Board è stato scritto da una versione più recente di Shotoshot.
+board.damaged = Il file del Board è danneggiato. È stato lasciato intatto.
+
+document.not_editable = Questo file non contiene dati di Shotoshot modificabili.
+document.newer = Questa immagine è stata salvata da uno Shotoshot più recente. Aggiorna Shotoshot per modificarla. Si apre comunque come PNG.
+document.damaged = Questa immagine modificabile è danneggiata e non può essere aperta per la modifica.
+
+save.png = Immagine PNG
+save.jpeg = Immagine JPEG
+save.shoto = Immagine Shotoshot modificabile, conserva tutto lo schermo
+
+lens.sending = Invio dell’acquisizione a Google Lens…
+lens.needs_script = Per inviare l’acquisizione serve JavaScript.
+
+keycap.esc == Esc
+keycap.ctrl == Ctrl
+keycap.alt == Alt
+keycap.alt_gr == Gr
+keycap.caps == Caps
+keycap.num == Num
+keycap.scroll == Scr
+keycap.print == Prt
+keycap.end = Fine
+keycap.insert == Ins
+keycap.delete == Del
+
+# Installer
+installer.language.title = Lingua di Shotoshot
+installer.language.description = Potrai cambiarla in seguito dall’icona di Shotoshot nell’area di notifica.
+installer.language.auto = Lingua di Windows
+installer.shoto_file = Immagine Shotoshot modificabile

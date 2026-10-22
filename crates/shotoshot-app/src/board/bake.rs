@@ -151,7 +151,7 @@ pub fn render_screens(
 /// The saved board; none yet is an empty one.
 pub fn read_board(folder: &Path) -> Result<Board> {
     match std::fs::read_to_string(super::document_path(folder)) {
-        Ok(text) => Board::decode(&text).map_err(|e| Error::new(E_FAIL, e.message())),
+        Ok(text) => Board::decode(&text).map_err(|e| crate::failure::visible(e.key(), &[])),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Board::default()),
         Err(e) => Err(Error::new(E_FAIL, e.to_string())),
     }
@@ -428,7 +428,7 @@ pub fn process() -> Result<()> {
         BACKGROUND_LOCK_WAIT_MS,
         || {
             Ok(Settings::load()
-                .map_err(|e| Error::new(E_FAIL, e))?
+                .map_err(crate::settings::unreadable)?
                 .board_visible)
         },
         || bake(&super::folder()?, &Wallpaper::new()?).map(|_| ()),

@@ -3,6 +3,7 @@
 //! OWNER: Each platform supplies the file path, a cross-process lock and the final replace.
 //! INVARIANTS: Keys are Windows virtual-key codes on every platform; a damaged file is
 //! reported and left untouched.
+use shotoshot_text::{Key, LanguageChoice};
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -116,6 +117,23 @@ impl SaveFormat {
         }
     }
 }
+/// Every reason `PresentationSettings::validate_shape_shortcuts` can give.
+pub const SHAPE_SHORTCUT_REFUSALS: [Key; 4] = [
+    Key::SetupInvalidShape,
+    Key::SetupShapeNeedsModifier,
+    Key::SetupReserved,
+    Key::SetupDuplicateShape,
+];
+/// Every reason `Settings::validate_board_shortcut` can give.
+pub const BOARD_SHORTCUT_REFUSALS: [Key; 3] = [
+    Key::SetupInvalidBoard,
+    Key::SetupBoardNeedsModifier,
+    Key::SetupReserved,
+];
+/// The technical detail of a refused shortcut found in a settings file.
+fn refused(key: Key) -> String {
+    format!("refused shortcut ({})", key.id())
+}
 /// Sizes of the presentation diagram, in percent of its natural size.
 pub const INPUT_SCALES: [u32; 3] = [100, 150, 200];
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -192,22 +210,21 @@ impl Default for PresentationSettings {
     }
 }
 impl PresentationSettings {
-    pub fn validate_shape_shortcuts(&self) -> std::result::Result<(), String> {
+    /// Why the shape shortcuts cannot be used, as the text the user reads: one of
+    /// `SHAPE_SHORTCUT_REFUSALS`.
+    pub fn validate_shape_shortcuts(&self) -> std::result::Result<(), Key> {
         for (index, shortcut) in self.shape_shortcuts.iter().enumerate() {
             if shortcut.modifiers > 15 || !(1..=254).contains(&shortcut.key) {
-                return Err("Invalid shape shortcut".into());
+                return Err(Key::SetupInvalidShape);
             }
             if shortcut.modifiers & 3 == 0 {
-                return Err(
-                    "Choose a shortcut with Ctrl or Alt to avoid triggering shapes while typing."
-                        .into(),
-                );
+                return Err(Key::SetupShapeNeedsModifier);
             }
             if shortcut.modifiers == 3 && shortcut.key == 27 {
-                return Err("Ctrl+Alt+Escape is reserved".into());
+                return Err(Key::SetupReserved);
             }
             if self.shape_shortcuts[..index].contains(shortcut) {
-                return Err("Duplicate shape shortcut".into());
+                return Err(Key::SetupDuplicateShape);
             }
         }
         Ok(())
@@ -270,6 +287,8 @@ pub struct Settings {
     pub board_shortcut: Shortcut,
     /// Whether the board is currently shown in the wallpaper.
     pub board_visible: bool,
+    /// The interface language: the system's, or one chosen in the menu.
+    pub language: LanguageChoice,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -296,6 +315,7 @@ impl Default for Settings {
                 key: 0x42,
             },
             board_visible: false,
+            language: LanguageChoice::Auto,
         }
     }
 }
@@ -342,10 +362,14 @@ impl Settings {
             Some("13") => 25,
             Some("14") => 27,
             Some("15") => 28,
+            Some("16") => 29,
             _ => 0,
         };
         if fields.len() != expected_len {
-            return Err("Unsupported or damaged settings. The original file was preserved.".into());
+            return Err(format!(
+                "unsupported settings: {} fields for this version",
+                fields.len()
+            ));
         }
         if fields.len() >= 6 && !matches!(fields[5], "0" | "1") {
             return Err("Invalid live capture setting".into());
@@ -362,13 +386,13 @@ impl Settings {
             for (shortcut, field) in presentation.shape_shortcuts.iter_mut().zip(&fields[10..13]) {
                 *shortcut = Shortcut::decode(field)?;
             }
-            presentation.validate_shape_shortcuts()?;
+            presentation.validate_shape_shortcuts().map_err(refused)?;
             // An arrow left on the old default follows the editor's letter, unless Alt+A
             // already draws another shape. Formats 11 and later keep an Alt+F chosen since.
             let arrow = DEFAULT_SHAPE_SHORTCUTS[0];
             // PITFALL: every format from 11 on is listed; the next version goes here too, or
             // its users' Alt+F arrow would be migrated away on every load.
-            if !matches!(version, Some("11" | "12" | "13" | "14" | "15"))
+            if !matches!(version, Some("11" | "12" | "13" | "14" | "15" | "16"))
                 && presentation.shape_shortcuts[0] == OLD_ARROW_SHORTCUT
                 && !presentation.shape_shortcuts.contains(&arrow)
             {
@@ -449,7 +473,7 @@ impl Settings {
             None => Self::default().board_shortcut,
             Some(value) => {
                 let shortcut = Shortcut::decode(value)?;
-                Self::validate_board_shortcut(&shortcut)?;
+                Self::validate_board_shortcut(&shortcut).map_err(refused)?;
                 shortcut
             }
         };
@@ -458,6 +482,10 @@ impl Settings {
             Some(&"1") => true,
             Some(_) => return Err("Invalid board visibility".into()),
         };
+        // An unknown or empty tag is not damage: it means the system language.
+        let language = fields
+            .get(28)
+            .map_or(LanguageChoice::Auto, |value| LanguageChoice::decode(value));
         Ok(Self {
             instant_shortcut,
             instant_sound: match fields.get(21) {
@@ -509,21 +537,20 @@ impl Settings {
             },
             board_shortcut,
             board_visible,
+            language,
         })
     }
-    /// A board shortcut needs Ctrl or Alt so that typing never toggles the board.
-    pub fn validate_board_shortcut(shortcut: &Shortcut) -> std::result::Result<(), String> {
+    /// A board shortcut needs Ctrl or Alt so that typing never toggles the board. A refusal
+    /// is the text the user reads: one of `BOARD_SHORTCUT_REFUSALS`.
+    pub fn validate_board_shortcut(shortcut: &Shortcut) -> std::result::Result<(), Key> {
         if shortcut.modifiers > 15 || !(1..=254).contains(&shortcut.key) {
-            return Err("Invalid board shortcut".into());
+            return Err(Key::SetupInvalidBoard);
         }
         if shortcut.modifiers & 3 == 0 {
-            return Err(
-                "Choose a shortcut with Ctrl or Alt to avoid opening the board while typing."
-                    .into(),
-            );
+            return Err(Key::SetupBoardNeedsModifier);
         }
         if shortcut.modifiers == 3 && shortcut.key == 27 {
-            return Err("Ctrl+Alt+Escape is reserved".into());
+            return Err(Key::SetupReserved);
         }
         Ok(())
     }
@@ -535,7 +562,7 @@ impl Settings {
             .join(",");
         let color = |[red, green, blue]: [u8; 3]| format!("{red:02x}{green:02x}{blue:02x}");
         format!(
-            "{HEADER}15\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{},{}\n{},{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n",
+            "{HEADER}16\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{},{}\n{},{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n",
             self.modifiers,
             self.key,
             u8::from(self.legacy_style),
@@ -569,7 +596,8 @@ impl Settings {
             self.board_shortcut.modifiers,
             self.board_shortcut.key,
             u8::from(self.board_visible),
-            self.capture_eraser_size
+            self.capture_eraser_size,
+            self.language.encode()
         )
     }
     /// Changes only the editor's custom color, preserving the other stored preferences.
@@ -635,8 +663,10 @@ impl Settings {
         merged.write_to(path, replace)
     }
     fn write_to(&self, path: &Path, replace: Replace) -> std::result::Result<(), String> {
-        self.presentation.validate_shape_shortcuts()?;
-        Self::validate_board_shortcut(&self.board_shortcut)?;
+        self.presentation
+            .validate_shape_shortcuts()
+            .map_err(refused)?;
+        Self::validate_board_shortcut(&self.board_shortcut).map_err(refused)?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
@@ -677,6 +707,7 @@ fn decode_folder(units: &[u16]) -> std::result::Result<PathBuf, String> {
 }
 #[cfg(test)]
 mod tests {
+    use shotoshot_text::Language;
     #[test]
     fn writes_the_shotoshot_header_and_still_reads_the_pre_rename_one() {
         let settings = Settings {
@@ -684,13 +715,13 @@ mod tests {
             ..Default::default()
         };
         let encoded = settings.encode();
-        assert!(encoded.starts_with("shotoshot-settings-15\n"));
+        assert!(encoded.starts_with("shotoshot-settings-16\n"));
         let legacy = encoded.replacen("shotoshot-settings-", "shotshot-settings-", 1);
         assert_eq!(Settings::decode(&legacy).unwrap(), settings);
         let oldest = Settings::decode("shotshot-settings-1\n3\n65\n1\n43,3a,2f,e9\n").unwrap();
         assert_eq!((oldest.modifiers, oldest.key), (3, 65));
         assert!(Settings::decode(&encoded.replacen("shotoshot-", "other-", 1)).is_err());
-        assert!(Settings::decode(&encoded.replacen("-15\n", "-16\n", 1)).is_err());
+        assert!(Settings::decode(&encoded.replacen("-16\n", "-17\n", 1)).is_err());
     }
     #[test]
     fn board_fields_roundtrip_and_older_files_get_defaults() {
@@ -699,8 +730,8 @@ mod tests {
             .lines()
             .map(str::to_owned)
             .collect();
-        assert_eq!(fields.len(), 28);
-        assert_eq!(&fields[25..27], &["1,66", "0"]);
+        assert_eq!(fields.len(), 29);
+        assert_eq!(&fields[25..], &["1,66", "0", "14", "auto"]);
         let mut old = fields[..25].to_vec();
         old[0] = "shotoshot-settings-13".into();
         let migrated = Settings::decode(&old.join("\n")).unwrap();
@@ -736,6 +767,80 @@ mod tests {
                 "accepted {invalid:?}"
             );
         }
+    }
+    #[test]
+    fn language_roundtrips_in_version_16() {
+        let settings = Settings {
+            language: LanguageChoice::Fixed(Language::Ja),
+            ..Default::default()
+        };
+        let encoded = settings.encode();
+        assert!(encoded.starts_with("shotoshot-settings-16\n"));
+        assert_eq!(encoded.lines().nth(28), Some("ja"));
+        assert_eq!(
+            Settings::decode(&encoded).unwrap().language,
+            settings.language
+        );
+        for language in Language::ALL {
+            let settings = Settings {
+                language: LanguageChoice::Fixed(language),
+                ..Default::default()
+            };
+            assert_eq!(Settings::decode(&settings.encode()).unwrap(), settings);
+        }
+        assert_eq!(Settings::default().language, LanguageChoice::Auto);
+        assert_eq!(Settings::default().encode().lines().nth(28), Some("auto"));
+    }
+    #[test]
+    fn version_14_and_15_files_get_auto_language() {
+        let fields: Vec<String> = Settings {
+            language: LanguageChoice::Fixed(Language::De),
+            capture_eraser_size: 32,
+            ..Default::default()
+        }
+        .encode()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+        assert_eq!(fields.len(), 29);
+        // Format 14 ends before the eraser size, 15 before the language.
+        for (version, len, eraser) in [("14", 27, crate::ERASER_SIZE as u32), ("15", 28, 32)] {
+            let mut old = fields[..len].to_vec();
+            old[0] = format!("shotoshot-settings-{version}");
+            let migrated = Settings::decode(&old.join("\n")).unwrap();
+            assert_eq!(migrated.language, LanguageChoice::Auto, "{version}");
+            assert_eq!(migrated.capture_eraser_size, eraser, "{version}");
+            // The legacy header still works, and a file with one line too many is damaged.
+            old[0] = format!("shotshot-settings-{version}");
+            assert!(Settings::decode(&old.join("\n")).is_ok(), "{version}");
+            let mut too_long = fields[..=len].to_vec();
+            too_long[0] = format!("shotoshot-settings-{version}");
+            assert!(Settings::decode(&too_long.join("\n")).is_err(), "{version}");
+            // The migrated file is written as version 16.
+            assert!(migrated.encode().starts_with("shotoshot-settings-16\n"));
+        }
+    }
+    #[test]
+    fn unknown_language_tag_is_auto_and_keeps_other_fields() {
+        let settings = Settings {
+            capture_stroke_width: 9,
+            ..Default::default()
+        };
+        for tag in ["ar", "", "xx-YY", "FR-fr "] {
+            let mut fields: Vec<String> = settings.encode().lines().map(str::to_owned).collect();
+            fields[28] = tag.into();
+            let read = Settings::decode(&(fields.join("\n") + "\n")).unwrap();
+            assert_eq!(read.capture_stroke_width, 9, "{tag:?}");
+            assert_eq!(read.board_shortcut, settings.board_shortcut, "{tag:?}");
+            assert_eq!(read.language, LanguageChoice::Auto, "{tag:?}");
+        }
+        // A known tag with different case or spaces is still understood.
+        let mut fields: Vec<String> = settings.encode().lines().map(str::to_owned).collect();
+        fields[28] = "FR ".into();
+        assert_eq!(
+            Settings::decode(&fields.join("\n")).unwrap().language,
+            LanguageChoice::Fixed(Language::Fr)
+        );
     }
     #[test]
     fn board_visibility_is_saved_alone() {
@@ -888,7 +993,7 @@ mod tests {
         old[0] = "shotoshot-settings-9".into();
         let migrated = Settings::decode(&old.join("\n")).unwrap().encode();
         let fields: Vec<_> = migrated.lines().collect();
-        assert_eq!(fields[0], "shotoshot-settings-15");
+        assert_eq!(fields[0], "shotoshot-settings-16");
         assert_eq!(&fields[20..22], &["0,145", "1"]);
         let mut custom: Vec<_> = fields.iter().map(|v| v.to_string()).collect();
         custom[20] = "6,122".into();
@@ -905,6 +1010,44 @@ mod tests {
         assert!(Settings::decode(&custom.join("\n")).is_err());
     }
     use super::*;
+    #[test]
+    fn shortcut_refusals_are_listed_keys() {
+        let shortcut = |modifiers, key| Shortcut { modifiers, key };
+        let shapes = |shortcuts| PresentationSettings {
+            shape_shortcuts: shortcuts,
+            ..PresentationSettings::default()
+        };
+        let [a, r, c] = DEFAULT_SHAPE_SHORTCUTS;
+        let cases = [
+            (shapes([shortcut(16, 0x41), r, c]), Key::SetupInvalidShape),
+            (
+                shapes([shortcut(4, 0x41), r, c]),
+                Key::SetupShapeNeedsModifier,
+            ),
+            (shapes([shortcut(3, 27), r, c]), Key::SetupReserved),
+            (shapes([a, a, c]), Key::SetupDuplicateShape),
+        ];
+        for (settings, expected) in cases {
+            assert_eq!(settings.validate_shape_shortcuts(), Err(expected));
+            assert!(SHAPE_SHORTCUT_REFUSALS.contains(&expected));
+        }
+        assert_eq!(
+            PresentationSettings::default().validate_shape_shortcuts(),
+            Ok(())
+        );
+        for (board, expected) in [
+            (shortcut(1, 0), Key::SetupInvalidBoard),
+            (shortcut(0, 0x42), Key::SetupBoardNeedsModifier),
+            (shortcut(3, 27), Key::SetupReserved),
+        ] {
+            assert_eq!(Settings::validate_board_shortcut(&board), Err(expected));
+            assert!(BOARD_SHORTCUT_REFUSALS.contains(&expected));
+        }
+        assert_eq!(
+            Settings::validate_board_shortcut(&Settings::default().board_shortcut),
+            Ok(())
+        );
+    }
     #[test]
     fn startup_and_last_width_survive_reload_without_losing_diagram_position() {
         let path =
@@ -931,7 +1074,7 @@ mod tests {
             .take(18)
             .collect::<Vec<_>>()
             .join("\n")
-            .replacen("settings-15", "settings-8", 1);
+            .replacen("settings-16", "settings-8", 1);
         assert!(Settings::decode(&old).unwrap().start_with_windows);
     }
     #[test]
@@ -976,7 +1119,7 @@ mod tests {
         // Older formats have no size: the default.
         let older = Settings::default()
             .encode()
-            .replacen("settings-15", "settings-14", 1);
+            .replacen("settings-16", "settings-14", 1);
         let older = older.lines().take(27).collect::<Vec<_>>().join("\n") + "\n";
         assert_eq!(
             Settings::decode(&older).unwrap().capture_eraser_size,
@@ -1184,12 +1327,14 @@ mod tests {
             fields[10] = arrow.into();
             fields[11] = rectangle.into();
             // Formats 10 and 11 end before the input layout and size, 12 before the save
-            // format, 13 before the board shortcut and visibility, 14 before the eraser size.
+            // format, 13 before the board shortcut and visibility, 14 before the eraser size,
+            // 15 before the language.
             match version {
                 "10" | "11" => fields.truncate(22),
                 "12" => fields.truncate(24),
                 "13" => fields.truncate(25),
                 "14" => fields.truncate(27),
+                "15" => fields.truncate(28),
                 _ => {}
             }
             let settings = Settings::decode(&(fields.join("\n") + "\n")).unwrap();
@@ -1219,6 +1364,8 @@ mod tests {
         assert_eq!(stored("12", "1,70", "1,82"), alt(0x46));
         assert_eq!(stored("13", "1,70", "1,82"), alt(0x46));
         assert_eq!(stored("14", "1,70", "1,82"), alt(0x46));
+        assert_eq!(stored("15", "1,70", "1,82"), alt(0x46));
+        assert_eq!(stored("16", "1,70", "1,82"), alt(0x46));
     }
     #[test]
     fn custom_shortcuts_roundtrip_and_invalid_shortcuts_are_rejected() {
@@ -1294,7 +1441,7 @@ mod tests {
             assert_eq!(
                 settings.encode(),
                 format!(
-                    "shotoshot-settings-15\n3\n65\n1\n43,3a,2f,e9\n{live_capture}\n3000\nffd340\ned4f5c\n4\n1,65\n1,82\n1,67\n5\n28\n-\n0\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\n"
+                    "shotoshot-settings-16\n3\n65\n1\n43,3a,2f,e9\n{live_capture}\n3000\nffd340\ned4f5c\n4\n1,65\n1,82\n1,67\n5\n28\n-\n0\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n"
                 )
             );
         }
@@ -1309,7 +1456,7 @@ mod tests {
             assert_eq!(
                 settings.encode(),
                 format!(
-                    "shotoshot-settings-15\n3\n65\n0\n43,3a,2f,e9\n1\n{duration}\n00aaff\nff0001\n4\n1,65\n1,82\n1,67\n5\n28\n-\n0\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\n"
+                    "shotoshot-settings-16\n3\n65\n0\n43,3a,2f,e9\n1\n{duration}\n00aaff\nff0001\n4\n1,65\n1,82\n1,67\n5\n28\n-\n0\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n"
                 )
             );
         }
@@ -1382,6 +1529,7 @@ mod tests {
                 key: 78,
             },
             board_visible: true,
+            language: LanguageChoice::Fixed(Language::Ja),
         };
         assert_eq!(Settings::decode(&s.encode()).unwrap(), s);
     }

@@ -1,11 +1,27 @@
 //! ROLE: Eyedropper loupe: exact source pixels around the pointer and the picked colour.
 use crate::{Canvas, Capture, Ink};
 use shotoshot_core::{Point, Rect};
+use shotoshot_text::{Key, Language, Text, language, tr_in};
 
 pub const CELLS: i32 = 11;
 const ZOOM: f64 = 10.;
 const WIDTH: f64 = 126.;
 const HEIGHT: f64 = 164.;
+/// Where the hint line starts in the loupe, in logical pixels.
+const HINT_AT: Point = Point { x: 8., y: 147. };
+/// Font size of the hint line, in logical pixels.
+pub const HINT_SIZE: f64 = 10.;
+/// Room for the hint line: the loupe keeps its size, so every language must fit it.
+pub const HINT_ROOM: Point = Point {
+    x: WIDTH - 2. * HINT_AT.x,
+    y: HEIGHT - HINT_AT.y,
+};
+
+/// The loupe's hint line in `language`.
+pub fn hint_in(language: Language) -> String {
+    let esc = [("shortcut", tr_in(language, Key::KeyEsc))];
+    Text::with_in(language, Key::MagnifierPick, &esc).to_string()
+}
 
 impl Capture {
     /// Beside the pointer, flipped near edges and kept inside the frame.
@@ -92,12 +108,12 @@ impl Capture {
             Ink::solid([250, 250, 250]),
         )?;
         canvas.text(
-            "Click to pick · Esc",
+            &hint_in(language()),
             Rect {
-                min: at(8., 147.),
+                min: at(HINT_AT.x, HINT_AT.y),
                 max: bounds.max,
             },
-            10. * s,
+            HINT_SIZE * s,
             Ink::solid([190, 190, 190]),
         )
     }

@@ -4,6 +4,7 @@
 //! only the capture and its annotations are in raw pixels (`scale_tests`).
 use crate::{Canvas, Capture, Ink, region_handles, toolbar};
 use shotoshot_core::{FillChange, Object, Paint, Point, Rect, Shape, Tool, arrow_points, paths};
+use shotoshot_text::{Key, Language, Text, language, tr, tr_in};
 
 const ACCENT: Ink = Ink::solid([100, 170, 255]);
 const SHADE: Ink = Ink::with_alpha([0, 0, 0], 0.48);
@@ -210,15 +211,15 @@ impl Capture {
         &self,
         canvas: &mut C,
         current_color: [u8; 3],
+        now: std::time::Instant,
     ) -> Result<(), C::Error> {
         let buttons = self.buttons();
         toolbar::draw(
             canvas,
             &buttons,
-            self.editor.tool,
-            (current_color, self.tool_tint(current_color)),
-            self.pointer,
-            self.eyedropper,
+            self.toolbar_state(current_color),
+            self.tool_tint(current_color),
+            (&self.toolbar_motion, now),
             self.ui_scale(),
         )
     }
@@ -253,7 +254,7 @@ impl Capture {
     /// Outline of the current stroke width at the pointer, or of the eraser's disc as the
     /// view shows it; with a size change, its size.
     pub fn draw_width_ring<C: Canvas>(&self, canvas: &mut C) -> Result<(), C::Error> {
-        let (width, label) = match self.editor.tool {
+        let (width, shown) = match self.editor.tool {
             Tool::Eraser => (
                 self.editor.eraser_size * self.zoom_at_pointer(),
                 self.editor.eraser_size,
@@ -272,10 +273,8 @@ impl Capture {
         if !self.width_preview {
             return Ok(());
         }
-        let size = Point {
-            x: 72. * s,
-            y: 24. * s,
-        };
+        let label = width_label_in(language(), shown);
+        let size = width_label_size(canvas.measure_text(&label, 12. * s)?, s);
         let min = Point {
             x: (center.x + width / 2. + 10. * s)
                 .min(self.image.width as f64 - size.x)
@@ -290,7 +289,7 @@ impl Capture {
         };
         canvas.fill_round_rect(bounds, 4. * s, Ink::solid([25, 25, 25]))?;
         canvas.text(
-            &format!("{label:.0} px"),
+            &label,
             Rect {
                 min: min
                     + Point {
@@ -316,8 +315,13 @@ impl Capture {
             return Ok(());
         }
         let s = self.ui_scale();
-        let title = "Select an area";
-        let extent = canvas.measure_text(title, 13. * s)?;
+        let [title, note] = selection_hint_lines_in(language());
+        let (title_size, note_size) = (SELECTION_HINT_TITLE_SIZE * s, SELECTION_HINT_NOTE_SIZE * s);
+        let size = selection_hint_size(
+            canvas.measure_text(&title, title_size)?,
+            canvas.measure_text(&note, note_size)?,
+            s,
+        );
         let screen = self.screen();
         let screen = Rect {
             min: Point {
@@ -329,33 +333,25 @@ impl Capture {
                 y: monitor.max.y.min(screen.max.y),
             },
         };
-        let bounds = place_hint(
-            self.pointer,
-            screen,
-            Point {
-                x: extent.x + 20. * s,
-                y: 48. * s,
-            },
-            s,
-        );
+        let bounds = place_hint(self.pointer, screen, size, s);
         let at = |x: f64, y: f64| bounds.min + Point { x: x * s, y: y * s };
         canvas.fill_round_rect(bounds, 5. * s, Ink::with_alpha([25, 25, 28], 0.94))?;
         canvas.text(
-            title,
+            &title,
             Rect {
                 min: at(10., 6.),
                 max: bounds.max,
             },
-            13. * s,
+            title_size,
             Ink::solid([245, 245, 245]),
         )?;
         canvas.text(
-            "Esc to cancel",
+            &note,
             Rect {
                 min: at(10., 26.),
                 max: bounds.max,
             },
-            11. * s,
+            note_size,
             Ink::solid([180, 183, 188]),
         )
     }
@@ -365,7 +361,7 @@ impl Capture {
         &self,
         canvas: &mut C,
         editing: bool,
-        error: Option<&str>,
+        error: Option<Key>,
     ) -> Result<(), C::Error> {
         let (Some(bounds), Some(region)) = (self.dimensions_bounds(), self.region) else {
             return Ok(());
@@ -399,18 +395,13 @@ impl Capture {
         if let Some(button) = self.screen_button_bounds() {
             self.draw_screen_button(canvas, button, button.contains(self.pointer))?;
         }
-        let Some(message) = error else {
+        let Some(key) = error else {
             return Ok(());
         };
-        let area = toolbar::tooltip_bounds(
-            bounds,
-            self.screen_at(self.pointer),
-            Point {
-                x: 460. * s,
-                y: 48. * s,
-            },
-            s,
-        );
+        let message = tr(key);
+        let text_size = ENTRY_ERROR_SIZE * s;
+        let size = entry_error_size(canvas.measure_text(message, text_size)?, s);
+        let area = toolbar::tooltip_bounds(bounds, self.screen_at(self.pointer), size, s);
         canvas.fill_rect(area, background)?;
         let text_area = Rect {
             min: area.min
@@ -420,7 +411,7 @@ impl Capture {
                 },
             max: area.max,
         };
-        canvas.text(message, text_area, 12. * s, Ink::solid([255, 160, 150]))
+        canvas.text(message, text_area, text_size, Ink::solid([255, 160, 150]))
     }
     /// Four diagonal arrows: outward to fill the screen, inward once it is filled.
     fn draw_screen_button<C: Canvas>(
@@ -463,6 +454,50 @@ impl Capture {
             canvas.line(tip, tip - Point { x: 0., y: y * head }, ink, 1.6 * s)?;
         }
         Ok(())
+    }
+}
+/// Font sizes of the selection hint's title and note, in logical pixels.
+pub const SELECTION_HINT_TITLE_SIZE: f64 = 13.;
+pub const SELECTION_HINT_NOTE_SIZE: f64 = 11.;
+
+/// The selection hint's title and note in `language`.
+pub fn selection_hint_lines_in(language: Language) -> [String; 2] {
+    let esc = [("shortcut", tr_in(language, Key::KeyEsc))];
+    [
+        Text::new_in(language, Key::OverlaySelectArea).to_string(),
+        Text::with_in(language, Key::OverlayCancel, &esc).to_string(),
+    ]
+}
+/// Size of the selection hint whose lines measure `title` and `note`: 10 px each side of
+/// the wider line, 48 px high unless the note, 26 px down, needs more (6 px below it).
+pub fn selection_hint_size(title: Point, note: Point, scale: f64) -> Point {
+    Point {
+        x: title.x.max(note.x) + 20. * scale,
+        y: (48. * scale).max(note.y + 32. * scale),
+    }
+}
+/// Font size of a size-entry error, in logical pixels.
+pub const ENTRY_ERROR_SIZE: f64 = 12.;
+
+/// Size of the box under the size badge for an error that measures `message`: 460×48,
+/// grown for a longer message with 6 px each side and 4 px above and below.
+pub fn entry_error_size(message: Point, scale: f64) -> Point {
+    Point {
+        x: (460. * scale).max(message.x + 12. * scale),
+        y: (48. * scale).max(message.y + 8. * scale),
+    }
+}
+/// The stroke width as the ring's badge shows it.
+fn width_label_in(language: Language, width: f64) -> String {
+    let width = format!("{width:.0}");
+    Text::with_in(language, Key::OverlayStrokeWidth, &[("width", &width)]).to_string()
+}
+/// Size of the stroke-width badge for a label measuring `label`: 72×24, grown with 7 px
+/// each side.
+fn width_label_size(label: Point, scale: f64) -> Point {
+    Point {
+        x: (72. * scale).max(label.x + 14. * scale),
+        y: 24. * scale,
     }
 }
 /// `o` drawable alone: an attached arrow keeps the ends it shows among `objects`.
@@ -573,5 +608,54 @@ pub fn place_hint(pointer: Point, screen: Rect, size: Point, scale: f64) -> Rect
     Rect {
         min,
         max: min + size,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::magnifier_hint_in;
+
+    #[test]
+    fn english_hint_texts_are_unchanged() {
+        assert_eq!(
+            selection_hint_lines_in(Language::En),
+            ["Select an area", "Esc to cancel"]
+        );
+        assert_eq!(magnifier_hint_in(Language::En), "Click to pick · Esc");
+        assert_eq!(width_label_in(Language::En, 12.), "12 px");
+        let [_, note] = selection_hint_lines_in(Language::Fr);
+        assert!(note.contains("Échap"), "{note}");
+    }
+
+    #[test]
+    fn hint_zones_keep_their_size_unless_a_line_needs_more() {
+        let title = Point { x: 90., y: 17. };
+        let short = Point { x: 70., y: 15. };
+        assert_eq!(
+            selection_hint_size(title, short, 1.),
+            Point { x: 110., y: 48. }
+        );
+        let long = Point { x: 130., y: 15. };
+        assert_eq!(selection_hint_size(title, long, 1.).x, 150.);
+        let tall = Point { x: 70., y: 20. };
+        assert_eq!(selection_hint_size(title, tall, 1.).y, 52.);
+        assert_eq!(
+            selection_hint_size(title * 2., short * 2., 2.),
+            Point { x: 220., y: 96. }
+        );
+
+        let line = Point { x: 400., y: 16. };
+        assert_eq!(entry_error_size(line, 1.), Point { x: 460., y: 48. });
+        let wide = Point { x: 500., y: 16. };
+        assert_eq!(entry_error_size(wide, 1.), Point { x: 512., y: 48. });
+        let tall = Point { x: 400., y: 44. };
+        assert_eq!(entry_error_size(tall, 1.).y, 52.);
+
+        assert_eq!(
+            width_label_size(Point { x: 40., y: 16. }, 1.),
+            Point { x: 72., y: 24. }
+        );
+        assert_eq!(width_label_size(Point { x: 70., y: 16. }, 1.).x, 84.);
     }
 }

@@ -1,0 +1,223 @@
+# Тексты интерфейса Shotoshot, русский. Формат описан в en.txt.
+
+language.menu = Язык
+
+tooltip.with_shortcut = {label} · {shortcut}
+
+key.ctrl == Ctrl
+key.shift == Shift
+key.alt == Alt
+key.win == Win
+key.esc == Esc
+key.delete == Delete
+key.backspace == Backspace
+key.tab == Tab
+key.enter == Enter
+key.caps_lock == Caps Lock
+key.space = Пробел
+key.page_up == Page Up
+key.page_down == Page Down
+key.end == End
+key.home == Home
+key.left = Влево
+key.up = Вверх
+key.right = Вправо
+key.down = Вниз
+key.insert == Insert
+key.numpad = Num {key}
+key.num_lock == Num Lock
+key.scroll_lock == Scroll Lock
+key.pause == Pause
+key.break == Break
+key.print_screen == Print Screen
+key.code = Клавиша {code}
+
+toolbar.select = Выделение · {shortcut} · Page Up/Down: вперёд или назад
+toolbar.rectangle = Прямоугольник
+toolbar.ellipse = Эллипс
+toolbar.line = Линия
+toolbar.arrow = Стрелка
+toolbar.pen = Перо
+toolbar.highlighter = Маркер
+toolbar.text = Текст
+toolbar.eraser = Ластик
+toolbar.live_capture = Съёмка в реальном времени · {shortcut} · обновляется при копировании или сохранении
+toolbar.red = Красный
+toolbar.yellow = Жёлтый
+toolbar.green = Зелёный
+toolbar.blue = Синий
+toolbar.white = Белый
+toolbar.black = Чёрный
+toolbar.custom_color = Свой цвет
+toolbar.eyedropper = Пипетка
+toolbar.fill = Закрасить штрих, фигуру или фон · {shortcut} · Правый щелчок или Alt+щелчок убирает цвет
+toolbar.undo = Отменить
+toolbar.redo = Повторить
+toolbar.google_lens = Поиск через Google Объектив
+toolbar.copy_image = Копировать изображение
+toolbar.save = Сохранить
+toolbar.close = Закрыть
+toolbar.clear_board = Очистить Board · {shortcut} вернёт
+
+capture.nothing_to_undo = Нечего отменять
+capture.nothing_to_redo = Нечего повторять
+capture.google_search_in_progress = Идёт поиск в Google
+capture.live_on = Съёмка в реальном времени включена · {shortcut} заморозит
+capture.live_frozen = Снимок заморожен · съёмка в реальном времени: {shortcut}
+capture.live_for_new_captures = Съёмка в реальном времени доступна только для новых снимков
+capture.full_screen = Весь экран
+capture.restore_selection = Вернуть прежнее выделение
+capture.edit_dimensions = Изменить размеры · выражения: 800+20, 1920/2
+
+overlay.select_area = Выделите область
+overlay.cancel = {shortcut}: отмена
+overlay.stroke_width == {width} px
+magnifier.pick = Клик: взять · {shortcut}
+picker.apply = Клик мимо применит · {shortcut} отменит
+
+crop.invalid = Введите целое число пикселей (не меньше 2) или выражение, например 800+20.
+crop.outside = Снимок должен оставаться в пределах рабочего стола. Уменьшите ширину или высоту.
+
+menu.take_screenshot = Сделать снимок экрана
+menu.edit_board = Изменить Board
+menu.show_board = Показывать Board
+menu.clear_board = Очистить Board
+menu.presentation = Презентация
+menu.pointer_halo = Подсветка указателя
+menu.keyboard = Клавиатура
+menu.mouse = Мышь
+menu.keyboard_layout = Вид клавиатуры
+menu.input_size = Размер клавиатуры и мыши
+menu.temporary_shapes = Временные фигуры
+menu.shape_duration = Время показа фигур
+menu.shortcuts = Сочетания клавиш · щёлкните, чтобы изменить
+menu.capture = Снимок
+menu.instant_screenshot = Мгновенный снимок экрана
+menu.board == Board
+menu.options = Параметры
+menu.screenshot_sound = Звук снимка
+menu.live_capture_default = Съёмка в реальном времени по умолчанию
+menu.start_with_windows = Запускать вместе с Windows
+menu.quit = Выйти из Shotoshot
+menu.duration_1 = 1 секунда
+menu.duration_3 = 3 секунды
+menu.duration_5 = 5 секунд
+menu.layout_full = Полная
+menu.layout_compact = Компактная
+menu.layout_gaming = Игровая
+menu.seconds = {n} с
+menu.percent = {n} %
+menu.shortcut_in_use = {shortcut} (занято)
+menu.language_auto = Язык Windows
+menu.language_system = Язык системы
+
+setup.title_capture = Сочетание клавиш для снимка
+setup.title_instant = Сочетание клавиш для мгновенного снимка
+setup.title_arrow = Сочетание клавиш для стрелки
+setup.title_rectangle = Сочетание клавиш для прямоугольника
+setup.title_ellipse = Сочетание клавиш для эллипса
+setup.title_board = Сочетание клавиш для Board
+setup.press = Нажмите сочетание клавиш…
+setup.waiting = …
+setup.choose = Выберите сочетание клавиш
+setup.cancel = Отмена
+setup.save = Сохранить
+setup.any_key_hint = Подойдёт любая клавиша, отдельно или с Ctrl, Shift, Alt или Windows.
+setup.board_hint = Клавиша с Ctrl или Alt. Можно добавить Shift или Windows.
+setup.shape_hint = Буква с Ctrl или Alt. Можно добавить Shift.
+setup.print_screen_hint = Print Screen будет открывать Shotoshot вместо приложения «Ножницы» Windows. Щёлкните клавишу, чтобы выбрать другую.
+setup.change_hint = Щёлкните клавиши, чтобы изменить их.
+setup.used_for_instant = Это сочетание уже используется для мгновенного снимка.
+setup.used_for_capture = Это сочетание уже используется для снимка.
+setup.used_by_presentation = Это сочетание уже используется в режиме презентации. Выберите другое.
+setup.used_by_board = Это сочетание уже использует Board.
+setup.used_by_shotoshot = Это сочетание уже использует Shotoshot.
+setup.register_failed = Не удалось зарегистрировать сочетание клавиш ({code}). Возможно, оно зарезервировано или уже занято.
+setup.unavailable = Сочетание недоступно ({code}). Выберите другую клавишу.
+setup.invalid = Сочетание недоступно или недопустимо: {detail}
+setup.print_screen_held = Print Screen всё ещё занята другим приложением или Windows (до выхода из системы и повторного входа). Закройте это приложение или выберите другую клавишу.
+
+tray.tooltip = Shotoshot: снимки экрана и пометки
+
+setup.invalid_shape = Недопустимое сочетание для фигуры
+setup.invalid_board = Недопустимое сочетание для Board
+setup.shape_needs_modifier = Выберите сочетание с Ctrl или Alt, чтобы фигуры не срабатывали при наборе текста.
+setup.board_needs_modifier = Выберите сочетание с Ctrl или Alt, чтобы Board не открывался при наборе текста.
+setup.reserved = Ctrl+Alt+Esc зарезервировано
+setup.duplicate_shape = Это сочетание уже назначено другой фигуре
+
+notice.copied = Снимок скопирован в буфер обмена.
+notice.saved = Изображение сохранено.
+notice.searching = Поиск в Google…
+notice.preferences = Настройки сохранены.
+notice.saved_editable = Редактируемое изображение сохранено вместе с экраном.
+notice.instant_unavailable = Сочетание для мгновенного снимка недоступно. Измените его в меню Shotoshot.
+notice.board_unavailable = Сочетание для Board недоступно. Измените его в меню Shotoshot.
+notice.shortcuts_unavailable = Сочетание недоступно: {names}
+notice.names_separator == {before}, {after}
+notice.screenshot_failed = Снимок не удался: файл не сохранён
+notice.screenshot_error = Не удалось сделать снимок: {detail}
+
+presentation.stop = Выключить всё
+
+error.unexpected = Что-то пошло не так.\n{detail}
+error.stopped = Непредвиденный внутренний сбой. Shotoshot остановлен.
+error.already_running = Shotoshot уже запущен. Используйте его значок в области уведомлений.
+error.editor_start = Не удалось запустить редактор. Попробуйте сделать снимок ещё раз.
+error.screenshot_refused = Рабочий стол отклонил снимок экрана.
+error.capture_shortcut_in_use = Сочетание для снимка уже занято. Выберите другое.
+error.shortcut_in_use = Сочетание {shortcut} уже занято. Новые функции не включены.
+error.presentation_busy = Завершите текущий снимок, прежде чем менять настройки презентации.
+error.presentation_stopped = Презентация остановлена из-за ошибки. Её можно снова включить в меню Shotoshot.
+error.display_changed = Конфигурация экранов изменилась. Сделайте новый снимок.
+error.display_changed_board = Конфигурация экранов изменилась. Board сохранён.
+error.no_region = Сначала выделите область снимка
+error.settings_unreadable = Настройки не поддерживаются или повреждены. Исходный файл сохранён.\n{detail}
+error.settings_unsaved = Не удалось сохранить настройки: {detail}
+error.settings_busy = Настройки заняты. Повторите попытку.
+error.save_dialog = Не удалось открыть окно сохранения ({code})
+error.not_editable_capture = Этот снимок нельзя сохранить как редактируемое изображение.
+error.text_layout = Не удалось разметить текст
+error.lens_browser = Не удалось открыть браузер. Снимок по-прежнему открыт.
+error.lens_failed = Поиск в Google не удался. Снимок по-прежнему открыт.\n{detail}
+error.lens_interrupted = Поиск в Google прерван. Снимок по-прежнему открыт.
+error.lens_too_large = Изображение превышает лимит Google Объектива в 20 МБ.
+error.document_unread = Не удалось открыть {path}: {detail}
+error.document_too_large = Это изображение ({width} × {height}) больше экрана. Как PNG оно по-прежнему открывается.
+error.board_unsaved = Не удалось сохранить Board: {detail}
+error.wallpaper_unchanged = Заметки сохранены, но фон рабочего стола не обновлён: {detail}
+error.board_unopened = Не удалось открыть Board.
+error.board_in_use = Board открыт для редактирования: сначала закройте его, затем очистите.
+error.board_base_damaged = Файл основы Board повреждён. Он оставлен без изменений.
+
+board.newer = Этот Board записан более новой версией Shotoshot.
+board.damaged = Файл Board повреждён. Он оставлен без изменений.
+
+document.not_editable = В этом файле нет редактируемых данных Shotoshot.
+document.newer = Это изображение сохранено более новой версией Shotoshot. Обновите Shotoshot, чтобы его изменить. Как PNG оно по-прежнему открывается.
+document.damaged = Это редактируемое изображение повреждено, его нельзя открыть для изменения.
+
+save.png = Изображение PNG
+save.jpeg = Изображение JPEG
+save.shoto = Редактируемое изображение Shotoshot, хранит весь экран
+
+lens.sending = Снимок отправляется в Google Объектив…
+lens.needs_script = Для отправки снимка нужен JavaScript.
+
+keycap.esc == Esc
+keycap.ctrl == Ctrl
+keycap.alt == Alt
+keycap.alt_gr == Gr
+keycap.caps == Caps
+keycap.num == Num
+keycap.scroll == Scr
+keycap.print == Prt
+keycap.end == End
+keycap.insert == Ins
+keycap.delete == Del
+
+# Installer
+installer.language.title = Язык Shotoshot
+installer.language.description = Его можно изменить позже через значок Shotoshot в области уведомлений.
+installer.language.auto = Язык Windows
+installer.shoto_file = Редактируемое изображение Shotoshot

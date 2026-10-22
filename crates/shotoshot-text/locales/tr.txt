@@ -1,0 +1,223 @@
+# Shotoshot arayüz metinleri, Türkçe. Biçim en.txt dosyasında anlatılmıştır.
+
+language.menu = Dil
+
+tooltip.with_shortcut = {label} · {shortcut}
+
+key.ctrl == Ctrl
+key.shift == Shift
+key.alt == Alt
+key.win == Win
+key.esc == Esc
+key.delete == Delete
+key.backspace == Backspace
+key.tab == Tab
+key.enter == Enter
+key.caps_lock == Caps Lock
+key.space = Boşluk
+key.page_up == Page Up
+key.page_down == Page Down
+key.end == End
+key.home == Home
+key.left = Sol
+key.up = Yukarı
+key.right = Sağ
+key.down = Aşağı
+key.insert == Insert
+key.numpad = Num {key}
+key.num_lock == Num Lock
+key.scroll_lock == Scroll Lock
+key.pause == Pause
+key.break == Break
+key.print_screen == Print Screen
+key.code = Tuş {code}
+
+toolbar.select = Seçim · {shortcut} · Page Up/Down: öne veya arkaya
+toolbar.rectangle = Dikdörtgen
+toolbar.ellipse = Elips
+toolbar.line = Çizgi
+toolbar.arrow = Ok
+toolbar.pen = Kalem
+toolbar.highlighter = Vurgulayıcı
+toolbar.text = Metin
+toolbar.eraser = Silgi
+toolbar.live_capture = Canlı yakalama · {shortcut} · kopyalarken veya kaydederken yenilenir
+toolbar.red = Kırmızı
+toolbar.yellow = Sarı
+toolbar.green = Yeşil
+toolbar.blue = Mavi
+toolbar.white = Beyaz
+toolbar.black = Siyah
+toolbar.custom_color = Özel renk
+toolbar.eyedropper = Damlalık
+toolbar.fill = Çizgiyi, şekli veya arka planı boya · {shortcut} · Sağ tıklama veya Alt+tıklama rengi kaldırır
+toolbar.undo = Geri al
+toolbar.redo = Yinele
+toolbar.google_lens = Google Lens ile ara
+toolbar.copy_image = Görüntüyü kopyala
+toolbar.save = Kaydet
+toolbar.close = Kapat
+toolbar.clear_board = Board’u temizle · {shortcut} geri getirir
+
+capture.nothing_to_undo = Geri alınacak bir şey yok
+capture.nothing_to_redo = Yinelenecek bir şey yok
+capture.google_search_in_progress = Google araması sürüyor
+capture.live_on = Canlı yakalama açık · dondurmak için {shortcut}
+capture.live_frozen = Yakalama donduruldu · canlı yakalama için {shortcut}
+capture.live_for_new_captures = Canlı yakalama yalnızca yeni yakalamalar içindir
+capture.full_screen = Tam ekran
+capture.restore_selection = Önceki seçime dön
+capture.edit_dimensions = Boyutları düzenle · ifadeler: 800+20, 1920/2
+
+overlay.select_area = Bir alan seçin
+overlay.cancel = İptal için {shortcut}
+overlay.stroke_width == {width} px
+magnifier.pick = Tıklayıp alın · {shortcut}
+picker.apply = Dışarı tıklayın: uygula · İptal: {shortcut}
+
+crop.invalid = En az 2 olan tam sayı bir piksel değeri veya 800+20 gibi bir ifade girin.
+crop.outside = Yakalama masaüstünün içinde kalmalıdır. Genişliği veya yüksekliği azaltın.
+
+menu.take_screenshot = Ekran görüntüsü al
+menu.edit_board = Board’u düzenle
+menu.show_board = Board’u göster
+menu.clear_board = Board’u temizle
+menu.presentation = Sunum
+menu.pointer_halo = İşaretçi halesi
+menu.keyboard = Klavye
+menu.mouse = Fare
+menu.keyboard_layout = Klavye biçimi
+menu.input_size = Klavye ve fare boyutu
+menu.temporary_shapes = Geçici şekiller
+menu.shape_duration = Şekil süresi
+menu.shortcuts = Kısayollar · değiştirmek için tıklayın
+menu.capture = Yakalama
+menu.instant_screenshot = Anında ekran görüntüsü
+menu.board == Board
+menu.options = Seçenekler
+menu.screenshot_sound = Ekran görüntüsü sesi
+menu.live_capture_default = Varsayılan olarak canlı yakalama
+menu.start_with_windows = Windows ile başlat
+menu.quit = Shotoshot’tan çık
+menu.duration_1 = 1 saniye
+menu.duration_3 = 3 saniye
+menu.duration_5 = 5 saniye
+menu.layout_full = Tam
+menu.layout_compact = Kompakt
+menu.layout_gaming = Oyun
+menu.seconds = {n} sn
+menu.percent = %{n}
+menu.shortcut_in_use = {shortcut} (kullanımda)
+menu.language_auto = Windows dili
+menu.language_system = Sistem dili
+
+setup.title_capture = Yakalama kısayolu
+setup.title_instant = Anında ekran görüntüsü kısayolu
+setup.title_arrow = Ok kısayolu
+setup.title_rectangle = Dikdörtgen kısayolu
+setup.title_ellipse = Elips kısayolu
+setup.title_board = Board kısayolu
+setup.press = Kısayolunuza basın…
+setup.waiting = …
+setup.choose = Bir kısayol seçin
+setup.cancel = İptal
+setup.save = Kaydet
+setup.any_key_hint = Herhangi bir tuş olur; tek başına ya da Ctrl, Shift, Alt veya Windows ile.
+setup.board_hint = Ctrl veya Alt ile bir tuş. Shift veya Windows da eklenebilir.
+setup.shape_hint = Ctrl veya Alt ile bir harf. Shift de eklenebilir.
+setup.print_screen_hint = Print Screen, Windows Ekran Alıntısı Aracı yerine Shotoshot’ı açacak. Başka bir tuş seçmek için tuşa tıklayın.
+setup.change_hint = Değiştirmek için tuşlara tıklayın.
+setup.used_for_instant = Bu kısayol zaten anında ekran görüntüsü için kullanılıyor.
+setup.used_for_capture = Bu tuş birleşimi zaten yakalama için kullanılıyor.
+setup.used_by_presentation = Bu kısayol zaten sunum modunda kullanılıyor. Başka bir kısayol seçin.
+setup.used_by_board = Bu kısayol zaten Board tarafından kullanılıyor.
+setup.used_by_shotoshot = Bu kısayol zaten Shotoshot tarafından kullanılıyor.
+setup.register_failed = Bu kısayol kaydedilemedi ({code}). Ayrılmış veya zaten kullanımda olabilir.
+setup.unavailable = Kısayol kullanılamıyor ({code}). Başka bir tuş seçin.
+setup.invalid = Kısayol kullanılamıyor veya geçersiz: {detail}
+setup.print_screen_held = Print Screen hâlâ başka bir uygulama tarafından ya da oturumu kapatıp yeniden açana kadar Windows tarafından kullanılıyor. O uygulamayı kapatın veya başka bir tuş seçin.
+
+tray.tooltip = Shotoshot: yakala ve not ekle
+
+setup.invalid_shape = Geçersiz şekil kısayolu
+setup.invalid_board = Geçersiz Board kısayolu
+setup.shape_needs_modifier = Yazarken şekil tetiklenmemesi için Ctrl veya Alt içeren bir kısayol seçin.
+setup.board_needs_modifier = Yazarken Board açılmaması için Ctrl veya Alt içeren bir kısayol seçin.
+setup.reserved = Ctrl+Alt+Esc ayrılmış
+setup.duplicate_shape = Yinelenen şekil kısayolu
+
+notice.copied = Ekran görüntüsü panoya kopyalandı.
+notice.saved = Görüntü kaydedildi.
+notice.searching = Google’da aranıyor…
+notice.preferences = Ayarlar kaydedildi.
+notice.saved_editable = Düzenlenebilir görüntü ekranla birlikte kaydedildi.
+notice.instant_unavailable = Anında ekran görüntüsü kısayolu kullanılamıyor. Shotoshot menüsünden değiştirin.
+notice.board_unavailable = Board kısayolu kullanılamıyor. Shotoshot menüsünden değiştirin.
+notice.shortcuts_unavailable = Kısayol kullanılamıyor: {names}
+notice.names_separator == {before}, {after}
+notice.screenshot_failed = Ekran görüntüsü alınamadı: dosya kaydedilmedi
+notice.screenshot_error = Ekran görüntüsü alınamadı: {detail}
+
+presentation.stop = Tümünü kapat
+
+error.unexpected = Bir sorun oluştu.\n{detail}
+error.stopped = Beklenmeyen bir iç hata oluştu. Shotoshot durdu.
+error.already_running = Shotoshot zaten çalışıyor. Bildirim alanındaki simgesini kullanın.
+error.editor_start = Düzenleyici başlatılamadı. Lütfen yeniden yakalamayı deneyin.
+error.screenshot_refused = Masaüstü ekran görüntüsünü reddetti.
+error.capture_shortcut_in_use = Yakalama kısayolu zaten kullanımda. Başka bir kombinasyon seçin.
+error.shortcut_in_use = {shortcut} kısayolu zaten kullanımda. Ek özellik etkinleştirilmedi.
+error.presentation_busy = Sunum ayarlarını değiştirmeden önce geçerli yakalamayı bitirin.
+error.presentation_stopped = Sunum bir hatadan sonra durdu. Shotoshot menüsünden yeniden etkinleştirebilirsiniz.
+error.display_changed = Ekran yapılandırması değişti. Yeni bir yakalama başlatın.
+error.display_changed_board = Ekran yapılandırması değişti. Board kaydedildi.
+error.no_region = Önce bir yakalama alanı seçin
+error.settings_unreadable = Ayarlar desteklenmiyor veya bozuk. Özgün dosya korundu.\n{detail}
+error.settings_unsaved = Ayarlar kaydedilemedi: {detail}
+error.settings_busy = Ayarlar meşgul. Lütfen yeniden deneyin.
+error.save_dialog = Kaydet iletişim kutusu açılamadı ({code})
+error.not_editable_capture = Bu yakalama düzenlenebilir görüntü olarak kaydedilemez.
+error.text_layout = Metin düzeni oluşturulamadı
+error.lens_browser = Tarayıcı açılamadı. Yakalamanız hâlâ açık.
+error.lens_failed = Google araması başarısız oldu. Yakalamanız hâlâ açık.\n{detail}
+error.lens_interrupted = Google araması kesildi. Yakalamanız hâlâ açık.
+error.lens_too_large = Görüntü, Google Lens’in 20 MB sınırını aşıyor.
+error.document_unread = {path} açılamadı: {detail}
+error.document_too_large = Bu görüntü ({width} × {height}) bu ekrandan büyük. Yine de PNG olarak açılır.
+error.board_unsaved = Board kaydedilemedi: {detail}
+error.wallpaper_unchanged = Notlar kaydedildi ancak duvar kâğıdı güncellenmedi: {detail}
+error.board_unopened = Board açılamadı.
+error.board_in_use = Board düzenleme için açık: önce kapatın, sonra temizleyin.
+error.board_base_damaged = Board temel dosyası bozuk. Dokunulmadan bırakıldı.
+
+board.newer = Bu Board, Shotoshot’ın daha yeni bir sürümüyle yazılmış.
+board.damaged = Board dosyası bozuk. Dokunulmadan bırakıldı.
+
+document.not_editable = Bu dosyada düzenlenebilir Shotoshot verisi yok.
+document.newer = Bu görüntü daha yeni bir Shotoshot ile kaydedilmiş. Düzenlemek için Shotoshot’ı güncelleyin. Yine de PNG olarak açılır.
+document.damaged = Bu düzenlenebilir görüntü bozuk; düzenlemek için açılamıyor.
+
+save.png = PNG görüntüsü
+save.jpeg = JPEG görüntüsü
+save.shoto = Düzenlenebilir Shotoshot görüntüsü, tüm ekranı saklar
+
+lens.sending = Yakalama Google Lens’e gönderiliyor…
+lens.needs_script = Yakalamayı göndermek için JavaScript gerekiyor.
+
+keycap.esc == Esc
+keycap.ctrl == Ctrl
+keycap.alt == Alt
+keycap.alt_gr == Gr
+keycap.caps == Caps
+keycap.num == Num
+keycap.scroll == Scr
+keycap.print == Prt
+keycap.end == End
+keycap.insert == Ins
+keycap.delete == Del
+
+# Installer
+installer.language.title = Shotoshot dili
+installer.language.description = Daha sonra bildirim alanındaki Shotoshot simgesinden değiştirebilirsiniz.
+installer.language.auto = Windows dili
+installer.shoto_file = Düzenlenebilir Shotoshot görüntüsü

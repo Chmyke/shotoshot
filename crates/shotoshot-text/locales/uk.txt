@@ -1,0 +1,223 @@
+# Тексти інтерфейсу Shotoshot, українська. Формат описано в en.txt.
+
+language.menu = Мова
+
+tooltip.with_shortcut = {label} · {shortcut}
+
+key.ctrl == Ctrl
+key.shift == Shift
+key.alt == Alt
+key.win == Win
+key.esc == Esc
+key.delete == Delete
+key.backspace == Backspace
+key.tab == Tab
+key.enter == Enter
+key.caps_lock == Caps Lock
+key.space = Пробіл
+key.page_up == Page Up
+key.page_down == Page Down
+key.end == End
+key.home == Home
+key.left = Ліворуч
+key.up = Угору
+key.right = Праворуч
+key.down = Униз
+key.insert == Insert
+key.numpad = Num {key}
+key.num_lock == Num Lock
+key.scroll_lock == Scroll Lock
+key.pause == Pause
+key.break == Break
+key.print_screen == Print Screen
+key.code = Клавіша {code}
+
+toolbar.select = Виділення · {shortcut} · Page Up/Down: вперед або назад
+toolbar.rectangle = Прямокутник
+toolbar.ellipse = Еліпс
+toolbar.line = Лінія
+toolbar.arrow = Стрілка
+toolbar.pen = Перо
+toolbar.highlighter = Маркер
+toolbar.text = Текст
+toolbar.eraser = Гумка
+toolbar.live_capture = Знімання в реальному часі · {shortcut} · оновлюється під час копіювання або збереження
+toolbar.red = Червоний
+toolbar.yellow = Жовтий
+toolbar.green = Зелений
+toolbar.blue = Синій
+toolbar.white = Білий
+toolbar.black = Чорний
+toolbar.custom_color = Власний колір
+toolbar.eyedropper = Піпетка
+toolbar.fill = Зафарбувати штрих, фігуру чи тло · {shortcut} · Правий клік або Alt+клік прибирає колір
+toolbar.undo = Скасувати
+toolbar.redo = Повторити
+toolbar.google_lens = Пошук через Google Об’єктив
+toolbar.copy_image = Копіювати зображення
+toolbar.save = Зберегти
+toolbar.close = Закрити
+toolbar.clear_board = Очистити Board · {shortcut} поверне
+
+capture.nothing_to_undo = Нічого скасовувати
+capture.nothing_to_redo = Нічого повторювати
+capture.google_search_in_progress = Триває пошук у Google
+capture.live_on = Знімання в реальному часі ввімкнено · {shortcut} заморозить
+capture.live_frozen = Знімок заморожено · знімання в реальному часі: {shortcut}
+capture.live_for_new_captures = Знімання в реальному часі доступне лише для нових знімків
+capture.full_screen = Увесь екран
+capture.restore_selection = Повернути попереднє виділення
+capture.edit_dimensions = Змінити розміри · вирази: 800+20, 1920/2
+
+overlay.select_area = Виділіть область
+overlay.cancel = {shortcut}: скасувати
+overlay.stroke_width == {width} px
+magnifier.pick = Клік: взяти · {shortcut}
+picker.apply = Клік назовні застосує · {shortcut} скасує
+
+crop.invalid = Введіть ціле число пікселів (щонайменше 2) або вираз, наприклад 800+20.
+crop.outside = Знімок має залишатися в межах робочого столу. Зменште ширину або висоту.
+
+menu.take_screenshot = Зробити знімок екрана
+menu.edit_board = Редагувати Board
+menu.show_board = Показувати Board
+menu.clear_board = Очистити Board
+menu.presentation = Презентація
+menu.pointer_halo = Підсвічування вказівника
+menu.keyboard = Клавіатура
+menu.mouse = Миша
+menu.keyboard_layout = Вигляд клавіатури
+menu.input_size = Розмір клавіатури й миші
+menu.temporary_shapes = Тимчасові фігури
+menu.shape_duration = Час показу фігур
+menu.shortcuts = Сполучення клавіш · клацніть, щоб змінити
+menu.capture = Знімок
+menu.instant_screenshot = Миттєвий знімок екрана
+menu.board == Board
+menu.options = Параметри
+menu.screenshot_sound = Звук знімка
+menu.live_capture_default = Знімання в реальному часі за замовчуванням
+menu.start_with_windows = Запускати разом з Windows
+menu.quit = Вийти з Shotoshot
+menu.duration_1 = 1 секунда
+menu.duration_3 = 3 секунди
+menu.duration_5 = 5 секунд
+menu.layout_full = Повна
+menu.layout_compact = Компактна
+menu.layout_gaming = Ігрова
+menu.seconds = {n} с
+menu.percent = {n} %
+menu.shortcut_in_use = {shortcut} (зайнято)
+menu.language_auto = Мова Windows
+menu.language_system = Мова системи
+
+setup.title_capture = Сполучення клавіш для знімка
+setup.title_instant = Сполучення клавіш для миттєвого знімка
+setup.title_arrow = Сполучення клавіш для стрілки
+setup.title_rectangle = Сполучення клавіш для прямокутника
+setup.title_ellipse = Сполучення клавіш для еліпса
+setup.title_board = Сполучення клавіш для Board
+setup.press = Натисніть сполучення клавіш…
+setup.waiting = …
+setup.choose = Виберіть сполучення клавіш
+setup.cancel = Скасувати
+setup.save = Зберегти
+setup.any_key_hint = Підійде будь-яка клавіша, окремо або з Ctrl, Shift, Alt чи Windows.
+setup.board_hint = Клавіша з Ctrl або Alt. Можна додати Shift або Windows.
+setup.shape_hint = Літера з Ctrl або Alt. Можна додати Shift.
+setup.print_screen_hint = Print Screen відкриватиме Shotoshot замість програми «Ножиці» Windows. Клацніть клавішу, щоб вибрати іншу.
+setup.change_hint = Клацніть клавіші, щоб змінити їх.
+setup.used_for_instant = Це сполучення вже використовується для миттєвого знімка.
+setup.used_for_capture = Це сполучення вже використовується для знімка.
+setup.used_by_presentation = Це сполучення вже використовується в режимі презентації. Виберіть інше.
+setup.used_by_board = Це сполучення вже використовує Board.
+setup.used_by_shotoshot = Це сполучення вже використовує Shotoshot.
+setup.register_failed = Не вдалося зареєструвати сполучення клавіш ({code}). Можливо, його зарезервовано або вже зайнято.
+setup.unavailable = Сполучення недоступне ({code}). Виберіть іншу клавішу.
+setup.invalid = Сполучення недоступне або неприпустиме: {detail}
+setup.print_screen_held = Print Screen досі зайнята іншою програмою або Windows (до виходу із системи й повторного входу). Закрийте цю програму або виберіть іншу клавішу.
+
+tray.tooltip = Shotoshot: знімки екрана та позначки
+
+setup.invalid_shape = Неприпустиме сполучення для фігури
+setup.invalid_board = Неприпустиме сполучення для Board
+setup.shape_needs_modifier = Виберіть сполучення з Ctrl або Alt, щоб фігури не спрацьовували під час набору тексту.
+setup.board_needs_modifier = Виберіть сполучення з Ctrl або Alt, щоб Board не відкривався під час набору тексту.
+setup.reserved = Ctrl+Alt+Esc зарезервовано
+setup.duplicate_shape = Це сполучення вже призначено іншій фігурі
+
+notice.copied = Знімок скопійовано в буфер обміну.
+notice.saved = Зображення збережено.
+notice.searching = Пошук у Google…
+notice.preferences = Налаштування збережено.
+notice.saved_editable = Зображення для редагування збережено разом з екраном.
+notice.instant_unavailable = Сполучення для миттєвого знімка недоступне. Змініть його в меню Shotoshot.
+notice.board_unavailable = Сполучення для Board недоступне. Змініть його в меню Shotoshot.
+notice.shortcuts_unavailable = Сполучення недоступне: {names}
+notice.names_separator == {before}, {after}
+notice.screenshot_failed = Не вдалося зробити знімок: файл не збережено
+notice.screenshot_error = Не вдалося зробити знімок: {detail}
+
+presentation.stop = Вимкнути все
+
+error.unexpected = Щось пішло не так.\n{detail}
+error.stopped = Неочікуваний внутрішній збій. Shotoshot зупинено.
+error.already_running = Shotoshot уже запущено. Скористайтеся його значком в області сповіщень.
+error.editor_start = Не вдалося запустити редактор. Спробуйте зробити знімок ще раз.
+error.screenshot_refused = Робочий стіл відхилив знімок екрана.
+error.capture_shortcut_in_use = Сполучення для знімка вже зайняте. Виберіть інше.
+error.shortcut_in_use = Сполучення {shortcut} уже зайняте. Додаткові функції не ввімкнено.
+error.presentation_busy = Завершіть поточний знімок, перш ніж змінювати параметри презентації.
+error.presentation_stopped = Презентацію зупинено через помилку. Її можна знову ввімкнути в меню Shotoshot.
+error.display_changed = Конфігурація екранів змінилася. Зробіть новий знімок.
+error.display_changed_board = Конфігурація екранів змінилася. Board збережено.
+error.no_region = Спершу виділіть область знімка
+error.settings_unreadable = Налаштування не підтримуються або пошкоджені. Початковий файл збережено.\n{detail}
+error.settings_unsaved = Не вдалося зберегти налаштування: {detail}
+error.settings_busy = Налаштування зайняті. Спробуйте ще раз.
+error.save_dialog = Не вдалося відкрити вікно збереження ({code})
+error.not_editable_capture = Цей знімок не можна зберегти як зображення для редагування.
+error.text_layout = Не вдалося розмітити текст
+error.lens_browser = Не вдалося відкрити браузер. Знімок досі відкритий.
+error.lens_failed = Пошук у Google не вдався. Знімок досі відкритий.\n{detail}
+error.lens_interrupted = Пошук у Google перервано. Знімок досі відкритий.
+error.lens_too_large = Зображення перевищує ліміт Google Об’єктива в 20 МБ.
+error.document_unread = Не вдалося відкрити {path}: {detail}
+error.document_too_large = Це зображення ({width} × {height}) більше за екран. Як PNG воно й надалі відкривається.
+error.board_unsaved = Не вдалося зберегти Board: {detail}
+error.wallpaper_unchanged = Нотатки збережено, але фон робочого столу не оновлено: {detail}
+error.board_unopened = Не вдалося відкрити Board.
+error.board_in_use = Board відкрито для редагування: спершу закрийте його, потім очистьте.
+error.board_base_damaged = Файл основи Board пошкоджено. Його залишено без змін.
+
+board.newer = Цей Board записано новішою версією Shotoshot.
+board.damaged = Файл Board пошкоджено. Його залишено без змін.
+
+document.not_editable = У цьому файлі немає даних Shotoshot для редагування.
+document.newer = Це зображення збережено новішою версією Shotoshot. Оновіть Shotoshot, щоб його редагувати. Як PNG воно й надалі відкривається.
+document.damaged = Це зображення для редагування пошкоджено, його не можна відкрити для редагування.
+
+save.png = Зображення PNG
+save.jpeg = Зображення JPEG
+save.shoto = Зображення Shotoshot для редагування, зберігає весь екран
+
+lens.sending = Знімок надсилається в Google Об’єктив…
+lens.needs_script = Щоб надіслати знімок, потрібен JavaScript.
+
+keycap.esc == Esc
+keycap.ctrl == Ctrl
+keycap.alt == Alt
+keycap.alt_gr == Gr
+keycap.caps == Caps
+keycap.num == Num
+keycap.scroll == Scr
+keycap.print == Prt
+keycap.end == End
+keycap.insert == Ins
+keycap.delete == Del
+
+# Installer
+installer.language.title = Мова Shotoshot
+installer.language.description = Її можна змінити пізніше через значок Shotoshot в області сповіщень.
+installer.language.auto = Мова Windows
+installer.shoto_file = Зображення Shotoshot для редагування

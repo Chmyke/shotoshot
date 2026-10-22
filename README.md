@@ -2,8 +2,9 @@
 
 Native screen capture and annotation for Windows 11. Press a key, drag a region, annotate on the
 frozen screen with objects that stay editable, then copy or save. The same editor writes notes
-on your desktop, under the icons: the [Board](#board-notes-under-the-icons). The whole interface
-is in English; the on-screen keyboard always follows the active keyboard layout.
+on your desktop, under the icons: the [Board](#board-notes-under-the-icons). The interface is
+available in 15 languages, chosen at install or from the menu; the on-screen keyboard always
+follows the active keyboard layout.
 
 - **Light.** A small resident process starts one editor process per capture. That process ends
   with the session, which returns its memory to Windows, graphics caches included.
@@ -369,8 +370,9 @@ OBS finds it again on reactivation.
 
 ## Labels, keyboard layouts and confirmations
 
-Menus and tooltips use consistent English labels. Value submenus have a fitted width; shortcuts
-read "Shift" and "Print Screen". The mini keyboard translates keys according to the layout of the
+Menus and tooltips use one term per concept in each language. Value submenus have a fitted
+width; key names follow the usage of each language (in English, "Shift" and "Print Screen"). The
+mini keyboard translates keys according to the layout of the
 active window at each press, including after a language switch: accented characters, Shift and
 AltGr. Dead keys show their accent without altering what you type. Verified on French, US, UK and
 German layouts. The drawing uses the ANSI shape for US layouts and ISO otherwise; this
@@ -435,3 +437,6 @@ licenses of its dependencies are listed in [THIRD_PARTY.md](THIRD_PARTY.md).
 
 Bug reports and ideas are welcome as issues; code contributions are not accepted for now. See
 [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
+
+Translations live in `crates/shotoshot-text/locales`, one text file per language; issues with
+translation corrections are welcome.

@@ -25,14 +25,21 @@ pub enum Error {
     Damaged,
 }
 impl Error {
-    pub fn message(self) -> &'static str {
+    /// The text the user reads.
+    pub fn key(self) -> shotoshot_text::Key {
         match self {
-            Self::NotEditable => "This file has no editable Shotoshot data.",
-            Self::Newer => {
-                "This image was saved by a newer Shotoshot. Update Shotoshot to edit it. It still opens as a PNG."
-            }
-            Self::Damaged => "This editable image is damaged and cannot be opened for editing.",
+            Self::NotEditable => shotoshot_text::Key::DocumentNotEditable,
+            Self::Newer => shotoshot_text::Key::DocumentNewer,
+            Self::Damaged => shotoshot_text::Key::DocumentDamaged,
         }
+    }
+    /// That text in the interface language.
+    pub fn message(self) -> &'static str {
+        self.message_in(shotoshot_text::language())
+    }
+    /// That text in `language`.
+    pub fn message_in(self, language: shotoshot_text::Language) -> &'static str {
+        shotoshot_text::tr_in(language, self.key())
     }
 }
 
@@ -92,6 +99,19 @@ mod tests {
 
     // Any bytes: the reader must not look for its own markers inside the frame.
     const FRAME_IMAGE: &[u8] = b"\x89PNG stand-in\nframe-png 3\nshotoshot-document 9\n\0\xFF";
+
+    #[test]
+    fn refusals_are_keys() {
+        use shotoshot_text::{Key, Language, tr_in};
+        for (error, key) in [
+            (Error::NotEditable, Key::DocumentNotEditable),
+            (Error::Newer, Key::DocumentNewer),
+            (Error::Damaged, Key::DocumentDamaged),
+        ] {
+            assert_eq!(error.key(), key);
+            assert_eq!(error.message_in(Language::Fr), tr_in(Language::Fr, key));
+        }
+    }
 
     #[test]
     fn a_packed_file_is_a_png_that_gives_its_scene_and_frame_back() {

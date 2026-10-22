@@ -281,7 +281,7 @@ impl Session {
         let region = self
             .capture
             .region
-            .ok_or_else(|| Error::new(E_INVALIDARG, "Select a capture region first"))?;
+            .ok_or_else(|| crate::failure::visible(shotoshot_text::Key::ErrorNoRegion, &[]))?;
         let editor = &self.capture.editor;
         self.native
             .renderer

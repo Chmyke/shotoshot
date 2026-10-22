@@ -3,7 +3,7 @@
 ; Test:  powershell -NoProfile -ExecutionPolicy Bypass -File packaging\test-installer.ps1
 ; RULE: keep AppVersion equal to [workspace.package] version in Cargo.toml (checked by the build script).
 
-#define AppVersion "0.3.7"
+#define AppVersion "0.3.8"
 #define AppName "Shotoshot"
 #define AppExeName "shotoshot.exe"
 #define AppPublisher "Mickaël Mancini"
@@ -49,12 +49,36 @@ CloseApplications=yes
 RestartApplications=no
 ; The [Registry] section associates .shoto files: Explorer must be told.
 ChangesAssociations=yes
+; The wizard speaks the language of Windows (English when Inno has no translation);
+; the language of Shotoshot is asked on a page of its own ([Code]).
+ShowLanguageDialog=no
+LanguageDetectionMethod=uilanguage
 ; No AppMutex: development builds share the app's mutex names, so it would
 ; report a dev instance as "running" and block install/uninstall.
 
+; The translations of Inno Setup 6 for the languages of Shotoshot.
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
+; Inno ships no official Chinese: contributed translations listed on jrsoftware.org/files/istrans,
+; taken from github.com/jrsoftware/issrc (Files/Languages, commit 6ef32198, 2026-10-22).
+Name: "chinesesimplified"; MessagesFile: "languages\ChineseSimplified.isl"
+Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
+Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
+Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
+Name: "german"; MessagesFile: "compiler:Languages\German.isl"
+Name: "japanese"; MessagesFile: "compiler:Languages\Japanese.isl"
 Name: "french"; MessagesFile: "compiler:Languages\French.isl"
+Name: "polish"; MessagesFile: "compiler:Languages\Polish.isl"
+Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
+Name: "chinesetraditional"; MessagesFile: "languages\ChineseTraditional.isl"
+Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
+Name: "ukrainian"; MessagesFile: "compiler:Languages\Ukrainian.isl"
+Name: "italian"; MessagesFile: "compiler:Languages\Italian.isl"
+Name: "czech"; MessagesFile: "compiler:Languages\Czech.isl"
+
+; Our own texts in each of these languages, and the choices of the language page. Generated
+; from crates/shotoshot-text/locales by `cargo run -p shotoshot-text --example inno`.
+#include "languages.isi"
 
 [Files]
 Source: "..\target\release\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
@@ -88,7 +112,7 @@ Root: HKCU; Subkey: "Software\Classes\.shoto"; ValueType: string; ValueName: "";
 Root: HKCU; Subkey: "Software\Classes\.shoto"; ValueType: string; ValueName: "Content Type"; ValueData: "image/png"
 Root: HKCU; Subkey: "Software\Classes\.shoto"; ValueType: string; ValueName: "PerceivedType"; ValueData: "image"
 Root: HKCU; Subkey: "Software\Classes\.shoto\ShellEx\{{E357FCCD-A995-4576-B01F-234630154E96}"; ValueType: string; ValueName: ""; ValueData: "{{C7657C4A-9F68-40fa-A4DF-96BC08EB3551}"
-Root: HKCU; Subkey: "Software\Classes\Shotoshot.Document"; ValueType: string; ValueName: ""; ValueData: "Shotoshot editable image"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Shotoshot.Document"; ValueType: string; ValueName: ""; ValueData: "{cm:ShotoFile}"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\Shotoshot.Document"; ValueType: string; ValueName: "TypeOverlay"; ValueData: "{app}\{#AppExeName},0"
 Root: HKCU; Subkey: "Software\Classes\Shotoshot.Document\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#AppExeName},0"
 Root: HKCU; Subkey: "Software\Classes\Shotoshot.Document\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""
@@ -98,7 +122,8 @@ Root: HKCU; Subkey: "Software\Classes\Shotoshot.Document\shell\open\command"; Va
 ; Not postinstall, so it runs as soon as the files are in place; runasoriginaluser keeps it
 ; unelevated even when setup was run as administrator. Silent installs launch nothing
 ; (test-installer.ps1, delivery step 6).
-Filename: "{app}\{#AppExeName}"; Flags: nowait runasoriginaluser skipifsilent
+; The language chosen on our page is handed over just before (WriteLanguageChoice).
+Filename: "{app}\{#AppExeName}"; Flags: nowait runasoriginaluser skipifsilent; BeforeInstall: WriteLanguageChoice
 
 ; Gives back to Windows what Shotoshot took, before the files are removed; the app owns the logic.
 ; - Print Screen goes back to the Snipping Tool if Shotoshot took it
@@ -118,9 +143,19 @@ const
   RunKey = 'Software\Microsoft\Windows\CurrentVersion\Run';
   RunValue = 'Shotoshot';
   OldRunValue = 'Shotshot';
+  { The settings formats whose language is line SettingsLanguageLine (0-based, header
+    included) of settings.txt, comma-separated. The app's tests keep both equal to what
+    Settings::encode writes (crates/shotoshot-core/src/settings.rs). }
+  SettingsHeader = 'shotoshot-settings-';
+  KnownSettingsVersions = '16';
+  SettingsLanguageLine = 28;
+  { Read, then deleted, by the app when it starts (crates/shotoshot-app/src/language.rs). }
+  LanguageChoiceFile = 'installer-language.txt';
 
 var
   HadOldDesktopLink: Boolean;
+  LanguagePage: TInputOptionWizardPage;
+  LanguagePageShown: Boolean;
 
 function FindWindowEx(Parent, ChildAfter: HWND; ClassName: String; WindowName: Cardinal): HWND;
   external 'FindWindowExW@user32.dll stdcall';
@@ -221,6 +256,77 @@ procedure CloseInstalledApp;
 begin
   CloseApp('{#AppExeName}', InstalledExePath, AppWindowClass);
   CloseApp('{#OldExeName}', OldExePath, OldWindowClass);
+end;
+
+function DataFolder: String;
+begin
+  Result := ExpandConstant('{localappdata}\{#AppName}');
+end;
+
+{ The language stored by the installed app: 'auto' or a language tag. 'auto' when there are
+  no settings yet or they are in a format this setup does not know. }
+function CurrentLanguage(): String;
+var
+  Lines: TArrayOfString;
+  Version: String;
+begin
+  Result := 'auto';
+  if not LoadStringsFromFile(DataFolder + '\settings.txt', Lines) then
+    Exit;
+  if GetArrayLength(Lines) <= SettingsLanguageLine then
+    Exit;
+  if Copy(Lines[0], 1, Length(SettingsHeader)) <> SettingsHeader then
+    Exit;
+  Version := Copy(Lines[0], Length(SettingsHeader) + 1, Length(Lines[0]));
+  if Pos(',' + Version + ',', ',' + KnownSettingsVersions + ',') = 0 then
+    Exit;
+  Result := Trim(Lines[SettingsLanguageLine]);
+end;
+
+function ChoiceCount: Integer;
+begin
+  Result := StrToIntDef(CustomMessage('ChoiceCount'), 1);
+end;
+
+{ "Windows language", then each language under its own name, on the choice the app has
+  now: an update validated as it is changes nothing. }
+procedure InitializeWizard;
+var
+  I: Integer;
+  Current: String;
+begin
+  LanguagePage := CreateInputOptionPage(wpWelcome, CustomMessage('LanguagePageTitle'),
+    CustomMessage('LanguagePageDescription'), '', True, True);
+  LanguagePage.Add(CustomMessage('LanguageAuto'));
+  for I := 1 to ChoiceCount - 1 do
+    LanguagePage.Add(CustomMessage('ChoiceName' + IntToStr(I)));
+  LanguagePage.SelectedValueIndex := 0;
+  Current := CurrentLanguage();
+  for I := 1 to ChoiceCount - 1 do
+    if CompareText(CustomMessage('ChoiceTag' + IntToStr(I)), Current) = 0 then
+      LanguagePage.SelectedValueIndex := I;
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if CurPageID = LanguagePage.ID then
+    LanguagePageShown := True;
+end;
+
+{ Runs just before the app is started ([Run]), so the app finds it at once. A silent install
+  shows no page and hands over nothing: the app keeps its own choice. }
+procedure WriteLanguageChoice;
+var
+  Choice: String;
+begin
+  if not LanguagePageShown then
+    Exit;
+  Choice := CustomMessage('ChoiceTag' + IntToStr(LanguagePage.SelectedValueIndex));
+  if ForceDirectories(DataFolder)
+    and SaveStringToFile(DataFolder + '\' + LanguageChoiceFile, Choice, False) then
+    Log('Language handed to the app: ' + Choice)
+  else
+    Log('Could not hand the language to the app: ' + Choice);
 end;
 
 { Read before [InstallDelete] removes the old shortcut. }

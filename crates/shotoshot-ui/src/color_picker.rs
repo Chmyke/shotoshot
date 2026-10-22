@@ -5,6 +5,7 @@
 //! square is rebuilt only when the hue changes.
 use crate::{Canvas, Ink};
 use shotoshot_core::{Point, Rect};
+use shotoshot_text::{Key, Language, Text, language, tr_in};
 use std::f64::consts::TAU;
 
 const WIDTH: f64 = 260.;
@@ -16,6 +17,18 @@ const SV: Rect = Rect {
     min: Point { x: 75., y: 89. },
     max: Point { x: 185., y: 199. },
 };
+/// Left edge of the title and of the hint line, in design pixels.
+const LABEL_X: f64 = 18.;
+/// Title: font size, and the box it is drawn in until a longer text widens it.
+pub const TITLE_SIZE: f64 = 15.;
+pub const TITLE_WIDTH: f64 = 222.;
+pub const TITLE_HEIGHT: f64 = 25.;
+/// Hint line under the swatch, likewise.
+pub const HINT_SIZE: f64 = 11.;
+pub const HINT_WIDTH: f64 = 230.;
+pub const HINT_HEIGHT: f64 = 18.;
+/// Widest label the panel holds with its 12 px right margin; a longer text is shortened.
+pub const MAX_LABEL_WIDTH: f64 = WIDTH - LABEL_X - 12.;
 const WHEEL_PIXELS: u32 = 204;
 const SV_PIXELS: u32 = 128;
 
@@ -186,32 +199,59 @@ impl ColorPicker {
         let swatch = self.area(18., 258., 30., 26.);
         canvas.fill_rect(swatch, Ink::solid(self.color()))?;
         canvas.stroke_rect(swatch, Ink::solid([112, 112, 112]), line)?;
+        let [title, hint] = labels_in(language());
+        // Font sizes are rounded through f32 exactly as the native renderer expects.
+        let font = |size: f32| (size * self.scale as f32) as f64;
+        let (title_size, hint_size) = (font(TITLE_SIZE as f32), font(HINT_SIZE as f32));
+        let title_width = label_width(
+            TITLE_WIDTH,
+            canvas.measure_text(&title, title_size)?.x,
+            self.scale,
+        );
+        let hint_width = label_width(
+            HINT_WIDTH,
+            canvas.measure_text(&hint, hint_size)?.x,
+            self.scale,
+        );
         for (text, area, size, rgb) in [
             (
-                "Custom color",
-                self.area(18., 13., 222., 25.),
-                15.,
+                title.as_str(),
+                self.area(LABEL_X, 13., title_width, TITLE_HEIGHT),
+                title_size,
                 [240, 240, 240],
             ),
             (
                 self.hex.as_str(),
                 self.area(60., 260., 175., 25.),
-                14.,
+                font(14.),
                 [240, 240, 240],
             ),
             (
-                "Click outside to apply · Esc to cancel",
-                self.area(18., 294., 230., 18.),
-                11.,
+                hint.as_str(),
+                self.area(LABEL_X, 294., hint_width, HINT_HEIGHT),
+                hint_size,
                 [174, 174, 174],
             ),
         ] {
-            // Font sizes are rounded through f32 exactly as the native renderer expects.
-            let size = (size * self.scale as f32) as f64;
             canvas.text(text, area, size, Ink::solid(rgb))?;
         }
         Ok(())
     }
+}
+
+/// The panel's title and hint line in `language`.
+pub fn labels_in(language: Language) -> [String; 2] {
+    let esc = [("shortcut", tr_in(language, Key::KeyEsc))];
+    [
+        Text::new_in(language, Key::ToolbarCustomColor).to_string(),
+        Text::with_in(language, Key::PickerApply, &esc).to_string(),
+    ]
+}
+
+/// Design width of a label box: `minimum`, or the text's width when it needs more;
+/// `measured` is at the panel's `scale`.
+pub fn label_width(minimum: f64, measured: f64, scale: f64) -> f64 {
+    minimum.max(measured / scale)
 }
 
 fn wheel_pixels() -> Vec<u8> {
@@ -291,6 +331,20 @@ fn hsv_to_rgb(hue: f64, saturation: f64, value: f64) -> [u8; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn labels_keep_their_width_unless_the_text_needs_more() {
+        assert_eq!(label_width(TITLE_WIDTH, 100., 1.), TITLE_WIDTH);
+        assert_eq!(label_width(TITLE_WIDTH, 225., 1.), 225.);
+        // Measured at 2x, the design width is half of it.
+        assert_eq!(label_width(HINT_WIDTH, 400., 2.), HINT_WIDTH);
+        assert_eq!(label_width(HINT_WIDTH, 470., 2.), 235.);
+        let [title, hint] = labels_in(shotoshot_text::Language::En);
+        assert_eq!(title, "Custom color");
+        assert_eq!(hint, "Click outside to apply · Esc to cancel");
+        let [_, hint] = labels_in(shotoshot_text::Language::Fr);
+        assert!(hint.contains("Échap"), "{hint}");
+    }
 
     #[test]
     fn rgb_hsv_roundtrip_preserves_colors() {

@@ -1,5 +1,6 @@
 //! On-demand capture and PNG encoding off the resident thread; no focus change or idle polling.
 use super::*;
+use shotoshot_text::{Key, Text};
 use std::{path::Path, sync::mpsc};
 
 pub(super) const FINISHED: u32 = WM_APP + 6;
@@ -84,8 +85,9 @@ impl App {
         self.toast = None;
         self.instant.clear_feedback();
         if let Err(error) = self.instant.start(hwnd, self.settings.instant_sound) {
-            self.toast =
-                notice::Toast::new(&format!("Screenshot failed: {}", error.message()), true).ok();
+            let detail = crate::failure::reason(&error);
+            let text = Text::with(Key::NoticeScreenshotError, &[("detail", &detail)]);
+            self.toast = notice::Toast::new(&text, true).ok();
         }
     }
     pub(super) fn finish_instant_capture(&mut self) {
@@ -104,7 +106,7 @@ impl App {
             None
         } else {
             notice::Toast::new_at(
-                "Screenshot failed — file not saved",
+                &Text::new(Key::NoticeScreenshotFailed),
                 self.persist_preferences,
                 Some(pending.bounds),
             )
@@ -135,11 +137,11 @@ impl App {
                 .contains(&shortcut)
             || (mods == 3 && key == 27)
         {
-            self.setup_ui.error = "This shortcut is already used by Shotoshot.".into();
+            self.setup_ui.error = self.setup_ui.text(Key::SetupUsedByShotoshot);
             return Ok(());
         }
         if self.settings.board_shortcut == shortcut {
-            self.setup_ui.error = "This shortcut is already used by the board.".into();
+            self.setup_ui.error = self.setup_ui.text(Key::SetupUsedByBoard);
             return Ok(());
         }
         if !(self.instant.hotkey.active() && self.settings.instant_shortcut == shortcut) {
@@ -148,17 +150,17 @@ impl App {
             let free = crate::print_screen::windows_option(self.persist_preferences);
             if let Err(error) = self.instant.hotkey.replace(free, mods, key, || {
                 if self.persist_preferences {
-                    next.save().map_err(|e| Error::new(E_FAIL, e))
+                    next.save().map_err(crate::settings::unsaved)
                 } else {
                     Ok(())
                 }
             }) {
-                self.setup_ui.error = super::setup::print_screen_error(mods, key, &error)
+                let language = self.setup_ui.language;
+                self.setup_ui.error = super::setup::print_screen_error(mods, key, &error, language)
                     .unwrap_or_else(|| {
-                        format!(
-                            "Shortcut unavailable ({}). Choose another key.",
-                            error.code().0
-                        )
+                        let code = error.code().0.to_string();
+                        Text::with_in(language, Key::SetupUnavailable, &[("code", &code)])
+                            .to_string()
                     });
                 return Ok(());
             }
@@ -345,7 +347,7 @@ mod tests {
             assert!(app.instant.pulse.is_none());
             assert_eq!(
                 app.toast.as_ref().unwrap().text(),
-                "Screenshot failed — file not saved"
+                "Screenshot failed: file not saved"
             );
             let (sender, receiver) = mpsc::channel();
             app.instant.pending = Some(Pending {
@@ -363,7 +365,7 @@ mod tests {
             assert!(app.instant.pulse.is_none());
             assert_eq!(
                 app.toast.as_ref().unwrap().text(),
-                "Screenshot failed — file not saved"
+                "Screenshot failed: file not saved"
             );
         }
     }

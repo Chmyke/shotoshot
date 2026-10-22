@@ -399,9 +399,9 @@ pub(crate) fn png_data(image: &Image) -> Result<Vec<u8>> {
 pub(crate) fn png_bytes(image: &Image) -> Result<Vec<u8>> {
     let data = png_data(image)?;
     if data.len() > 20 * 1024 * 1024 {
-        return Err(Error::new(
-            E_FAIL,
-            "The image exceeds the Google Lens limit of 20 MB.",
+        return Err(crate::failure::visible(
+            shotoshot_text::Key::ErrorLensTooLarge,
+            &[],
         ));
     }
     Ok(data)

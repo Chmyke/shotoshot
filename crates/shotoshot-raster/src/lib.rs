@@ -942,4 +942,82 @@ mod tests {
         }
         assert_eq!(inside(&blank()), PAPER);
     }
+
+    /// The Windows bound of every hint (`every_tooltip_fits`), measured by this renderer and
+    /// the fonts of the machine: on the Raspberry Pi, those a Linux user has.
+    #[test]
+    fn every_tooltip_fits_with_cosmic_text() {
+        use shotoshot_ui::toolbar::{MAX_HINT_WIDTH, all_tooltips_in};
+        let mut raster = Raster::new();
+        for language in shotoshot_text::Language::ALL {
+            for hint in all_tooltips_in(language) {
+                let width = raster.measure_text(&hint, 12.).x;
+                assert!(
+                    width <= MAX_HINT_WIDTH,
+                    "{}: `{hint}` is {width:.0} px wide, over {MAX_HINT_WIDTH} px",
+                    language.tag()
+                );
+            }
+        }
+    }
+
+    /// The Windows bound of the loupe's hint (`magnifier_hint_fits_the_loupe`), measured by
+    /// this renderer: the loupe keeps its size in every language.
+    #[test]
+    fn magnifier_hint_fits_the_loupe_with_cosmic_text() {
+        use shotoshot_ui::{MAGNIFIER_HINT_ROOM as ROOM, MAGNIFIER_HINT_SIZE, magnifier_hint_in};
+        let mut raster = Raster::new();
+        let too_long: Vec<String> = shotoshot_text::Language::ALL
+            .into_iter()
+            .filter_map(|language| {
+                let hint = magnifier_hint_in(language);
+                let measured = raster.measure_text(&hint, MAGNIFIER_HINT_SIZE);
+                assert!(measured.x > 0., "{}: nothing measured", language.tag());
+                (measured.x > ROOM.x || measured.y > ROOM.y).then(|| {
+                    let tag = language.tag();
+                    format!("{tag}: `{hint}` is {:.0}×{:.0} px", measured.x, measured.y)
+                })
+            })
+            .collect();
+        assert!(
+            too_long.is_empty(),
+            "the loupe holds {}×{} px, shorten:\n{}",
+            ROOM.x,
+            ROOM.y,
+            too_long.join("\n")
+        );
+    }
+
+    /// The Windows bound of the colour wheel's labels (`color_picker_labels_grow_from_minimum`),
+    /// measured by this renderer: each one fits the panel's width and its line.
+    #[test]
+    fn color_picker_labels_fit_with_cosmic_text() {
+        use shotoshot_ui::color_picker::{
+            HINT_HEIGHT, HINT_SIZE, MAX_LABEL_WIDTH, TITLE_HEIGHT, TITLE_SIZE, labels_in,
+        };
+        let mut raster = Raster::new();
+        let mut overflows = Vec::new();
+        for language in shotoshot_text::Language::ALL {
+            let labels = labels_in(language);
+            for (label, size, height) in [
+                (&labels[0], TITLE_SIZE, TITLE_HEIGHT),
+                (&labels[1], HINT_SIZE, HINT_HEIGHT),
+            ] {
+                let measured = raster.measure_text(label, size);
+                assert!(measured.x > 0., "{}: nothing measured", language.tag());
+                if measured.x > MAX_LABEL_WIDTH || measured.y > height {
+                    let tag = language.tag();
+                    overflows.push(format!(
+                        "{tag}: `{label}` is {:.0}×{:.0} px",
+                        measured.x, measured.y
+                    ));
+                }
+            }
+        }
+        assert!(
+            overflows.is_empty(),
+            "the panel holds {MAX_LABEL_WIDTH} px per line, shorten:\n{}",
+            overflows.join("\n")
+        );
+    }
 }

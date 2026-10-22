@@ -19,6 +19,15 @@ if (-not (Get-Command link.exe -ErrorAction SilentlyContinue)) {
 }
 Push-Location $PSScriptRoot
 try {
+    # No long dash in text the user sees (rule of 2026-10-21). Maintainer only: tools/ is not
+    # published, so the public tree skips it.
+    $dashes = Join-Path $PSScriptRoot 'tools/check-dashes.ps1'
+    if (Test-Path $dashes) {
+        & $dashes
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+    }
+    # The remote Linux scripts run only the tests they copied, each run in its own folder.
+    & (Join-Path $PSScriptRoot 'check-linux.ps1') -SelfTest
     cargo fmt --all -- --check
     if ($LASTEXITCODE -ne 0) { exit 1 }
     # Every dependency must stay usable under the project license.

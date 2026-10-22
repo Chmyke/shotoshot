@@ -1,0 +1,223 @@
+# Shotoshot のインターフェース文言、日本語。書式は en.txt を参照。
+
+language.menu = 言語
+
+tooltip.with_shortcut = {label} · {shortcut}
+
+key.ctrl == Ctrl
+key.shift == Shift
+key.alt == Alt
+key.win == Win
+key.esc == Esc
+key.delete == Delete
+key.backspace == Backspace
+key.tab == Tab
+key.enter == Enter
+key.caps_lock == Caps Lock
+key.space = スペース
+key.page_up == Page Up
+key.page_down == Page Down
+key.end == End
+key.home == Home
+key.left = ←
+key.up = ↑
+key.right = →
+key.down = ↓
+key.insert == Insert
+key.numpad = テンキー {key}
+key.num_lock == Num Lock
+key.scroll_lock == Scroll Lock
+key.pause == Pause
+key.break == Break
+key.print_screen == Print Screen
+key.code = キー {code}
+
+toolbar.select = 選択 · {shortcut} · Page Up/Down で前面/背面へ
+toolbar.rectangle = 四角形
+toolbar.ellipse = 楕円
+toolbar.line = 直線
+toolbar.arrow = 矢印
+toolbar.pen = ペン
+toolbar.highlighter = 蛍光ペン
+toolbar.text = テキスト
+toolbar.eraser = 消しゴム
+toolbar.live_capture = ライブキャプチャ · {shortcut} · コピー・保存時に更新
+toolbar.red = 赤
+toolbar.yellow = 黄
+toolbar.green = 緑
+toolbar.blue = 青
+toolbar.white = 白
+toolbar.black = 黒
+toolbar.custom_color = カスタム色
+toolbar.eyedropper = スポイト
+toolbar.fill = 線・図形・背景に色を塗る · {shortcut} · 右クリックまたは Alt+クリックで色を解除
+toolbar.undo = 元に戻す
+toolbar.redo = やり直し
+toolbar.google_lens = Google レンズで検索
+toolbar.copy_image = 画像をコピー
+toolbar.save = 保存
+toolbar.close = 閉じる
+toolbar.clear_board = Board を消去 · {shortcut} で元に戻せます
+
+capture.nothing_to_undo = 元に戻す操作はありません
+capture.nothing_to_redo = やり直す操作はありません
+capture.google_search_in_progress = Google 検索中
+capture.live_on = ライブキャプチャ中 · {shortcut} で固定
+capture.live_frozen = キャプチャ固定中 · {shortcut} でライブキャプチャ
+capture.live_for_new_captures = ライブキャプチャは新しいキャプチャでのみ使えます
+capture.full_screen = 全画面
+capture.restore_selection = 前の選択範囲に戻す
+capture.edit_dimensions = サイズを編集 · 計算式: 800+20, 1920/2
+
+overlay.select_area = 範囲を選択
+overlay.cancel = {shortcut} でキャンセル
+overlay.stroke_width == {width} px
+magnifier.pick = クリックで取得 · {shortcut}
+picker.apply = 外側をクリックで適用 · {shortcut} でキャンセル
+
+crop.invalid = 2 以上の整数のピクセル数、または 800+20 のような計算式を入力してください。
+crop.outside = キャプチャはデスクトップ内に収めてください。幅か高さを小さくしてください。
+
+menu.take_screenshot = スクリーンショットを撮る
+menu.edit_board = Board を編集
+menu.show_board = Board を表示
+menu.clear_board = Board を消去
+menu.presentation = プレゼンテーション
+menu.pointer_halo = ポインターの強調
+menu.keyboard = キーボード
+menu.mouse = マウス
+menu.keyboard_layout = キーボードの形式
+menu.input_size = キーボードとマウスのサイズ
+menu.temporary_shapes = 一時的な図形
+menu.shape_duration = 図形の表示時間
+menu.shortcuts = ショートカット · クリックで変更
+menu.capture = キャプチャ
+menu.instant_screenshot = 即時スクリーンショット
+menu.board == Board
+menu.options = オプション
+menu.screenshot_sound = スクリーンショットの音
+menu.live_capture_default = 既定でライブキャプチャ
+menu.start_with_windows = Windows の起動時に開始
+menu.quit = Shotoshot を終了
+menu.duration_1 = 1 秒
+menu.duration_3 = 3 秒
+menu.duration_5 = 5 秒
+menu.layout_full = フル
+menu.layout_compact = コンパクト
+menu.layout_gaming = ゲーム用
+menu.seconds = {n} 秒
+menu.percent = {n}%
+menu.shortcut_in_use = {shortcut}（使用中）
+menu.language_auto = Windows の言語
+menu.language_system = システムの言語
+
+setup.title_capture = キャプチャのショートカット
+setup.title_instant = 即時スクリーンショットのショートカット
+setup.title_arrow = 矢印のショートカット
+setup.title_rectangle = 四角形のショートカット
+setup.title_ellipse = 楕円のショートカット
+setup.title_board = Board のショートカット
+setup.press = ショートカットを押してください…
+setup.waiting = …
+setup.choose = ショートカットを選択
+setup.cancel = キャンセル
+setup.save = 保存
+setup.any_key_hint = どのキーでも使えます。単独でも、Ctrl、Shift、Alt、Windows と組み合わせてもかまいません。
+setup.board_hint = Ctrl か Alt と組み合わせたキー。Shift や Windows も追加できます。
+setup.shape_hint = Ctrl か Alt と組み合わせた英字。Shift も追加できます。
+setup.print_screen_hint = Print Screen で Windows の Snipping Tool の代わりに Shotoshot が開きます。別のキーにするには、キーをクリックしてください。
+setup.change_hint = 変更するにはキーをクリックしてください。
+setup.used_for_instant = このショートカットは即時スクリーンショットで使用中です。
+setup.used_for_capture = この組み合わせはキャプチャで使用中です。
+setup.used_by_presentation = このショートカットはプレゼンテーション モードで使用中です。別のショートカットを選んでください。
+setup.used_by_board = このショートカットは Board で使用中です。
+setup.used_by_shotoshot = このショートカットは Shotoshot で使用中です。
+setup.register_failed = このショートカットを登録できません ({code})。予約済みか、すでに使用されている可能性があります。
+setup.unavailable = ショートカットを使用できません ({code})。別のキーを選んでください。
+setup.invalid = ショートカットを使用できないか無効です: {detail}
+setup.print_screen_held = Print Screen はまだ使用中です。別のアプリか、サインアウトして再度サインインするまでは Windows が使用しています。そのアプリを閉じるか、別のキーを選んでください。
+
+tray.tooltip = Shotoshot: キャプチャと注釈
+
+setup.invalid_shape = 図形のショートカットが無効です
+setup.invalid_board = Board のショートカットが無効です
+setup.shape_needs_modifier = 入力中に図形が出ないよう、Ctrl か Alt を含むショートカットを選んでください。
+setup.board_needs_modifier = 入力中に Board が開かないよう、Ctrl か Alt を含むショートカットを選んでください。
+setup.reserved = Ctrl+Alt+Esc は予約されています
+setup.duplicate_shape = 図形のショートカットが重複しています
+
+notice.copied = スクリーンショットをクリップボードにコピーしました。
+notice.saved = 画像を保存しました。
+notice.searching = Google で検索しています…
+notice.preferences = 設定を保存しました。
+notice.saved_editable = 編集可能な画像を画面ごと保存しました。
+notice.instant_unavailable = 即時スクリーンショットのショートカットが使えません。Shotoshot のメニューで変更してください。
+notice.board_unavailable = Board のショートカットが使えません。Shotoshot のメニューで変更してください。
+notice.shortcuts_unavailable = ショートカットを使用できません: {names}
+notice.names_separator = {before}、{after}
+notice.screenshot_failed = スクリーンショットに失敗: ファイルは未保存
+notice.screenshot_error = スクリーンショットに失敗しました: {detail}
+
+presentation.stop = すべてオフ
+
+error.unexpected = 問題が発生しました。\n{detail}
+error.stopped = 予期しない内部エラーが発生しました。Shotoshot は停止しました。
+error.already_running = Shotoshot はすでに実行中です。通知領域のアイコンを使用してください。
+error.editor_start = エディターを起動できませんでした。もう一度キャプチャしてください。
+error.screenshot_refused = デスクトップがスクリーンショットを拒否しました。
+error.capture_shortcut_in_use = キャプチャのショートカットはすでに使用されています。別の組み合わせを選んでください。
+error.shortcut_in_use = ショートカット {shortcut} はすでに使用されています。機能は追加されていません。
+error.presentation_busy = プレゼンテーションの設定を変更する前に、現在のキャプチャを終えてください。
+error.presentation_stopped = エラーのためプレゼンテーションを停止しました。Shotoshot のメニューから再び有効にできます。
+error.display_changed = ディスプレイ構成が変わりました。新しくキャプチャしてください。
+error.display_changed_board = ディスプレイ構成が変わりました。Board は保存されました。
+error.no_region = 先にキャプチャ範囲を選択してください
+error.settings_unreadable = 設定がサポートされていないか破損しています。元のファイルはそのまま残しています。\n{detail}
+error.settings_unsaved = 設定を保存できませんでした: {detail}
+error.settings_busy = 設定は使用中です。もう一度お試しください。
+error.save_dialog = 保存ダイアログを開けませんでした ({code})
+error.not_editable_capture = このキャプチャは編集可能な画像として保存できません。
+error.text_layout = テキストのレイアウトに失敗しました
+error.lens_browser = ブラウザーを開けませんでした。キャプチャは開いたままです。
+error.lens_failed = Google 検索に失敗しました。キャプチャは開いたままです。\n{detail}
+error.lens_interrupted = Google 検索が中断されました。キャプチャは開いたままです。
+error.lens_too_large = 画像が Google レンズの上限 20 MB を超えています。
+error.document_unread = {path} を開けませんでした: {detail}
+error.document_too_large = この画像 ({width} × {height}) はこの画面より大きいです。PNG としては引き続き開けます。
+error.board_unsaved = Board を保存できませんでした: {detail}
+error.wallpaper_unchanged = メモは保存しましたが、壁紙は更新されませんでした: {detail}
+error.board_unopened = Board を開けませんでした。
+error.board_in_use = Board は編集中です。先に閉じてから消去してください。
+error.board_base_damaged = Board のベース ファイルが破損しています。変更せずに残しました。
+
+board.newer = この Board は新しいバージョンの Shotoshot で作成されました。
+board.damaged = Board ファイルが破損しています。変更せずに残しました。
+
+document.not_editable = このファイルには編集可能な Shotoshot のデータがありません。
+document.newer = この画像は新しい Shotoshot で保存されました。編集するには Shotoshot を更新してください。PNG としては引き続き開けます。
+document.damaged = この編集可能な画像は破損しているため、編集用に開けません。
+
+save.png = PNG 画像
+save.jpeg = JPEG 画像
+save.shoto = 編集可能な Shotoshot 画像 (画面全体を保持)
+
+lens.sending = キャプチャを Google レンズに送信しています…
+lens.needs_script = キャプチャの送信には JavaScript が必要です。
+
+keycap.esc == Esc
+keycap.ctrl == Ctrl
+keycap.alt == Alt
+keycap.alt_gr == Gr
+keycap.caps == Caps
+keycap.num == Num
+keycap.scroll == Scr
+keycap.print == Prt
+keycap.end == End
+keycap.insert == Ins
+keycap.delete == Del
+
+# Installer
+installer.language.title = Shotoshot の言語
+installer.language.description = 後で通知領域の Shotoshot アイコンから変更できます。
+installer.language.auto = Windows の言語
+installer.shoto_file = 編集可能な Shotoshot 画像

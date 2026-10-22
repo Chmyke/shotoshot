@@ -6,7 +6,9 @@ use crate::presentation::menu as commands;
 use crate::render::{D2dCanvas, Renderer};
 use crate::settings::{InputLayout, Shortcut};
 use shotoshot_core::{Rect, Tool};
+use shotoshot_text::{Key, Language, LanguageChoice, Text, language, tr_in};
 use shotoshot_ui::{Canvas, Ink};
+use std::borrow::Cow;
 mod popup;
 pub(super) use popup::{CLOSED, COMMAND, Popup};
 
@@ -38,112 +40,159 @@ pub(super) enum Icon {
     Power,
     /// A note pinned to the desktop.
     Board,
+    /// The interface language.
+    Globe,
     /// The editor toolbar's glyph for the same notion.
     Toolbar(Action),
 }
 
+/// What a row shows as its name.
+#[derive(Clone, Copy)]
+enum Label {
+    Text(Key),
+    /// The language submenu: its word in the interface language, then the English one.
+    Languages,
+    /// A language under its own name, whatever the interface language.
+    Native(Language),
+    /// A size of the input diagram, in percent.
+    Percent(u32),
+    Blank,
+}
+
+#[derive(Clone, Copy)]
 struct Row {
     id: u32,
-    label: &'static str,
+    label: Label,
     icon: Icon,
     kind: Kind,
 }
-const fn row(id: u32, label: &'static str, icon: Icon, kind: Kind) -> Row {
+const fn row(id: u32, label: Key, icon: Icon, kind: Kind) -> Row {
     Row {
         id,
-        label,
+        label: Label::Text(label),
         icon,
         kind,
     }
 }
-const fn title(id: u32, label: &'static str) -> Row {
+const fn title(id: u32, label: Key) -> Row {
     row(id, label, Icon::None, Kind::Title)
+}
+const fn choice(id: u32, label: Label) -> Row {
+    Row {
+        id,
+        label,
+        icon: Icon::None,
+        kind: Kind::Choice,
+    }
 }
 
 /// Command ids are the ones `App::menu` handles; titles (90..) and the separator are inert.
 const ROOT: &[Row] = &[
-    row(1, "Take a screenshot", Icon::Capture, Kind::Command),
-    row(8, "Edit board", Icon::Board, Kind::Command),
-    row(9, "Show board", Icon::Board, Kind::Toggle),
+    row(1, Key::MenuTakeScreenshot, Icon::Capture, Kind::Command),
+    row(8, Key::MenuEditBoard, Icon::Board, Kind::Command),
+    row(9, Key::MenuShowBoard, Icon::Board, Kind::Toggle),
     row(
         10,
-        "Clear board",
+        Key::MenuClearBoard,
         Icon::Toolbar(Action::ClearBoard),
         Kind::Command,
     ),
-    title(90, "Presentation"),
-    row(101, "Pointer halo", Icon::Halo, Kind::Toggle),
-    row(103, "Keyboard", Icon::Keyboard, Kind::Toggle),
-    row(104, "Mouse", Icon::Mouse, Kind::Toggle),
-    row(130, "Keyboard layout", Icon::Layout, Kind::Submenu),
-    row(140, "Keyboard and mouse size", Icon::Size, Kind::Submenu),
+    title(90, Key::MenuPresentation),
+    row(101, Key::MenuPointerHalo, Icon::Halo, Kind::Toggle),
+    row(103, Key::MenuKeyboard, Icon::Keyboard, Kind::Toggle),
+    row(104, Key::MenuMouse, Icon::Mouse, Kind::Toggle),
+    row(130, Key::MenuKeyboardLayout, Icon::Layout, Kind::Submenu),
+    row(140, Key::MenuInputSize, Icon::Size, Kind::Submenu),
     row(
         102,
-        "Temporary shapes",
+        Key::MenuTemporaryShapes,
         Icon::Toolbar(Action::Tool(Tool::Pen)),
         Kind::Toggle,
     ),
-    row(120, "Shape duration", Icon::Clock, Kind::Submenu),
-    title(91, "Shortcuts · click to change"),
-    row(2, "Capture", Icon::Capture, Kind::Command),
-    row(6, "Instant screenshot", Icon::Instant, Kind::Command),
+    row(120, Key::MenuShapeDuration, Icon::Clock, Kind::Submenu),
+    title(91, Key::MenuShortcuts),
+    row(2, Key::MenuCapture, Icon::Capture, Kind::Command),
+    row(6, Key::MenuInstantScreenshot, Icon::Instant, Kind::Command),
     row(
         110,
-        "Arrow",
+        Key::ToolbarArrow,
         Icon::Toolbar(Action::Tool(Tool::Arrow)),
         Kind::Command,
     ),
     row(
         111,
-        "Rectangle",
+        Key::ToolbarRectangle,
         Icon::Toolbar(Action::Tool(Tool::Rectangle)),
         Kind::Command,
     ),
     row(
         112,
-        "Ellipse",
+        Key::ToolbarEllipse,
         Icon::Toolbar(Action::Tool(Tool::Ellipse)),
         Kind::Command,
     ),
-    row(13, "Board", Icon::Board, Kind::Command),
-    title(92, "Options"),
-    row(7, "Screenshot sound", Icon::Sound, Kind::Toggle),
+    row(13, Key::MenuBoard, Icon::Board, Kind::Command),
+    title(92, Key::MenuOptions),
+    row(7, Key::MenuScreenshotSound, Icon::Sound, Kind::Toggle),
     row(
         5,
-        "Live capture by default",
+        Key::MenuLiveCaptureDefault,
         Icon::Toolbar(Action::Live),
         Kind::Toggle,
     ),
-    row(4, "Start with Windows", Icon::Power, Kind::Toggle),
-    row(0, "", Icon::None, Kind::Separator),
+    row(4, Key::MenuStartWithWindows, Icon::Power, Kind::Toggle),
+    // Last of the options, right above Quit: a fixed place, found without reading the menu.
+    Row {
+        id: 150,
+        label: Label::Languages,
+        icon: Icon::Globe,
+        kind: Kind::Submenu,
+    },
+    Row {
+        id: 0,
+        label: Label::Blank,
+        icon: Icon::None,
+        kind: Kind::Separator,
+    },
     row(
         3,
-        "Quit Shotoshot",
+        Key::MenuQuit,
         Icon::Toolbar(Action::Close),
         Kind::Command,
     ),
 ];
 const DURATIONS: &[Row] = &[
-    row(121, "1 second", Icon::None, Kind::Choice),
-    row(122, "3 seconds", Icon::None, Kind::Choice),
-    row(123, "5 seconds", Icon::None, Kind::Choice),
+    choice(121, Label::Text(Key::MenuDuration1)),
+    choice(122, Label::Text(Key::MenuDuration3)),
+    choice(123, Label::Text(Key::MenuDuration5)),
 ];
 const LAYOUTS: &[Row] = &[
-    row(131, "Full", Icon::None, Kind::Choice),
-    row(132, "Compact", Icon::None, Kind::Choice),
-    row(133, "Gaming", Icon::None, Kind::Choice),
+    choice(131, Label::Text(Key::MenuLayoutFull)),
+    choice(132, Label::Text(Key::MenuLayoutCompact)),
+    choice(133, Label::Text(Key::MenuLayoutGaming)),
 ];
 const SIZES: &[Row] = &[
-    row(141, "100%", Icon::None, Kind::Choice),
-    row(142, "150%", Icon::None, Kind::Choice),
-    row(143, "200%", Icon::None, Kind::Choice),
+    choice(141, Label::Percent(100)),
+    choice(142, Label::Percent(150)),
+    choice(143, Label::Percent(200)),
 ];
+/// The automatic choice (151), then every language in table order (152..=166).
+const LANGUAGES: [Row; 1 + Language::ALL.len()] = {
+    let mut rows = [choice(151, Label::Text(Key::MenuLanguageAuto)); 1 + Language::ALL.len()];
+    let mut index = 0;
+    while index < Language::ALL.len() {
+        rows[index + 1] = choice(152 + index as u32, Label::Native(Language::ALL[index]));
+        index += 1;
+    }
+    rows
+};
 /// The values a submenu row opens.
 fn choices(id: u32) -> &'static [Row] {
     match id {
         120 => DURATIONS,
         130 => LAYOUTS,
         140 => SIZES,
+        150 => &LANGUAGES,
         _ => &[],
     }
 }
@@ -152,7 +201,29 @@ fn find(id: u32) -> Option<&'static Row> {
         .chain(DURATIONS)
         .chain(LAYOUTS)
         .chain(SIZES)
+        .chain(&LANGUAGES)
         .find(|row| row.id == id)
+}
+/// The language a choice of the language submenu selects, None for any other command.
+pub(super) fn on_language_choice(id: u32) -> Option<LanguageChoice> {
+    let index = id.checked_sub(151)?;
+    LanguageChoice::ALL.get(index as usize).copied()
+}
+/// The name of a row in `language`.
+fn label_in(row: &Row, language: Language) -> Cow<'static, str> {
+    match row.label {
+        Label::Text(key) => tr_in(language, key).into(),
+        Label::Languages => shotoshot_text::language_menu_label_in(language),
+        Label::Native(name) => name.native_name().into(),
+        Label::Percent(percent) => percent_in(percent as usize, language).into(),
+        Label::Blank => "".into(),
+    }
+}
+fn label(row: &Row) -> Cow<'static, str> {
+    label_in(row, language())
+}
+fn percent_in(percent: usize, language: Language) -> String {
+    Text::with_in(language, Key::MenuPercent, &[("n", &percent.to_string())]).to_string()
 }
 /// The icon a menu row shows, for the surfaces that continue what the row opens.
 pub(super) fn icon(id: u32) -> Icon {
@@ -182,9 +253,13 @@ pub(super) struct Values {
     pub board: bool,
     /// Packed with `shortcut`.
     pub board_shortcut: usize,
+    pub language: LanguageChoice,
 }
 impl Values {
     fn checked(&self, id: u32) -> bool {
+        if let Some(choice) = on_language_choice(id) {
+            return choice == self.language;
+        }
         match id {
             101 => self.halo,
             102 => self.temporary_shapes,
@@ -210,6 +285,11 @@ impl Values {
             120 => self.duration_ms as usize,
             130 => self.layout.index(),
             140 => self.size as usize,
+            // The position of the current choice in its submenu, as for the layout.
+            150 => LANGUAGES
+                .iter()
+                .position(|row| on_language_choice(row.id) == Some(self.language))
+                .unwrap_or(0),
             _ => 0,
         }
     }
@@ -222,28 +302,33 @@ pub(super) fn shortcut(shortcut: Shortcut, unavailable: bool) -> usize {
     }
     ((shortcut.key << 16) | shortcut.modifiers | (u32::from(unavailable) << 31)) as usize
 }
-fn shortcut_text(data: usize) -> String {
+fn shortcut_text_in(data: usize, language: Language) -> String {
     if data == 0 {
         return String::new();
     }
-    format!(
-        "{}{}",
-        setup::key_label((data & 0xffff) as u32, ((data >> 16) & 0xff) as u32).replace(" + ", "+"),
-        if data & (1 << 31) != 0 {
-            " (in use)"
-        } else {
-            ""
-        }
-    )
+    let (mods, key) = ((data & 0xffff) as u32, ((data >> 16) & 0xff) as u32);
+    let keys = setup::key_label_in(mods, key, language).replace(" + ", "+");
+    if data & (1 << 31) != 0 {
+        Text::with_in(language, Key::MenuShortcutInUse, &[("shortcut", &keys)]).to_string()
+    } else {
+        keys
+    }
 }
-/// Text on the right of a row.
-fn detail(row: &Row, data: usize) -> String {
+/// Text on the right of a row, in `language`.
+fn detail_in(row: &Row, data: usize, language: Language) -> String {
     match row.kind {
-        Kind::Command => shortcut_text(data),
+        Kind::Command => shortcut_text_in(data, language),
         Kind::Submenu => match row.id {
-            130 => LAYOUTS.get(data).map_or("", |layout| layout.label).into(),
-            140 => format!("{data}%"),
-            _ => format!("{} s", data / 1000),
+            130 | 150 => choices(row.id)
+                .get(data)
+                .map_or(String::new(), |current| label_in(current, language).into()),
+            140 => percent_in(data, language),
+            _ => Text::with_in(
+                language,
+                Key::MenuSeconds,
+                &[("n", &(data / 1000).to_string())],
+            )
+            .to_string(),
         },
         _ => String::new(),
     }
@@ -276,21 +361,28 @@ fn height(kind: Kind) -> f64 {
 }
 /// Logical width a row needs to show its label and its right-hand side without clipping.
 fn width(renderer: &Renderer, row: &Row, data: usize) -> Result<f64> {
-    let label = |text: &str, size: f64| Ok::<_, Error>(renderer.measure_text(text, size as f32)?.x);
+    width_in(renderer, row, data, language())
+}
+/// `width` for the texts of `language`.
+fn width_in(renderer: &Renderer, row: &Row, data: usize, language: Language) -> Result<f64> {
+    let measure = |text: &str, size: f64| {
+        Ok::<_, Error>(renderer.measure_text_in(text, size as f32, language)?.x)
+    };
+    let name = label_in(row, language);
     Ok(match row.kind {
         Kind::Separator => 0.,
-        Kind::Title => ICON_X + label(row.label, TITLE_SIZE)? + MARGIN,
-        Kind::Toggle => LABEL_X + label(row.label, TEXT_SIZE)? + 2. * MARGIN + SWITCH.x + MARGIN,
-        Kind::Choice => LABEL_X + label(row.label, TEXT_SIZE)? + 2. * MARGIN,
+        Kind::Title => ICON_X + measure(&name, TITLE_SIZE)? + MARGIN,
+        Kind::Toggle => LABEL_X + measure(&name, TEXT_SIZE)? + 2. * MARGIN + SWITCH.x + MARGIN,
+        Kind::Choice => LABEL_X + measure(&name, TEXT_SIZE)? + 2. * MARGIN,
         Kind::Command | Kind::Submenu => {
-            let detail = detail(row, data);
+            let detail = detail_in(row, data, language);
             let arrow = if row.kind == Kind::Submenu { ARROW } else { 0. };
             let right = if detail.is_empty() {
                 0.
             } else {
-                2. * MARGIN + label(&detail, TEXT_SIZE)?
+                2. * MARGIN + measure(&detail, TEXT_SIZE)?
             };
-            LABEL_X + label(row.label, TEXT_SIZE)? + right + arrow + MARGIN
+            LABEL_X + measure(&name, TEXT_SIZE)? + right + arrow + MARGIN
         }
     })
 }
@@ -503,6 +595,20 @@ pub(super) fn draw_icon<C: Canvas>(
                 segments(canvas, origin, scale, rgb, &line)?;
             }
         }
+        Icon::Globe => {
+            // The earth, one meridian and the equator.
+            canvas.stroke_ellipse(at(10., 10.), radius(8.), ink, 1.6 * scale)?;
+            canvas.stroke_ellipse(
+                at(10., 10.),
+                Point {
+                    x: 3.5 * scale,
+                    y: 8. * scale,
+                },
+                ink,
+                1.6 * scale,
+            )?;
+            segments(canvas, origin, scale, rgb, &[(2., 10.), (18., 10.)])?;
+        }
     }
     Ok(())
 }
@@ -523,6 +629,7 @@ fn paint<C: Canvas>(
         },
         Ink::solid(BACKGROUND),
     )?;
+    let name = label(row);
     let middle = size.y / 2.;
     let text = |canvas: &mut C, text: &str, left: f64, right: f64, bottom: f64, size: f64, rgb| {
         let line = canvas.measure_text("X", u(size))?.y;
@@ -561,7 +668,7 @@ fn paint<C: Canvas>(
         Kind::Title => {
             return text(
                 canvas,
-                row.label,
+                &name,
                 u(ICON_X),
                 size.x,
                 size.y - u(3.),
@@ -603,15 +710,7 @@ fn paint<C: Canvas>(
     }
     let line = canvas.measure_text("X", u(TEXT_SIZE))?.y;
     let bottom = middle + line / 2.;
-    text(
-        canvas,
-        row.label,
-        u(LABEL_X),
-        size.x,
-        bottom,
-        TEXT_SIZE,
-        TEXT,
-    )?;
+    text(canvas, &name, u(LABEL_X), size.x, bottom, TEXT_SIZE, TEXT)?;
     let mut right = size.x - u(MARGIN);
     if row.kind == Kind::Submenu {
         segments(
@@ -670,7 +769,7 @@ fn paint<C: Canvas>(
         }
         return Ok(());
     }
-    let detail = detail(row, state.data);
+    let detail = detail_in(row, state.data, language());
     if !detail.is_empty() {
         let extent = canvas.measure_text(&detail, u(TEXT_SIZE))?.x;
         text(
@@ -795,6 +894,7 @@ fn sample() -> Values {
         startup: defaults.start_with_windows,
         board: defaults.board_visible,
         board_shortcut: shortcut(defaults.board_shortcut, false),
+        language: defaults.language,
     }
 }
 pub(super) fn preview() -> Result<()> {
@@ -811,6 +911,11 @@ pub(super) fn probe() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The English text of a row, as the existing assertions compare it.
+    fn english(row: &Row) -> String {
+        label_in(row, Language::En).into_owned()
+    }
 
     const WIDTH: i32 = 320;
     fn rendered(row: &Row, state: State, scale: f64) -> Image {
@@ -872,7 +977,7 @@ mod tests {
             assert!(
                 drawn(&image, ICON_X, ICON_X + 16., 1.) > 20,
                 "{} has no icon",
-                row.label
+                english(row)
             );
         }
     }
@@ -886,10 +991,10 @@ mod tests {
         };
         assert!(values.checked(9));
         assert_eq!([values.data(8), values.data(13)], [77, 77]);
-        assert!(find(8).is_some_and(|r| r.label == "Edit board"));
-        assert!(find(9).is_some_and(|r| r.label == "Show board" && r.kind == Kind::Toggle));
-        assert!(find(13).is_some_and(|r| r.label == "Board" && r.kind == Kind::Command));
-        assert!(find(10).is_some_and(|r| r.label == "Clear board"
+        assert!(find(8).is_some_and(|r| english(r) == "Edit board"));
+        assert!(find(9).is_some_and(|r| english(r) == "Show board" && r.kind == Kind::Toggle));
+        assert!(find(13).is_some_and(|r| english(r) == "Board" && r.kind == Kind::Command));
+        assert!(find(10).is_some_and(|r| english(r) == "Clear board"
             && r.kind == Kind::Command
             && matches!(r.icon, Icon::Toolbar(Action::ClearBoard))));
     }
@@ -957,16 +1062,20 @@ mod tests {
             size: 200,
             ..Default::default()
         };
-        let shown = |id| detail(find(id).unwrap(), values.data(id));
+        let shown = |id| detail_in(find(id).unwrap(), values.data(id), Language::En);
         assert_eq!(
             [shown(120), shown(130), shown(140)],
             ["5 s", "Compact", "200%"]
         );
-        for row in ROOT.iter().filter(|row| row.kind == Kind::Submenu) {
-            assert_eq!(choices(row.id).len(), 3, "{}", row.label);
+        // The presentation submenus offer three values; the language one, every language.
+        for row in ROOT
+            .iter()
+            .filter(|row| row.kind == Kind::Submenu && row.id != 150)
+        {
+            assert_eq!(choices(row.id).len(), 3, "{}", english(row));
         }
         assert_eq!(
-            LAYOUTS.iter().map(|row| row.label).collect::<Vec<_>>(),
+            LAYOUTS.iter().map(english).collect::<Vec<_>>(),
             ["Full", "Compact", "Gaming"]
         );
     }
@@ -1006,8 +1115,11 @@ mod tests {
             },
             true,
         );
-        assert_eq!(shortcut_text(short), "Scroll Lock");
-        assert_eq!(shortcut_text(long), "Ctrl+Shift+Alt+Print Screen (in use)");
+        assert_eq!(shortcut_text_in(short, Language::En), "Scroll Lock");
+        assert_eq!(
+            shortcut_text_in(long, Language::En),
+            "Ctrl+Shift+Alt+Print Screen (in use)"
+        );
         assert!(width_of(0) < width_of(short) && width_of(short) < width_of(long));
         // The longest shortcut is drawn entirely inside the width the row asks for.
         let needed = width_of(long);
@@ -1032,11 +1144,207 @@ mod tests {
         })
         .unwrap();
         let label_end = LABEL_X
-            + with_painter(|renderer| renderer.measure_text(row.label, TEXT_SIZE as f32))
+            + with_painter(|renderer| renderer.measure_text(&label(row), TEXT_SIZE as f32))
                 .unwrap()
                 .x;
         assert_eq!(drawn(&image, label_end + 2., label_end + MARGIN, 1.), 0);
         assert_eq!(drawn(&image, needed - MARGIN + 2., needed, 1.), 0);
+    }
+
+    #[test]
+    fn english_labels_are_unchanged() {
+        let root: Vec<_> = ROOT
+            .iter()
+            .filter(|row| row.id != 150)
+            .map(english)
+            .collect();
+        assert_eq!(
+            root,
+            [
+                "Take a screenshot",
+                "Edit board",
+                "Show board",
+                "Clear board",
+                "Presentation",
+                "Pointer halo",
+                "Keyboard",
+                "Mouse",
+                "Keyboard layout",
+                "Keyboard and mouse size",
+                "Temporary shapes",
+                "Shape duration",
+                "Shortcuts · click to change",
+                "Capture",
+                "Instant screenshot",
+                "Arrow",
+                "Rectangle",
+                "Ellipse",
+                "Board",
+                "Options",
+                "Screenshot sound",
+                "Live capture by default",
+                "Start with Windows",
+                "",
+                "Quit Shotoshot",
+            ]
+        );
+        assert_eq!(
+            DURATIONS.iter().map(english).collect::<Vec<_>>(),
+            ["1 second", "3 seconds", "5 seconds"]
+        );
+        assert_eq!(
+            SIZES.iter().map(english).collect::<Vec<_>>(),
+            ["100%", "150%", "200%"]
+        );
+    }
+
+    #[test]
+    fn language_row_keeps_the_english_word() {
+        let row = find(150).unwrap();
+        assert!(row.kind == Kind::Submenu && matches!(row.icon, Icon::Globe));
+        assert_eq!(label_in(row, Language::En), "Language");
+        assert_eq!(label_in(row, Language::Ko), "언어 · Language");
+        for language in Language::ALL.into_iter().skip(1) {
+            let label = label_in(row, language);
+            assert!(
+                label.ends_with(" · Language"),
+                "{}: {label}",
+                language.tag()
+            );
+            assert!(
+                !label.starts_with("Language"),
+                "{}: {label}",
+                language.tag()
+            );
+        }
+    }
+
+    #[test]
+    fn language_choices_show_native_names() {
+        let expected = [
+            "English",
+            "简体中文",
+            "Русский",
+            "Español",
+            "Português (Brasil)",
+            "Deutsch",
+            "日本語",
+            "Français",
+            "Polski",
+            "한국어",
+            "繁體中文",
+            "Türkçe",
+            "Українська",
+            "Italiano",
+            "Čeština",
+        ];
+        for language in Language::ALL {
+            let names: Vec<_> = (152..=166)
+                .map(|id| label_in(find(id).unwrap(), language))
+                .collect();
+            assert_eq!(names, expected, "{}", language.tag());
+        }
+        assert_eq!(
+            label_in(find(151).unwrap(), Language::En),
+            "Windows language"
+        );
+        assert_eq!(choices(150).len(), 16);
+        assert!(choices(150).iter().all(|row| row.kind == Kind::Choice));
+    }
+
+    #[test]
+    fn checked_language_follows_the_setting() {
+        let ticked = |values: &Values| {
+            (150..=167)
+                .filter(|&id| values.checked(id))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ticked(&Values::default()), [151]);
+        let german = Values {
+            language: LanguageChoice::Fixed(Language::De),
+            ..Default::default()
+        };
+        assert_eq!(ticked(&german), [157]);
+        // The row names the current choice, like the other submenus.
+        let row = find(150).unwrap();
+        assert_eq!(detail_in(row, german.data(150), Language::En), "Deutsch");
+        assert_eq!(
+            detail_in(row, Values::default().data(150), Language::En),
+            "Windows language"
+        );
+    }
+
+    #[test]
+    fn a_language_choice_is_read_from_its_id() {
+        assert_eq!(on_language_choice(151), Some(LanguageChoice::Auto));
+        assert_eq!(
+            on_language_choice(152),
+            Some(LanguageChoice::Fixed(Language::En))
+        );
+        assert_eq!(
+            on_language_choice(157),
+            Some(LanguageChoice::Fixed(Language::De))
+        );
+        assert_eq!(
+            on_language_choice(166),
+            Some(LanguageChoice::Fixed(Language::Cs))
+        );
+        for id in [0, 3, 143, 150, 167] {
+            assert_eq!(on_language_choice(id), None, "{id}");
+        }
+        for (index, row) in choices(150).iter().enumerate().skip(1) {
+            assert_eq!(
+                on_language_choice(row.id),
+                Some(LanguageChoice::Fixed(Language::ALL[index - 1]))
+            );
+        }
+    }
+
+    /// Widest row of a menu column in `language`, in logical pixels at scale 1.
+    fn widest(rows: &[Row], values: &Values, language: Language) -> f64 {
+        with_painter(|renderer| {
+            let mut widest: f64 = 0.;
+            for row in rows {
+                // The language row names any of its sixteen choices.
+                let data: Vec<usize> = if row.id == 150 {
+                    (0..choices(150).len()).collect()
+                } else {
+                    vec![values.data(row.id)]
+                };
+                for data in data {
+                    widest = widest.max(width_in(renderer, row, data, language)?);
+                }
+            }
+            Ok(widest)
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn every_menu_fits() {
+        let _open = Open;
+        let values = sample();
+        for language in Language::ALL {
+            for rows in [ROOT, DURATIONS, LAYOUTS, SIZES, &LANGUAGES[..]] {
+                let width = widest(rows, &values, language);
+                assert!(
+                    width <= 480.,
+                    "{}: a menu is {width:.0} px wide; shorten its longest text",
+                    language.tag()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_language_row_leaves_the_english_menu_as_wide_as_it_was() {
+        let _open = Open;
+        let values = sample();
+        let others: Vec<Row> = ROOT.iter().filter(|row| row.id != 150).copied().collect();
+        let language_row = [*find(150).unwrap()];
+        assert!(
+            widest(&language_row, &values, Language::En) <= widest(&others, &values, Language::En)
+        );
     }
 
     #[test]

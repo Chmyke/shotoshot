@@ -14,10 +14,15 @@ mod image;
 mod interaction;
 pub mod keys;
 mod magnifier;
-pub use magnifier::CELLS as MAGNIFIER_CELLS;
+pub use magnifier::{
+    CELLS as MAGNIFIER_CELLS, HINT_ROOM as MAGNIFIER_HINT_ROOM, HINT_SIZE as MAGNIFIER_HINT_SIZE,
+    hint_in as magnifier_hint_in,
+};
 mod overlay;
 #[cfg(test)]
 mod scale_tests;
+mod shortcut_label;
+pub use shortcut_label::{shortcut_label, shortcut_label_in};
 #[cfg(test)]
 mod test_host;
 mod text_field;
@@ -30,6 +35,10 @@ pub use dimension_fields::{DimensionFields, DimensionKey};
 pub use document::placement;
 pub use host::Host;
 pub use image::Image;
-pub use overlay::{draw_notice, notice_size, place_hint, top_center};
+pub use overlay::{
+    ENTRY_ERROR_SIZE, SELECTION_HINT_NOTE_SIZE, SELECTION_HINT_TITLE_SIZE, draw_notice,
+    entry_error_size, notice_size, place_hint, selection_hint_lines_in, selection_hint_size,
+    top_center,
+};
 pub use text_field::{FieldKey, TextField};
 pub use view::{MAX_ZOOM, View};

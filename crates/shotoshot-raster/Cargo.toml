@@ -10,3 +10,7 @@ shotoshot-core = { path = "../shotoshot-core" }
 shotoshot-ui = { path = "../shotoshot-ui" }
 tiny-skia = "0.12"
 cosmic-text = "0.19"
+
+[dev-dependencies]
+# Every language of the interface, for the tooltip width test.
+shotoshot-text = { path = "../shotoshot-text" }

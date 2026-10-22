@@ -25,6 +25,8 @@ mod tests;
 use crate::settings::PresentationSettings;
 use broadcast::{Broadcast, Slot};
 use devices::Devices;
+#[cfg(test)]
+pub(crate) use input::SHORTCUT_NAMES;
 use input::{Bindings, held_modifiers};
 use layer::Layer;
 use model::{LiveTool, Scene};
@@ -294,14 +296,14 @@ impl Presentation {
             ..self.enabled
         })
     }
-    pub fn resume_shortcuts(&mut self) -> Result<Vec<&'static str>> {
+    pub fn resume_shortcuts(&mut self) -> Result<Vec<shotoshot_text::Key>> {
         let result = self.bindings.available(self.enabled);
         if result.is_err() {
             let _ = self.stop();
         }
         result
     }
-    pub fn start_shapes(&mut self) -> Result<Vec<&'static str>> {
+    pub fn start_shapes(&mut self) -> Result<Vec<shotoshot_text::Key>> {
         self.enabled.shapes = true;
         self.resume_shortcuts()
     }

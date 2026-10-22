@@ -42,7 +42,10 @@ pub fn screenshot() -> Result<Image, Box<dyn Error>> {
     match code {
         0 => {}
         1 => return Err(Box::new(Cancelled)),
-        _ => return Err("the desktop refused the screenshot".into()),
+        _ => {
+            let refused = shotoshot_text::tr(shotoshot_text::Key::ErrorScreenshotRefused);
+            return Err(crate::failure::visible(refused).into());
+        }
     }
     let uri: String = results
         .get("uri")

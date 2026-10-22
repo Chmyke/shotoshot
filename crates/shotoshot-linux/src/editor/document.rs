@@ -4,6 +4,7 @@
 //! INVARIANTS: The frame of a document is decoded only once a monitor is known to show it
 //! whole, and only as the PNG of the announced size.
 use super::*;
+use crate::failure::visible;
 use shotoshot_core::{
     Rect, Tool,
     shoto::{self, Scene},
@@ -12,9 +13,6 @@ use winit::dpi::PhysicalSize;
 
 /// Second argument of the diagnostic's children: stand in for the user, then leave.
 pub const PROBE: &str = "--linux-document-probe";
-/// Shown after an editable save. No Save window names the file type here: this is where
-/// the user reads that the file holds more than the selection.
-pub const SAVED_EDITABLE: &str = "Editable image saved, screen included.";
 
 /// A reopened document.
 pub(super) struct Document {
@@ -35,12 +33,24 @@ pub(super) enum Place {
 /// Edits the document at `path`, as the capture it was saved from. `probe` runs the
 /// scripted user of the diagnostic.
 pub fn open(path: &Path, probe: bool) -> Result<(), Box<dyn Error>> {
-    let unread = |error: std::io::Error| format!("Could not open {}: {error}", path.display());
+    // A file that does not open says so in the stored language, before any editor starts; the
+    // scripted user stays in English, as every diagnostic.
+    if !probe {
+        crate::language::apply(&settings::load().unwrap_or_default());
+    }
+    let unread = |error: std::io::Error| {
+        let path = path.display().to_string();
+        let detail = error.to_string();
+        visible(Text::with(
+            Key::ErrorDocumentUnread,
+            &[("path", &path), ("detail", &detail)],
+        ))
+    };
     if std::fs::metadata(path).map_err(unread)?.len() > shoto::MAX_FILE {
-        return Err(shoto::Error::Damaged.message().into());
+        return Err(visible(shoto::Error::Damaged.message()).into());
     }
     let file = std::fs::read(path).map_err(unread)?;
-    let (scene, frame) = shoto::unpack(&file).map_err(shoto::Error::message)?;
+    let (scene, frame) = shoto::unpack(&file).map_err(|e| visible(e.message()))?;
     let document = Document {
         path: path.into(),
         unopened: Some((scene, frame.to_vec())),
@@ -57,9 +67,9 @@ pub fn open(path: &Path, probe: bool) -> Result<(), Box<dyn Error>> {
 /// it the frame and the objects, still apart.
 pub(super) fn packed(raster: &mut Raster, capture: &Capture) -> Result<Vec<u8>, Box<dyn Error>> {
     let visible = png_io::encode(&flattened(raster, capture)?)?;
-    let refused = "This capture cannot be saved as an editable image.";
-    let (scene, frame) = capture.document(&capture.image).ok_or(refused)?;
-    Ok(shoto::pack(&visible, &scene, &png_io::encode(&frame)?).ok_or(refused)?)
+    let refused = || crate::failure::visible(Text::new(Key::ErrorNotEditableCapture));
+    let (scene, frame) = capture.document(&capture.image).ok_or_else(refused)?;
+    Ok(shoto::pack(&visible, &scene, &png_io::encode(&frame)?).ok_or_else(refused)?)
 }
 
 /// What the scripted user does to a reopened document, and the diagnostic to its copy.
@@ -119,10 +129,11 @@ impl Editor {
         let handles: Vec<MonitorHandle> = event_loop.available_monitors().collect();
         let areas: Vec<_> = handles.iter().map(area).collect();
         let (corner, filled) = monitors::place(size, scene.origin, &areas).ok_or_else(|| {
-            format!(
-                "This image ({} × {}) is larger than this screen. It still opens as a PNG.",
-                size.0, size.1
-            )
+            let (width, height) = (size.0.to_string(), size.1.to_string());
+            visible(Text::with(
+                Key::ErrorDocumentTooLarge,
+                &[("width", &width), ("height", &height)],
+            ))
         })?;
         if matches!(self.diagnostic, Some(Diagnostic::Document)) {
             let shown = if filled.is_some() {
@@ -136,7 +147,7 @@ impl Editor {
             Some(monitor) => Place::Monitor(handles[monitor].clone()),
             None => Place::Window(PhysicalSize::new(size.0, size.1)),
         };
-        let damaged = || shoto::Error::Damaged.message();
+        let damaged = || visible(shoto::Error::Damaged.message());
         // Opaque whatever the file says: the decoder keeps no alpha.
         let mut frame = png_io::decode(&frame, size).map_err(|_| damaged())?;
         (frame.left, frame.top) = corner;
