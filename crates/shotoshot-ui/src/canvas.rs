@@ -116,9 +116,4 @@ pub trait Canvas {
     ) -> Result<(), Self::Error> {
         self.annotations(objects, skip)
     }
-    /// `objects` laid over the scene at `opacity`: what a click would change, shown before
-    /// it. Their attachments must be resolved already; plainly where the platform cannot fade.
-    fn preview(&mut self, objects: &[Object], _opacity: f32) -> Result<(), Self::Error> {
-        self.annotations(objects, None)
-    }
 }

@@ -122,11 +122,11 @@ pub fn render_demo() -> Result<()> {
     session.capture.editor = slate();
     session.capture.width_preview = false;
     session.capture.bucket = true;
-    // On the chalk curve, in chalk: the bucket would change nothing, so it previews nothing.
+    // On the chalk curve, in chalk: the bucket would change nothing, so it outlines nothing.
     session.capture.pointer = Point { x: 300., y: 485. };
     let preview = paint_image(1100, 680, |hdc| session.paint(hdc))?;
     save_png(&preview, &path.with_file_name("shotoshot-slate.png"))?;
-    // What a click would take: a dashed frame with Select, the bucket's colour at 45 %.
+    // What a click would take: a dashed frame with Select, the zone in dashes of the bucket's colour.
     session.capture.bucket = false;
     session.capture.editor.tool = Tool::Select;
     session.capture.pointer = Point { x: 900., y: 290. };

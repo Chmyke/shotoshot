@@ -3,7 +3,7 @@
 //! INVARIANTS: Interface sizes are 96-DPI logical pixels times `Capture::ui_scale`;
 //! only the capture and its annotations are in raw pixels (`scale_tests`).
 use crate::{Canvas, Capture, Ink, region_handles, toolbar};
-use shotoshot_core::{FillChange, Object, Paint, Point, Rect, Shape, Tool, arrow_points, paths};
+use shotoshot_core::{FillChange, Object, Paint, Point, Rect, Tool, paths};
 use shotoshot_text::{Key, Language, Text, language, tr, tr_in};
 
 const ACCENT: Ink = Ink::solid([100, 170, 255]);
@@ -11,9 +11,6 @@ const ACCENT: Ink = Ink::solid([100, 170, 255]);
 pub(crate) const SHADE_ALPHA: f32 = 0.48;
 const SHADE: Ink = Ink::with_alpha([0, 0, 0], SHADE_ALPHA);
 const DARK: Ink = Ink::solid([32, 32, 32]);
-/// Opacity of the colour the bucket would lay, shown under the pointer before the click
-/// (Mickaël's choice on the 2026-10-17 board: B1).
-const PREVIEW: f32 = 0.45;
 
 fn square(center: Point, half: f64) -> Rect {
     Rect {
@@ -39,28 +36,9 @@ impl Capture {
         let Some(r) = self.region else {
             return canvas.fill_rect(screen, SHADE);
         };
-        let preview = self.bucket_preview();
         let objects = self.editor.objects();
-        let holes = |coat: &Paint| -> Vec<Vec<Point>> {
-            coat.holes(objects, 0)
-                .flat_map(|o| paths(o, objects))
-                .collect()
-        };
-        for (index, coat) in self.editor.background().iter().enumerate() {
-            // A click that would take it off already lets what is under it show through.
-            let alpha = if preview
-                == Some(FillChange::Remove {
-                    zone: None,
-                    coat: index,
-                }) {
-                1. - PREVIEW
-            } else {
-                1.
-            };
-            canvas.fill_rect_except(r, &holes(coat), Ink::with_alpha(coat.color, alpha))?;
-        }
-        if let Some(FillChange::Pour { zone: None, coat }) = &preview {
-            canvas.fill_rect_except(r, &holes(coat), Ink::with_alpha(coat.color, PREVIEW))?;
+        for coat in self.editor.background() {
+            canvas.fill_rect_except(r, &holes(coat, objects, 0), Ink::solid(coat.color))?;
         }
         for outside in [
             Rect {
@@ -173,41 +151,87 @@ impl Capture {
         }
         Ok(())
     }
-    /// What a bucket click under the pointer would change to a drawn object, laid over it at
-    /// `PREVIEW` with the objects above it; a fill it would remove is outlined instead. The background's preview is
-    /// part of the underlay.
+    /// The outline of what a bucket click under the pointer would change, in dashes: in the
+    /// bucket's colour for a stroke it recolours or a zone it fills, in the accent for a fill
+    /// it removes (Mickaël, 2026-10-23: a translucent colour read as a transparent fill).
     fn draw_bucket_preview<C: Canvas>(&self, canvas: &mut C, s: f64) -> Result<(), C::Error> {
         let objects = self.editor.objects();
-        let (index, ghost) = match self.bucket_preview() {
+        let Some(region) = self.region else {
+            return Ok(());
+        };
+        // The region's own border is solid: the capture's outline sits just inside it.
+        let capture = || {
+            let mut p = region.expanded(-3. * s).corners().to_vec();
+            p.push(p[0]);
+            p
+        };
+        let (mut outline, ink) = match self.bucket_preview() {
             Some(FillChange::Ink { index, color }) if objects[index].style.color != color => {
-                let mut o = resolved(&objects[index], objects);
-                o.style.color = color;
-                (index, o)
+                (self.contour(index, s), color)
             }
-            Some(FillChange::Pour {
-                zone: Some(index),
-                coat,
-            }) => {
-                let mut o = resolved(&objects[index], objects);
-                o.fill = vec![coat];
-                (index, o)
-            }
-            Some(FillChange::Remove {
-                zone: Some(index), ..
-            }) => {
-                return match self.editor.frame_of(objects[index].id) {
-                    Some(frame) => dashed(canvas, frame.outline(3. * s), ACCENT, s),
-                    None => Ok(()),
-                };
-            }
+            Some(FillChange::Pour { zone, coat }) => match zone {
+                Some(index) => {
+                    let mut outline = self.contour(index, s);
+                    outline.extend(holes(&coat, objects, index + 1));
+                    (outline, coat.color)
+                }
+                None => {
+                    let mut outline = holes(&coat, objects, 0);
+                    outline.push(capture());
+                    (outline, coat.color)
+                }
+            },
+            Some(FillChange::Remove { zone, coat }) => match zone {
+                Some(index) => {
+                    let mut outline = self.contour(index, s);
+                    if let Some(coat) = objects[index].fill.get(coat) {
+                        outline.extend(holes(coat, objects, index + 1));
+                    }
+                    (outline, ACCENT.rgb)
+                }
+                None => {
+                    let mut outline = match self.editor.background().get(coat) {
+                        Some(coat) => holes(coat, objects, 0),
+                        None => Vec::new(),
+                    };
+                    outline.push(capture());
+                    (outline, ACCENT.rgb)
+                }
+            },
             _ => return Ok(()),
         };
-        // What lies above the target comes along: drawn the same in the faded layer as in
-        // the scene, it stays unchanged on top.
-        let pile: Vec<Object> = std::iter::once(ghost)
-            .chain(objects[index + 1..].iter().map(|o| resolved(o, objects)))
-            .collect();
-        canvas.preview(&pile, PREVIEW)
+        outline.retain(|p| p.len() > 1);
+        let pieces: Vec<_> = outline.iter().flat_map(|p| dashes(p, s)).collect();
+        // A halo of the opposite lightness keeps the dashes readable on any capture.
+        let light = 0.299 * ink[0] as f64 + 0.587 * ink[1] as f64 + 0.114 * ink[2] as f64 > 128.;
+        let halo = if light {
+            DARK
+        } else {
+            Ink::solid([250, 250, 250])
+        };
+        for &(a, b) in &pieces {
+            canvas.line(a, b, halo, 3. * s)?;
+        }
+        for &(a, b) in &pieces {
+            canvas.line(a, b, Ink::solid(ink), 1.5 * s)?;
+        }
+        Ok(())
+    }
+    /// The drawn outline of the object at `index`, or its frame when it has none (text).
+    fn contour(&self, index: usize, s: f64) -> Vec<Vec<Point>> {
+        let objects = self.editor.objects();
+        let lines = paths(&objects[index], objects);
+        if !lines.is_empty() {
+            return lines;
+        }
+        self.editor
+            .frame_of(objects[index].id)
+            .map(|frame| {
+                let mut p = frame.outline(3. * s).to_vec();
+                p.push(p[0]);
+                vec![p]
+            })
+            .unwrap_or_default()
     }
     pub fn draw_toolbar<C: Canvas>(
         &self,
@@ -502,22 +526,11 @@ fn width_label_size(label: Point, scale: f64) -> Point {
         y: 24. * scale,
     }
 }
-/// `o` drawable alone: an attached arrow keeps the ends it shows among `objects`.
-fn resolved(o: &Object, objects: &[Object]) -> Object {
-    let mut alone = o.clone();
-    if let Some((a, b)) = arrow_points(o, objects)
-        && let Shape::Arrow {
-            start,
-            end,
-            start_attach,
-            end_attach,
-            ..
-        } = &mut alone.shape
-    {
-        (*start, *end) = (a, b);
-        (*start_attach, *end_attach) = (None, None);
-    }
-    alone
+/// The outlines of the shapes `coat` spares, its zone's place in the pile being `floor`.
+fn holes(coat: &Paint, objects: &[Object], floor: usize) -> Vec<Vec<Point>> {
+    coat.holes(objects, floor)
+        .flat_map(|o| paths(o, objects))
+        .collect()
 }
 /// A closed outline through `corners`, in dashes of 4 by 3 interface pixels at `scale`.
 fn dashed<C: Canvas>(
@@ -526,9 +539,21 @@ fn dashed<C: Canvas>(
     ink: Ink,
     scale: f64,
 ) -> Result<(), C::Error> {
+    let mut outline = corners.to_vec();
+    outline.push(corners[0]);
+    for (a, b) in dashes(&outline, scale) {
+        canvas.line(a, b, ink, scale)?;
+    }
+    Ok(())
+}
+/// The pieces of `line` drawn in dashes of 4 by 3 interface pixels at `scale`, the rhythm
+/// running on across its corners so a curve of short segments stays dashed.
+fn dashes(line: &[Point], scale: f64) -> Vec<(Point, Point)> {
     let (dash, period) = (4. * scale, 7. * scale);
-    for (i, a) in corners.iter().enumerate() {
-        let side = corners[(i + 1) % 4] - *a;
+    let mut pieces = Vec::new();
+    let mut walked = 0.;
+    for pair in line.windows(2) {
+        let side = pair[1] - pair[0];
         let length = side.length();
         if length <= 0. {
             continue;
@@ -536,16 +561,20 @@ fn dashed<C: Canvas>(
         let unit = side * (1. / length);
         let mut t = 0.;
         while t < length {
-            canvas.line(
-                *a + unit * t,
-                *a + unit * (t + dash).min(length),
-                ink,
-                scale,
-            )?;
-            t += period;
+            let phase = (walked + t) % period;
+            let next = if phase < dash {
+                let end = (t + dash - phase).min(length);
+                pieces.push((pair[0] + unit * t, pair[0] + unit * end));
+                end
+            } else {
+                t + period - phase
+            };
+            // Rounding can leave a step of nothing; skip to the next phase instead.
+            t = if next > t { next } else { t + 1e-6 * scale };
         }
+        walked += length;
     }
-    Ok(())
+    pieces
 }
 const NOTICE_SIZE: f64 = 13.;
 const NOTICE_PADDING: Point = Point { x: 12., y: 8. };

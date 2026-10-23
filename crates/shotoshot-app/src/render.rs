@@ -975,16 +975,6 @@ impl Canvas for D2dCanvas<'_> {
         }
         Ok(())
     }
-    fn preview(&mut self, objects: &[Object], opacity: f32) -> Result<()> {
-        // Over the scene, never into its checkpoints; no retention, which would evict the pile.
-        self.underlay = None;
-        unsafe { self.target.PushLayer(&layer(opacity), None) };
-        let result = self
-            .renderer
-            .annotation_range(self.target, objects, None, 0..objects.len());
-        unsafe { self.target.PopLayer() };
-        result
-    }
     fn annotations(&mut self, objects: &[Object], skip: Option<u64>) -> Result<()> {
         if let Some(underlay) = self.underlay.take()
             && self.target.as_raw() == self.renderer.dc.as_raw()

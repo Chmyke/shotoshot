@@ -135,22 +135,10 @@ impl Canvas for Recorder {
         let fixed = format!("{} objects, {} fading", objects.len(), fading.len());
         self.push("annotations_fading", &[], fixed)
     }
-    fn preview(&mut self, objects: &[Object], opacity: f32) -> Result<(), ()> {
-        let colours: Vec<_> = objects
-            .iter()
-            .map(|o| {
-                (
-                    o.style.color,
-                    o.fill.iter().map(|c| c.color).collect::<Vec<_>>(),
-                )
-            })
-            .collect();
-        self.push("preview", &[], format!("{colours:?} at {opacity}"))
-    }
 }
 
 #[test]
-fn hovering_outlines_what_a_click_would_take_and_the_bucket_previews_its_colour() {
+fn hovering_outlines_what_a_click_would_take_and_the_bucket_dashes_its_zone() {
     let mut c = Capture::new(Image::solid(400, 300, [0, 0, 0, 255]));
     c.region = Rect::new(Point::default(), Point { x: 400., y: 300. });
     c.selecting = false;
@@ -160,7 +148,6 @@ fn hovering_outlines_what_a_click_would_take_and_the_bucket_previews_its_colour(
     c.action(&mut host, Action::Tool(Tool::Rectangle));
     c.pointer_down(&mut host, at(100., 100.), m).unwrap();
     c.pointer_up(&mut host, at(200., 200.), m);
-    let red = c.editor.objects()[0].style.color;
     // A line drawn over the rectangle, across it.
     c.action(&mut host, Action::Tool(Tool::Line));
     c.pointer_down(&mut host, at(120., 120.), m).unwrap();
@@ -202,23 +189,28 @@ fn hovering_outlines_what_a_click_would_take_and_the_bucket_previews_its_colour(
     let green = [40, 200, 80];
     c.editor.style.color = green;
     c.action(&mut host, Action::Fill);
+    // The bucket's dashes, drawn in its colour over a halo.
+    let inked = |ops: &[Op], ink: Ink| {
+        ops.iter()
+            .filter(|o| o.name == "line" && o.fixed == format!("{ink:?}"))
+            .count()
+    };
     c.pointer_move(&mut host, at(150., 150.), m);
     let fill = frame(&c);
-    let previews: Vec<_> = fill.iter().filter(|o| o.name == "preview").collect();
-    assert_eq!(previews.len(), 1);
-    assert_eq!(
-        previews[0].fixed,
-        format!("[({red:?}, [{green:?}]), ({red:?}, [])] at 0.45"),
-        "the shape as the click would fill it, at 45 %, the line above it kept on top"
+    assert!(
+        inked(&fill, Ink::solid(green)) > 20,
+        "the rectangle's outline in dashes of the bucket's colour"
     );
-    assert_eq!(dashes(&fill), 0, "the bucket does not promise a selection");
+    assert!(
+        fill.iter().all(|o| o.name != "fill_rect_except"),
+        "nothing translucent laid over"
+    );
 
     c.pointer_move(&mut host, at(100., 150.), m);
     let ink = frame(&c);
-    let preview = ink.iter().find(|o| o.name == "preview").unwrap();
-    assert_eq!(
-        preview.fixed,
-        format!("[({green:?}, []), ({red:?}, [])] at 0.45")
+    assert!(
+        inked(&ink, Ink::solid(green)) > 20,
+        "the stroke it would recolour"
     );
 
     // Away from the toolbar, which sits inside a region that fills the screen.
@@ -226,14 +218,11 @@ fn hovering_outlines_what_a_click_would_take_and_the_bucket_previews_its_colour(
     assert!(!c.toolbar_contains(void));
     c.pointer_move(&mut host, void, m);
     let background = frame(&c);
-    let tint = format!("{:?} 1 holes", Ink::with_alpha(green, 0.45));
     assert!(
-        background
-            .iter()
-            .any(|o| o.name == "fill_rect_except" && o.fixed == tint),
-        "the capture tinted under the annotations, the rectangle spared"
+        inked(&background, Ink::solid(green)) > 100,
+        "the capture's edge and the rectangle it spares, dashed"
     );
-    assert!(background.iter().all(|o| o.name != "preview"));
+    assert!(background.iter().all(|o| o.name != "fill_rect_except"));
 
     c.pointer_down(&mut host, at(150., 150.), m).unwrap();
     let alt = Modifiers {
@@ -243,10 +232,10 @@ fn hovering_outlines_what_a_click_would_take_and_the_bucket_previews_its_colour(
     c.pointer_move(&mut host, at(150., 150.), alt);
     let clearing = frame(&c);
     assert!(
-        dashes(&clearing) > 20,
-        "a fill Alt would remove is outlined"
+        inked(&clearing, Ink::solid([100, 170, 255])) > 20,
+        "a fill Alt would remove is outlined in the accent"
     );
-    assert!(clearing.iter().all(|o| o.name != "preview"));
+    assert_eq!(inked(&clearing, Ink::solid(green)), 0);
 }
 
 #[test]

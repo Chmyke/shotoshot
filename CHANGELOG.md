@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.14 · 2026-10-23
+
+- Hovering with the paint bucket now traces a dotted outline around what it's about to fill, instead of a pale tint that looked like see-through paint.
+
 ## 0.3.13 · 2026-10-23
 
 - Taking several captures in a row? The next one opens on the area you just used, ready to annotate. Click outside it for a fresh one; after five quiet minutes it starts blank again.

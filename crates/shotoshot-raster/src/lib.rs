@@ -515,40 +515,6 @@ impl Canvas for SkiaCanvas<'_> {
             .draw_pixmap(0, 0, source.as_ref(), &paint, scale, None);
         Ok(())
     }
-    fn preview(&mut self, objects: &[Object], opacity: f32) -> Result<(), RasterError> {
-        // Drawn apart on a layer the size of the objects, then laid over at `opacity`.
-        let Some(bounds) = objects
-            .iter()
-            .map(|o| o.resolved_bounds(objects).expanded(5. * o.style.width + 8.))
-            .reduce(Rect::union)
-        else {
-            return Ok(());
-        };
-        let (x, y) = (bounds.min.x.floor().max(0.), bounds.min.y.floor().max(0.));
-        let width = bounds.max.x.ceil().min(self.target.width() as f64) - x;
-        let height = bounds.max.y.ceil().min(self.target.height() as f64) - y;
-        if width < 1. || height < 1. {
-            return Ok(());
-        }
-        let Some(mut layer) = Pixmap::new(width as u32, height as u32) else {
-            return Ok(());
-        };
-        let base = self.base.pre_translate(-x as f32, -y as f32);
-        SkiaCanvas {
-            raster: &mut *self.raster,
-            target: &mut layer,
-            transform: base,
-            base,
-        }
-        .annotations(objects, None)?;
-        let paint = PixmapPaint {
-            opacity,
-            ..PixmapPaint::default()
-        };
-        self.target
-            .draw_pixmap(x as i32, y as i32, layer.as_ref(), &paint, self.base, None);
-        Ok(())
-    }
     fn annotations(&mut self, objects: &[Object], skip: Option<u64>) -> Result<(), RasterError> {
         for (index, o) in objects.iter().enumerate() {
             if Some(o.id) == skip {
@@ -903,44 +869,6 @@ mod tests {
         let horizontal_band = inked(&frame, 0..400, 90..120);
         assert!(tall > 80);
         assert!(horizontal_band * 2 < tall, "text was not rotated");
-    }
-
-    #[test]
-    fn a_preview_draws_its_objects_in_place_then_lays_them_over_faded() {
-        let mut objects = filled_scene().objects().to_vec();
-        objects[0].rotation = 0.6;
-        let mut raster = Raster::new();
-        let (mut direct, mut opaque, mut faded) = (blank(), blank(), blank());
-        raster
-            .canvas(&mut direct)
-            .annotations(&objects, None)
-            .unwrap();
-        raster.canvas(&mut opaque).preview(&objects, 1.).unwrap();
-        raster.canvas(&mut faded).preview(&objects, 0.45).unwrap();
-        // Edges blended in the layer first may round one step apart; a shifted object would not.
-        let apart = direct
-            .data()
-            .iter()
-            .zip(opaque.data())
-            .map(|(a, b)| a.abs_diff(*b))
-            .max();
-        assert!(
-            apart <= Some(3),
-            "the layer keeps every object, turned or not, where the scene puts it: {apart:?}"
-        );
-        let inside = |p: &Pixmap| {
-            let c = p.pixel(90, 80).unwrap();
-            [c.red(), c.green(), c.blue()]
-        };
-        assert_eq!(inside(&direct), SLATE);
-        let blend = |s: u8| (255. - 0.45 * (255. - s as f64)) as i32;
-        for (channel, slate) in inside(&faded).into_iter().zip(SLATE) {
-            assert!(
-                (channel as i32 - blend(slate)).abs() <= 2,
-                "{channel} vs {slate}"
-            );
-        }
-        assert_eq!(inside(&blank()), PAPER);
     }
 
     /// The Windows bound of every hint (`every_tooltip_fits`), measured by this renderer and
