@@ -321,6 +321,7 @@ pub fn all_tooltips_in(language: Language) -> Vec<String> {
 pub fn buttons(region: Rect, width: u32, height: u32) -> Vec<Button> {
     buttons_in(
         region,
+        None,
         Rect {
             min: Point::default(),
             max: Point {
@@ -336,16 +337,23 @@ pub fn buttons(region: Rect, width: u32, height: u32) -> Vec<Button> {
 /// Buttons a board session adds to the action panel, before Close. They have no key.
 const BOARD_ACTIONS: [(Key, Action); 1] = [(Key::ToolbarClearBoard, Action::ClearBoard)];
 
-/// Both panels beside `region`, kept on `screen`, with the board's own buttons when `board`.
-/// The layout is in 96-DPI logical pixels and scaled once here, so buttons keep their apparent
-/// size on every screen.
-pub(crate) fn buttons_in(region: Rect, screen: Rect, scale: f64, board: bool) -> Vec<Button> {
+/// Both panels beside `region`, clear of `badge` (the size badge and its button) and kept on
+/// `screen`, with the board's own buttons when `board`. The layout is in 96-DPI logical pixels
+/// and scaled once here, so buttons keep their apparent size on every screen.
+pub(crate) fn buttons_in(
+    region: Rect,
+    badge: Option<Rect>,
+    screen: Rect,
+    scale: f64,
+    board: bool,
+) -> Vec<Button> {
     let resized = |r: Rect, factor: f64| Rect {
         min: r.min * factor,
         max: r.max * factor,
     };
     let mut buttons = layout(
         resized(region, 1. / scale),
+        badge.map(|b| resized(b, 1. / scale)),
         resized(screen, 1. / scale),
         board,
     );
@@ -355,7 +363,7 @@ pub(crate) fn buttons_in(region: Rect, screen: Rect, scale: f64, board: bool) ->
     buttons
 }
 
-fn layout(region: Rect, screen: Rect, board: bool) -> Vec<Button> {
+fn layout(region: Rect, badge: Option<Rect>, screen: Rect, board: bool) -> Vec<Button> {
     let cell = 32.;
     let entries = SHORTCUTS.map(|(label, action, _, _, _)| (label, action));
     let is_tool = |a: Action| matches!(a, Action::Tool(_));
@@ -397,36 +405,62 @@ fn layout(region: Rect, screen: Rect, board: bool) -> Vec<Button> {
             (screen.max.y - size.y - 4.).max(screen.min.y + 4.),
         ),
     };
-    let mut action_min = clamp(
-        Point {
-            x: region.max.x - action_size.x,
-            y: if region.max.y + 8. + action_size.y <= screen.max.y - 4. {
-                region.max.y + 8.
-            } else if region.min.y - 8. - action_size.y >= screen.min.y + 4. {
-                region.min.y - 8. - action_size.y
-            } else {
-                region.max.y - action_size.y - 8.
-            },
-        },
-        action_size,
-    );
-    let action_rect = Rect {
-        min: action_min,
-        max: action_min + action_size,
+    let rect = |min: Point, size: Point| Rect {
+        min,
+        max: min + size,
     };
+    // The badge sits on the region's top edge: the tools go beside both.
+    let occupied = badge.map_or(region, |b| region.union(b));
     let mut tool_min = clamp(
         Point {
-            x: if region.max.x + 8. + tool_size.x <= screen.max.x - 4. {
-                region.max.x + 8.
-            } else if region.min.x - 8. - tool_size.x >= screen.min.x + 4. {
-                region.min.x - 8. - tool_size.x
+            x: if occupied.max.x + 8. + tool_size.x <= screen.max.x - 4. {
+                occupied.max.x + 8.
+            } else if occupied.min.x - 8. - tool_size.x >= screen.min.x + 4. {
+                occupied.min.x - 8. - tool_size.x
             } else {
-                region.max.x - tool_size.x - 8.
+                occupied.max.x - tool_size.x - 8.
             },
             y: region.max.y - tool_size.y,
         },
         tool_size,
     );
+    let above = region.min.y - 8. - action_size.y;
+    let mut action_min = if region.max.y + 8. + action_size.y <= screen.max.y - 4. {
+        clamp(
+            Point {
+                x: region.max.x - action_size.x,
+                y: region.max.y + 8.,
+            },
+            action_size,
+        )
+    } else if above >= screen.min.y + 4. {
+        // Above the region, at the badge's height: slid left of the badge when that keeps it
+        // on the screen and off the tools, else raised over the badge.
+        let beside = |x: f64| clamp(Point { x, y: above }, action_size);
+        let clear = |min: Point| badge.is_none_or(|b| !overlaps(rect(min, action_size), b));
+        let level = beside(region.max.x - action_size.x);
+        let slid = badge.map(|b| beside(b.min.x - 8. - action_size.x));
+        let raised = occupied.min.y - 8. - action_size.y;
+        match slid {
+            _ if clear(level) => level,
+            Some(slid)
+                if clear(slid) && !overlaps(rect(slid, action_size), rect(tool_min, tool_size)) =>
+            {
+                slid
+            }
+            _ if raised >= screen.min.y + 4. => Point { y: raised, ..level },
+            _ => level,
+        }
+    } else {
+        clamp(
+            Point {
+                x: region.max.x - action_size.x,
+                y: region.max.y - action_size.y - 8.,
+            },
+            action_size,
+        )
+    };
+    let action_rect = rect(action_min, action_size);
     if overlaps(
         Rect {
             min: tool_min,
@@ -687,7 +721,7 @@ mod tests {
         let region = Rect::new(Point { x: 100., y: 100. }, Point { x: 400., y: 300. }).unwrap();
         let screen = Rect::new(Point::default(), Point { x: 1920., y: 1080. }).unwrap();
         for board in [false, true] {
-            for button in buttons_in(region, screen, 1., board) {
+            for button in buttons_in(region, None, screen, 1., board) {
                 let hint = tooltip_in(&button, Language::En);
                 assert!(ENGLISH_HINTS.contains(&hint.as_str()), "{hint}");
             }
@@ -741,7 +775,7 @@ mod tests {
         let region = Rect::new(Point { x: 100., y: 100. }, Point { x: 400., y: 300. }).unwrap();
         let screen = Rect::new(Point::default(), Point { x: 1920., y: 1080. }).unwrap();
         for board in [false, true] {
-            let buttons = buttons_in(region, screen, 1., board);
+            let buttons = buttons_in(region, None, screen, 1., board);
             let tools: Vec<Tool> = buttons
                 .iter()
                 .filter_map(|b| match b.action {

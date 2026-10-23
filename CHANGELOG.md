@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.11 · 2026-10-23
+
+- Second take: when the toolbar has to sit above your selection, it now steps aside to the left of the size badge instead of climbing over it.
+
 ## 0.3.10 · 2026-10-23
 
 - Selecting near the bottom of the screen no longer parks the toolbar on top of the size and full-screen buttons. Everyone gets their own spot now.

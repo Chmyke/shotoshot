@@ -192,15 +192,12 @@ impl Capture {
             return Vec::new();
         }
         // The toolbar goes around the region and the badges stuck to it, never over them.
-        let occupied = |r: Rect| {
-            self.region_badges()
-                .map_or(r, |b| r.union(b.badge).union(b.button))
-        };
+        let badge = self.region_badges().map(|b| b.badge.union(b.button));
         let mut buttons = self
             .region
             .map(|r| {
                 let screen = self.toolbar_screen(r);
-                toolbar::buttons_in(occupied(r), screen, self.ui_scale(), self.board)
+                toolbar::buttons_in(r, badge, screen, self.ui_scale(), self.board)
             })
             .unwrap_or_default();
         for b in &mut buttons {
@@ -1188,6 +1185,38 @@ mod tests {
                 }
             }
         }
+    }
+    /// The tools and actions panels, then the badge with its button, for `region` on 1080p.
+    fn panels_and_badge(region: Rect) -> ([Rect; 2], Rect) {
+        let mut c = Capture::new(Image::solid(1920, 1080, [0; 4]));
+        c.selecting = false;
+        c.region = Some(region);
+        let panels = toolbar::panels(&c.buttons(), 1.);
+        let badge = c.dimensions_bounds().unwrap();
+        (
+            [panels[0], panels[1]],
+            badge.union(c.screen_button_bounds().unwrap()),
+        )
+    }
+    #[test]
+    fn above_the_region_the_actions_slide_left_of_the_badge_at_its_height() {
+        let region = Rect::new(Point { x: 1300., y: 700. }, Point { x: 1920., y: 1080. }).unwrap();
+        let ([tools, actions], badge) = panels_and_badge(region);
+        assert!(actions.max.y <= region.min.y && actions.max.y > badge.min.y);
+        assert!(
+            actions.max.x <= badge.min.x,
+            "{actions:?} left of {badge:?}"
+        );
+        assert!(!toolbar::overlaps(actions, tools));
+    }
+    #[test]
+    fn the_actions_rise_over_the_badge_rather_than_cover_the_tools() {
+        let region = Rect::new(Point { x: 1800., y: 900. }, Point { x: 1920., y: 1080. }).unwrap();
+        let ([tools, actions], badge) = panels_and_badge(region);
+        // Slid left, they would cross the tools column standing left of this narrow region.
+        assert!(tools.max.x > badge.min.x - 8. - actions.size().x && tools.min.y < region.min.y);
+        assert!(actions.max.y <= badge.min.y, "{actions:?} over {badge:?}");
+        assert!(!toolbar::overlaps(actions, tools));
     }
     #[test]
     fn every_state_hint_is_among_the_measured_ones() {
