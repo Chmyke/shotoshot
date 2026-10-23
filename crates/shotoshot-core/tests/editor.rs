@@ -380,3 +380,35 @@ fn clearing_removes_every_object_and_the_background_in_one_undo_step() {
     editor.undo();
     assert_eq!(editor.objects().len(), 2);
 }
+
+#[test]
+fn moving_one_object_in_a_large_pile_touches_only_it_and_undoes_in_one_step() {
+    let mut e = Editor::default();
+    for i in 0..1500 {
+        let corner = p(f64::from(i % 50) * 100., f64::from(i / 50) * 100.);
+        e.begin(corner, Modifiers::default());
+        e.update(corner + p(60., 60.));
+        e.finish();
+    }
+    let drawn = e.objects().to_vec();
+    let target = drawn[777].id;
+    let center = drawn[777].bounds().center();
+    e.select_only(target);
+    e.tool = Tool::Select;
+    e.begin(center, Modifiers::default());
+    e.update(center + p(3., 4.));
+    e.update(center + p(6., 8.));
+    e.finish();
+    let moved = e.objects().to_vec();
+    for (now, then) in moved.iter().zip(&drawn) {
+        if now.id == target {
+            assert_eq!(now.bounds().min, then.bounds().min + p(6., 8.));
+        } else {
+            assert_eq!(now, then, "object {} moved with the selection", now.id);
+        }
+    }
+    e.undo();
+    assert_eq!(e.objects(), &drawn[..]);
+    e.redo();
+    assert_eq!(e.objects(), &moved[..]);
+}

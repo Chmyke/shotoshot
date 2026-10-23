@@ -1,4 +1,10 @@
 use super::*;
+use std::collections::{HashMap, HashSet};
+
+/// The pile's objects by id; ids are unique within a pile.
+fn by_id(objects: &[Object]) -> HashMap<u64, &Object> {
+    objects.iter().map(|o| (o.id, o)).collect()
+}
 
 /// The pile's ids, bottom first.
 fn ids(objects: &[Object]) -> Vec<u64> {
@@ -11,15 +17,18 @@ impl Editor {
             return;
         }
         // PERF: History retains only changed objects, never full document snapshots or pixels.
+        // Ids are looked up through a map so a step costs O(N), not O(N²), on large piles.
+        let now = by_id(&self.objects);
+        let then = by_id(&before);
         let removed = before
             .iter()
-            .filter(|o| self.objects.iter().find(|n| n.id == o.id) != Some(o))
+            .filter(|o| now.get(&o.id).copied() != Some(o))
             .cloned()
             .collect();
         let added = self
             .objects
             .iter()
-            .filter(|o| before.iter().find(|n| n.id == o.id) != Some(o))
+            .filter(|o| then.get(&o.id).copied() != Some(o))
             .cloned()
             .collect();
         // Undo swaps objects in and out at the end of the pile: the order puts them back.
@@ -53,15 +62,16 @@ impl Editor {
     /// Swaps `remove` for `add`, then puts the pile back in `order` (bottom first) when the
     /// step recorded one; a step that only changed objects leaves their places alone.
     pub(super) fn apply(&mut self, remove: &[Object], add: &[Object], order: Option<&[u64]>) {
-        self.objects
-            .retain(|o| !remove.iter().any(|r| r.id == o.id));
+        let remove: HashSet<u64> = remove.iter().map(|r| r.id).collect();
+        self.objects.retain(|o| !remove.contains(&o.id));
         self.objects.extend_from_slice(add);
         if let Some(order) = order {
-            self.objects
-                .sort_by_key(|o| order.iter().position(|id| *id == o.id));
+            let place: HashMap<u64, usize> =
+                order.iter().enumerate().map(|(i, id)| (*id, i)).collect();
+            self.objects.sort_by_key(|o| place.get(&o.id));
         }
-        self.selected
-            .retain(|id| self.objects.iter().any(|o| o.id == *id));
+        let present: HashSet<u64> = self.objects.iter().map(|o| o.id).collect();
+        self.selected.retain(|id| present.contains(id));
     }
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty()

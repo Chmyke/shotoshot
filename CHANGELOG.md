@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.12 · 2026-10-23
+
+Nothing you would notice in this version: the work is under the hood.
+
 ## 0.3.11 · 2026-10-23
 
 - Second take: when the toolbar has to sit above your selection, it now steps aside to the left of the size badge instead of climbing over it.

@@ -1,5 +1,21 @@
 use super::*;
 
+/// Puts the selected objects back as they were when the gesture began. Moving, turning and
+/// resizing change nothing else, so the rest of the pile (strokes of thousands of points
+/// included) is not copied again on every pointer move.
+fn restore_selected(objects: &mut Vec<Object>, before: &[Object], selected: &[u64]) {
+    if objects.len() != before.len() {
+        objects.clear();
+        objects.extend_from_slice(before);
+        return;
+    }
+    for (o, b) in objects.iter_mut().zip(before) {
+        if selected.contains(&b.id) {
+            o.clone_from(b);
+        }
+    }
+}
+
 impl Editor {
     pub fn begin(&mut self, p: Point, modifiers: Modifiers) {
         if !p.finite() {
@@ -268,7 +284,7 @@ impl Editor {
                 let a = g.origin - center;
                 let b = p - center;
                 let angle = b.y.atan2(b.x) - a.y.atan2(a.x);
-                self.objects.clone_from(&g.before);
+                restore_selected(&mut self.objects, &g.before, &self.selected);
                 for o in &mut self.objects {
                     if self.selected.contains(&o.id) {
                         o.prepare_transform(&g.before, &self.selected);
@@ -310,7 +326,7 @@ impl Editor {
                     None
                 };
                 let resizing = matches!(g.kind, GestureKind::Resize { .. });
-                self.objects.clone_from(&g.before);
+                restore_selected(&mut self.objects, &g.before, &self.selected);
                 for o in &mut self.objects {
                     if self.selected.contains(&o.id) {
                         o.prepare_transform(&g.before, &self.selected);
