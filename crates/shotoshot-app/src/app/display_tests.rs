@@ -34,6 +34,7 @@ impl Resident {
                 pending_brush: None,
                 worker: None,
                 prepared: None,
+                recall: Default::default(),
                 notification_owner: None,
                 google_search: None,
                 first_frame: None,

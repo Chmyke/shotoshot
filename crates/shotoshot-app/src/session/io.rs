@@ -289,7 +289,7 @@ impl Native {
                             input.color,
                             input.size as f64,
                         );
-                        capture.editor.select_only(id);
+                        capture.select_committed_text(id);
                     } else if let Some(id) = capture.editor.add_text_measured_sized_colored(
                         input.position,
                         text,
@@ -297,7 +297,7 @@ impl Native {
                         input.color,
                         input.size as f64,
                     ) {
-                        capture.editor.select_only(id);
+                        capture.select_committed_text(id);
                     }
                 }
                 if input.drag_anchor.is_some() {

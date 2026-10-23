@@ -37,6 +37,7 @@ fn capture_shortcut_cannot_steal_a_suspended_shape_shortcut() {
         pending_brush: None,
         worker: None,
         prepared: None,
+        recall: Default::default(),
         notification_owner: None,
         google_search: None,
         first_frame: None,
@@ -293,6 +294,7 @@ fn resident(owner: HWND) -> App {
         pending_brush: None,
         worker: None,
         prepared: None,
+        recall: Default::default(),
         notification_owner: None,
         google_search: None,
         first_frame: None,
@@ -513,6 +515,7 @@ fn stop_presentation_is_handled_even_while_a_menu_borrows_the_app() {
             pending_brush: None,
             worker: None,
             prepared: None,
+            recall: Default::default(),
             notification_owner: None,
             google_search: None,
             first_frame: None,
@@ -641,6 +644,7 @@ fn entering_the_live_eyedropper_samples_without_mouse_movement() {
             pending_brush: None,
             worker: None,
             prepared: None,
+            recall: Default::default(),
             notification_owner: None,
             toast: None,
             google_search: None,
@@ -735,6 +739,7 @@ fn native_window_messages_edit_export_and_recover_after_failure() {
             pending_brush: None,
             worker: None,
             prepared: None,
+            recall: Default::default(),
             notification_owner: None,
             google_search: None,
             first_frame: None,
@@ -1536,6 +1541,7 @@ unsafe fn app_window(class: PCWSTR, session: Session) -> (Box<RefCell<App>>, HWN
             pending_brush: None,
             worker: None,
             prepared: None,
+            recall: Default::default(),
             notification_owner: None,
             google_search: None,
             first_frame: None,
@@ -1809,5 +1815,53 @@ fn space_pan_modifier_lets_go_when_the_window_loses_the_pointer_or_the_foregroun
             Some(GetModuleHandleW(None).unwrap().into()),
         )
         .unwrap();
+    }
+}
+
+#[test]
+fn a_closing_capture_tells_its_owner_the_region_to_offer_next() {
+    let _com = ComApartment::new().unwrap();
+    unsafe {
+        let owner = crate::resources::OwnedWindow(
+            CreateWindowExW(
+                WS_EX_TOOLWINDOW,
+                w!("STATIC"),
+                w!("Region owner"),
+                WS_POPUP,
+                -32000,
+                -32000,
+                1,
+                1,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap(),
+        );
+        let mut session = Session::new(Image::solid(1000, 700, [0, 0, 0, 255])).unwrap();
+        session.capture.region = Rect::new(Point { x: 40., y: 50. }, Point { x: 400., y: 300. });
+        session.capture.selecting = false;
+        let (state, hwnd) = app_window(w!("Shotoshot.Test.RegionRecall"), session);
+        state.borrow_mut().notification_owner = Some(owner.0);
+        state.borrow_mut().close_session(hwnd);
+        let mut message = MSG::default();
+        assert!(
+            PeekMessageW(
+                &mut message,
+                Some(owner.0),
+                recall::REGION,
+                recall::REGION,
+                PM_REMOVE
+            )
+            .as_bool()
+        );
+        assert_eq!(message.wParam.0 as u32, GetCurrentProcessId());
+        let region = recall::unpack(message.lParam).unwrap();
+        assert_eq!(
+            (region.left, region.top, region.right, region.bottom),
+            (40, 50, 400, 300)
+        );
+        let _ = DestroyWindow(hwnd);
     }
 }

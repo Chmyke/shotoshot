@@ -114,6 +114,12 @@ pub struct Capture {
     pub(crate) gesture_view: Option<usize>,
     /// Set by the platform before each frame with `measure_badge`.
     pub badge_text: BadgeText,
+    /// A text just committed, which Shotoshot selected rather than the user: Ctrl+C still
+    /// copies the image until the next press.
+    pub(crate) committed_text: Option<u64>,
+    /// The region came back from the previous capture: until the next press inside it, a
+    /// press outside starts a new one instead of drawing.
+    pub(crate) recalled_region: bool,
 }
 impl Capture {
     pub fn new(image: Image) -> Self {
@@ -153,7 +159,38 @@ impl Capture {
             space_held: false,
             gesture_view: None,
             badge_text: BadgeText::Unmeasured,
+            committed_text: None,
+            recalled_region: false,
         }
+    }
+    /// Opens on `region`, the previous capture's, already selected; ignored unless it lies
+    /// whole within this frame, which a change of screens may have moved.
+    pub fn recall_region(&mut self, region: Rect) {
+        let frame = Rect::new(
+            Point::default(),
+            Point {
+                x: self.image.width as f64,
+                y: self.image.height as f64,
+            },
+        );
+        let size = region.size();
+        if size.x < 2. || size.y < 2. || !frame.is_some_and(|f| f.contains_rect(region)) {
+            return;
+        }
+        self.region = Some(region);
+        self.selecting = false;
+        self.recalled_region = true;
+        self.adopt_scale();
+    }
+    /// Selects a text the user just committed, as a result rather than a choice.
+    pub fn select_committed_text(&mut self, id: u64) {
+        self.editor.select_only(id);
+        self.committed_text = Some(id);
+    }
+    /// The selection is only the text Shotoshot selected on commit: Ctrl+C copies the image.
+    pub(crate) fn selection_is_committed_text(&self) -> bool {
+        self.committed_text
+            .is_some_and(|id| self.editor.selected == [id])
     }
     /// Interface scale: that of the screen under the region, or under the pointer before a
     /// selection. Every interface size is in 96-DPI logical pixels multiplied by it.
@@ -663,6 +700,9 @@ impl Capture {
                 1 | 5 => CursorKind::ResizeNs,
                 _ => CursorKind::ResizeWe,
             };
+        }
+        if self.recalled_region && self.region.is_some_and(|r| !r.contains(f)) {
+            return CursorKind::Cross;
         }
         if self.bucket {
             return CursorKind::Cross;

@@ -63,6 +63,16 @@ impl App {
                     self.notify(notice);
                 }
             }
+            recall::REGION => {
+                if self
+                    .worker
+                    .as_ref()
+                    .is_some_and(|worker| worker.pid() == w.0 as u32)
+                {
+                    self.recall
+                        .keep(recall::unpack(l), std::time::Instant::now());
+                }
+            }
             GOOGLE_FINISHED => self.finish_google_search(hwnd, crate::google_search::open),
 
             RENDERER_READY => {
@@ -112,6 +122,7 @@ impl App {
                 {
                     probe.requested(w.0);
                 }
+                self.recall.offer(recall::unpack(l));
                 self.start_capture(hwnd)?;
             }
             WM_KEYUP | WM_SYSKEYUP

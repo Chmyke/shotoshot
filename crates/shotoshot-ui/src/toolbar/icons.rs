@@ -22,15 +22,12 @@ impl<C: Canvas> Pen<'_, C> {
             y: y * self.scale,
         }
     }
+    /// A stroke with round ends, like every line of the glyphs.
     fn line(&mut self, a: (f64, f64), z: (f64, f64)) -> Result<(), C::Error> {
-        let (a, z) = (self.p(a.0, a.1), self.p(z.0, z.1));
-        self.canvas.line(a, z, self.ink, 1.6 * self.scale)
+        self.outline(&[a, z], false)
     }
     fn path(&mut self, points: &[(f64, f64)]) -> Result<(), C::Error> {
-        for pair in points.windows(2) {
-            self.line(pair[0], pair[1])?;
-        }
-        Ok(())
+        self.outline(points, false)
     }
     fn box_at(&mut self, x: f64, y: f64, w: f64, h: f64) -> Result<(), C::Error> {
         let r = Rect {
@@ -51,7 +48,7 @@ impl<C: Canvas> Pen<'_, C> {
     fn points(&self, points: &[(f64, f64)]) -> Vec<Point> {
         points.iter().map(|(x, y)| self.p(*x, *y)).collect()
     }
-    /// Joined line through `points` in the glyph's ink, unlike `path`'s separate segments.
+    /// Joined line through `points` in the glyph's ink, round at its ends and corners.
     fn outline(&mut self, points: &[(f64, f64)], closed: bool) -> Result<(), C::Error> {
         let points = self.points(points);
         self.canvas

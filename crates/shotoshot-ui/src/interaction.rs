@@ -16,6 +16,7 @@ impl Capture {
         self.pointer = p;
         self.adopt_scale();
         self.width_preview = false;
+        self.committed_text = None;
         if self.panning() {
             return Ok(None);
         }
@@ -113,6 +114,16 @@ impl Capture {
             self.region_origin = Some(region.min);
             self.region_resize = Some(index);
             self.selecting = true;
+            host.capture_pointer();
+            return Ok(None);
+        }
+        // A recalled region is an offer: a press outside it draws a new one, as at the start.
+        if std::mem::take(&mut self.recalled_region) && self.region.is_some_and(|r| !r.contains(f))
+        {
+            self.selecting = true;
+            self.region_before = self.region;
+            self.region_origin = Some(f);
+            self.region = Rect::new(f, f);
             host.capture_pointer();
             return Ok(None);
         }
@@ -410,6 +421,37 @@ mod tests {
         c.pointer_down(&mut host, p(100., 100.), m).unwrap();
         c.pointer_up(&mut host, p(600., 400.), m);
         (c, host)
+    }
+    #[test]
+    fn a_recalled_region_opens_selected_and_a_press_outside_draws_a_new_one() {
+        let m = Modifiers::default();
+        let recalled = Rect::new(p(100., 100.), p(600., 400.)).unwrap();
+        let mut c = Capture::new(Image::solid(1800, 1300, [0, 0, 0, 255]));
+        c.recall_region(recalled);
+        assert_eq!(c.region, Some(recalled));
+        assert!(!c.selecting);
+        let mut host = FakeHost::default();
+        c.pointer_down(&mut host, p(900., 800.), m).unwrap();
+        c.pointer_up(&mut host, p(1200., 1000.), m);
+        assert_eq!(c.region, Rect::new(p(900., 800.), p(1200., 1000.)));
+        assert!(c.editor.objects().is_empty());
+
+        // A press inside accepts it: the next press outside draws, as on any region.
+        let mut c = Capture::new(Image::solid(1800, 1300, [0, 0, 0, 255]));
+        c.recall_region(recalled);
+        c.pointer_down(&mut host, p(200., 200.), m).unwrap();
+        c.pointer_up(&mut host, p(300., 300.), m);
+        c.pointer_down(&mut host, p(900., 800.), m).unwrap();
+        c.pointer_up(&mut host, p(1200., 1000.), m);
+        assert_eq!(c.region, Some(recalled));
+        assert_eq!(c.editor.objects().len(), 2);
+    }
+    #[test]
+    fn a_recalled_region_off_the_frame_is_ignored() {
+        let mut c = Capture::new(Image::solid(800, 600, [0, 0, 0, 255]));
+        c.recall_region(Rect::new(p(500., 100.), p(900., 400.)).unwrap());
+        assert_eq!(c.region, None);
+        assert!(c.selecting);
     }
     #[test]
     fn default_stroke_and_text_follow_the_screen_scale_and_settings_keep_the_100_percent_width() {

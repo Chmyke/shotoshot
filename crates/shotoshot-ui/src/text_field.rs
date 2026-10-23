@@ -330,7 +330,7 @@ impl TextField {
             capture
                 .editor
                 .update_text_measured_sized_colored(id, self.text, extent, self.color, size);
-            capture.editor.select_only(id);
+            capture.select_committed_text(id);
         } else if let Some(id) = capture.editor.add_text_measured_sized_colored(
             self.position,
             self.text,
@@ -338,7 +338,7 @@ impl TextField {
             self.color,
             size,
         ) {
-            capture.editor.select_only(id);
+            capture.select_committed_text(id);
         }
     }
 

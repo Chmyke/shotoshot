@@ -271,6 +271,7 @@ pub fn run() -> Result<()> {
             pending_brush: None,
             worker: None,
             prepared: None,
+            recall: Default::default(),
             notification_owner: if editor_process {
                 std::env::args().find_map(|arg| {
                     arg.strip_prefix("--notification-owner=")

@@ -10,6 +10,7 @@ mod input;
 mod instant;
 mod notice;
 mod pulse;
+mod recall;
 mod warm_probe;
 use notice::Notice;
 mod runtime;
@@ -102,6 +103,8 @@ struct App {
     worker: Option<editor_process::EditorProcess>,
     prepared: Option<crate::session::Preparation>,
     notification_owner: Option<HWND>,
+    /// The previous capture's region, offered again for a few minutes.
+    recall: recall::Recall,
     toast: Option<notice::Toast>,
     google_search: Option<std::sync::mpsc::Receiver<std::result::Result<String, String>>>,
     first_frame: Option<crate::diagnostics::FirstFrame>,
@@ -268,7 +271,8 @@ impl App {
             if let Some(presentation) = &self.presentation {
                 presentation.borrow_mut().suspend_capture()?;
             }
-            unsafe { PostMessageW(Some(window), CAPTURE_MESSAGE, WPARAM(0), LPARAM(0)) }
+            let region = recall::pack(self.recall.recent(std::time::Instant::now()));
+            unsafe { PostMessageW(Some(window), CAPTURE_MESSAGE, WPARAM(0), region) }
         })();
         if result.is_err() {
             // request/ready marks the child active. Never leave it busy after a failed send.
@@ -538,6 +542,18 @@ impl App {
         };
         let mut session = prepared.activate(image, live)?;
         session.capture.monitors = session.frame_monitors();
+        if let Some(r) = self.recall.take_offer() {
+            let (left, top) = (session.capture.image.left, session.capture.image.top);
+            let at = |x: i32, y: i32| Point {
+                x: (x - left) as f64,
+                y: (y - top) as f64,
+            };
+            if let Some(region) =
+                shotoshot_core::Rect::new(at(r.left, r.top), at(r.right, r.bottom))
+            {
+                session.capture.recall_region(region);
+            }
+        }
         if live {
             unsafe {
                 SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)?;
@@ -687,6 +703,7 @@ impl App {
         if let Some(s) = &mut self.session {
             s.native.finish_text(&mut s.capture, hwnd, false);
         }
+        self.report_region();
         self.session = None;
         self.google_search = None;
         unsafe {
@@ -705,6 +722,35 @@ impl App {
                     PostQuitMessage(0);
                 }
             }
+        }
+    }
+    /// Tells the resident how this capture ended: its region, offered to the next one, or
+    /// none, which forgets the previous.
+    fn report_region(&self) {
+        let (Some(owner), Some(s)) = (self.notification_owner, &self.session) else {
+            return;
+        };
+        if s.board.is_some() || s.document.is_some() {
+            return;
+        }
+        let image = &s.capture.image;
+        let region = s
+            .capture
+            .region
+            .filter(|_| !s.capture.selecting)
+            .map(|r| RECT {
+                left: image.left + r.min.x.round() as i32,
+                top: image.top + r.min.y.round() as i32,
+                right: image.left + r.max.x.round() as i32,
+                bottom: image.top + r.max.y.round() as i32,
+            });
+        unsafe {
+            let _ = PostMessageW(
+                Some(owner),
+                recall::REGION,
+                WPARAM(GetCurrentProcessId() as usize),
+                recall::pack(region),
+            );
         }
     }
     fn action(&mut self, hwnd: HWND, action: Action) -> Result<()> {

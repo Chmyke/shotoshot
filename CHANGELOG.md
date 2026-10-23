@@ -2,6 +2,11 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.13 · 2026-10-23
+
+- Taking several captures in a row? The next one opens on the area you just used, ready to annotate. Click outside it for a fresh one; after five quiet minutes it starts blank again.
+- Ctrl+C right after typing a text now copies the image, as you meant, instead of quietly copying that text.
+
 ## 0.3.12 · 2026-10-23
 
 Nothing you would notice in this version: the work is under the hood.

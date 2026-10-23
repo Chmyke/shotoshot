@@ -728,6 +728,7 @@ mod tests {
                 pending_brush: None,
                 worker: None,
                 prepared: None,
+                recall: Default::default(),
                 notification_owner: Some(owner.0),
                 toast: None,
                 google_search: None,

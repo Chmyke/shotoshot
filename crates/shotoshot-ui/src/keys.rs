@@ -29,7 +29,8 @@ pub enum KeyOutcome {
     Handled,
     /// Run a toolbar action, then repaint.
     Action(Action),
-    /// Ctrl+C: copy selected annotations, or the image when none is selected.
+    /// Ctrl+C: copy selected annotations, or the image when none is selected (a text
+    /// selected by its own commit does not count).
     CopyAnnotations,
     /// Ctrl+V: paste annotations copied from this session.
     PasteAnnotations,
@@ -92,7 +93,9 @@ impl Capture {
         }
         if m.ctrl {
             let plain = !m.alt && !m.shift;
-            return if plain && key == KEY_C {
+            return if plain && key == KEY_C && self.selection_is_committed_text() {
+                KeyOutcome::Action(Action::Copy)
+            } else if plain && key == KEY_C {
                 KeyOutcome::CopyAnnotations
             } else if plain && key == KEY_V {
                 KeyOutcome::PasteAnnotations
@@ -160,6 +163,23 @@ mod tests {
         assert_eq!(c.key(&mut host, KEY_ESCAPE, none), KeyOutcome::Handled);
         assert!(!c.bucket);
         assert_eq!(c.key(&mut host, KEY_ESCAPE, none), KeyOutcome::Close);
+    }
+    #[test]
+    fn ctrl_c_copies_the_image_after_a_text_commit_until_the_next_press() {
+        let mut c = capture();
+        let mut host = FakeHost::default();
+        c.editor.add_text(Point { x: 200., y: 200. }, "Note".into());
+        let id = c.editor.objects()[0].id;
+        c.select_committed_text(id);
+        assert_eq!(
+            c.key(&mut host, KEY_C, ctrl()),
+            KeyOutcome::Action(Action::Copy)
+        );
+        // The user's own click on it makes it a choice: Ctrl+C copies the text.
+        c.pointer_down(&mut host, Point { x: 205., y: 210. }, Modifiers::default())
+            .unwrap();
+        c.editor.select_only(id);
+        assert_eq!(c.key(&mut host, KEY_C, ctrl()), KeyOutcome::CopyAnnotations);
     }
     #[test]
     fn escape_closes_only_when_nothing_is_pending() {
