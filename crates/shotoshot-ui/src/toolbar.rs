@@ -492,7 +492,7 @@ fn layout(region: Rect, screen: Rect, board: bool) -> Vec<Button> {
     result
 }
 
-fn overlaps(a: Rect, b: Rect) -> bool {
+pub(crate) fn overlaps(a: Rect, b: Rect) -> bool {
     a.min.x < b.max.x && a.max.x > b.min.x && a.min.y < b.max.y && a.max.y > b.min.y
 }
 /// Panel outlines around `buttons`, laid out at interface `scale`.

@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.10 · 2026-10-23
+
+- Selecting near the bottom of the screen no longer parks the toolbar on top of the size and full-screen buttons. Everyone gets their own spot now.
+
 ## 0.3.9 · 2026-10-22
 
 - The crosshair now picks black or white to match what's underneath, so it no longer plays hide-and-seek on pale pages.

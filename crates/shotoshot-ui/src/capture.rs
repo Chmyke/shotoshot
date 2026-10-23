@@ -191,9 +191,17 @@ impl Capture {
         if !self.toolbar_visible || self.selecting {
             return Vec::new();
         }
+        // The toolbar goes around the region and the badges stuck to it, never over them.
+        let occupied = |r: Rect| {
+            self.region_badges()
+                .map_or(r, |b| r.union(b.badge).union(b.button))
+        };
         let mut buttons = self
             .region
-            .map(|r| toolbar::buttons_in(r, self.toolbar_screen(r), self.ui_scale(), self.board))
+            .map(|r| {
+                let screen = self.toolbar_screen(r);
+                toolbar::buttons_in(occupied(r), screen, self.ui_scale(), self.board)
+            })
             .unwrap_or_default();
         for b in &mut buttons {
             match b.action {
@@ -1146,6 +1154,40 @@ mod tests {
         c.toggle_screen();
         let button = c.screen_button().unwrap();
         assert!(button.active && button.label == toolbar::RESTORE_SELECTION_LABEL);
+    }
+    #[test]
+    fn the_toolbar_never_covers_the_size_badge_or_the_full_screen_button() {
+        // A 1080p screen at 100 % and a 4K one at 200 %, swept in steps of 60 logical pixels.
+        for scale in [1., 2.] {
+            let screen = Point { x: 1920., y: 1080. } * scale;
+            let mut c = Capture::new(Image::solid(screen.x as u32, screen.y as u32, [0; 4]));
+            c.selecting = false;
+            c.monitors = vec![Monitor {
+                bounds: Rect::new(Point::default(), screen).unwrap(),
+                scale,
+            }];
+            for (w, h) in [(80., 60.), (400., 300.), (900., 700.), (1920., 1080.)] {
+                let size = Point { x: w, y: h } * scale;
+                for x in (0..=(1920. - w) as i32).step_by(60) {
+                    for y in (0..=(1080. - h) as i32).step_by(60) {
+                        let min = Point {
+                            x: x as f64,
+                            y: y as f64,
+                        } * scale;
+                        c.region = Rect::new(min, min + size);
+                        let panels = toolbar::panels(&c.buttons(), c.ui_scale());
+                        let badges = [c.dimensions_bounds(), c.screen_button_bounds()];
+                        for badge in badges.into_iter().flatten() {
+                            assert!(
+                                panels.iter().all(|p| !toolbar::overlaps(*p, badge)),
+                                "{badge:?} under the toolbar {panels:?} for {:?} at {scale}",
+                                c.region
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
     #[test]
     fn every_state_hint_is_among_the_measured_ones() {
