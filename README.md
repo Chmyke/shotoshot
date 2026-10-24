@@ -1,8 +1,8 @@
 # Shotoshot
 
-Native screen capture and annotation for Windows 11. Press a key, drag a region, annotate on the
-frozen screen with objects that stay editable, then copy or save. The same editor writes notes
-on your desktop, under the icons: the [Board](#board-notes-under-the-icons). The interface is
+Native screen capture and annotation for Windows 11 and Linux. Press a key, drag a region,
+annotate on the frozen screen with objects that stay editable, then copy or save. On Windows, the
+same editor writes notes on your desktop, under the icons: the [Board](#board-notes-under-the-icons). The interface is
 available in 15 languages, chosen at install or from the menu; the on-screen keyboard always
 follows the active keyboard layout.
 
@@ -20,9 +20,11 @@ Download the installer from [shotoshot.com](https://shotoshot.com). It is not co
 Windows SmartScreen may ask for confirmation; the SHA-256 of each download is published on the
 site.
 
-A Linux preview (x86_64 and ARM64, glibc 2.31 or later, Wayland and X11) is published as a
+On Linux (x86_64 and ARM64, glibc 2.31 or later, Wayland and X11), Shotoshot comes as a
 `tar.gz` with its own `README.txt`. Presentation mode, the Board, crop-size fields, Google Lens
-and live capture are not on Linux yet.
+and live capture are not on Linux yet. It runs on a Raspberry Pi (ARM64); the x86_64 build is
+compiled and tested on GitHub's Linux machines but has not yet been run on a regular PC, so a
+report from yours is welcome.
 
 ## First run and tray menu
 

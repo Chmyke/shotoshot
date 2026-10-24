@@ -26,6 +26,15 @@ try {
         & $dashes
         if ($LASTEXITCODE -ne 0) { exit 1 }
     }
+    # Linux is a real build, not a "preview" (Mickael, 2026-10-24): public texts never call it one.
+    # Some of these files stay private, so the public tree checks those it has.
+    $public = @('README.md', 'packaging/itch/description.html', 'packaging/linux/README.txt',
+        'changelog.json') | Where-Object { Test-Path $_ }
+    $previews = Select-String -Pattern '(?i)\bpreview\b' -Path $public
+    if ($previews) {
+        $previews | ForEach-Object { Write-Host "$($_.Path):$($_.LineNumber): $($_.Line.Trim())" }
+        throw 'Public text calls Shotoshot or its Linux build a preview.'
+    }
     # The remote Linux scripts run only the tests they copied, each run in its own folder.
     & (Join-Path $PSScriptRoot 'check-linux.ps1') -SelfTest
     cargo fmt --all -- --check

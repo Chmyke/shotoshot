@@ -1,4 +1,4 @@
-Shotoshot for Linux (preview)
+Shotoshot for Linux
 
 Install:   sh install.sh      (current user only, no root)
 Remove:    sh uninstall.sh
