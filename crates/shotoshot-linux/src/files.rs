@@ -67,7 +67,7 @@ pub fn create(bytes: &[u8], path: &Path) -> io::Result<()> {
     published
 }
 
-/// Saves `bytes` as the next "Shot NNN" of `folder`, created if missing: a PNG image, or
+/// Saves `bytes` as the next "NNN" of `folder`, created if missing: a PNG image, or
 /// an editable document when `document` is set. Both take their number from one sequence.
 pub fn save_numbered(bytes: &[u8], folder: &Path, document: bool) -> io::Result<PathBuf> {
     fs::create_dir_all(folder)?;
@@ -163,12 +163,12 @@ mod tests {
     fn images_and_documents_share_one_numbering() {
         let folder = folder("numbered").join("Pictures");
         let image = save_numbered(b"png", &folder, false).unwrap();
-        assert_eq!(image, folder.join("Shot 001.png"));
+        assert_eq!(image, folder.join("001.png"));
         let document = save_numbered(b"shoto", &folder, true).unwrap();
-        assert_eq!(document, folder.join("Shot 002.shoto"));
+        assert_eq!(document, folder.join("002.shoto"));
         assert_eq!(
             save_numbered(b"png", &folder, false).unwrap(),
-            folder.join("Shot 003.png")
+            folder.join("003.png")
         );
         assert_eq!(fs::read(&image).unwrap(), b"png");
         assert_eq!(fs::read(&document).unwrap(), b"shoto");

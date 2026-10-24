@@ -14,9 +14,9 @@ fn numbered_save_never_overwrites_an_existing_capture() {
     std::fs::write(&original, b"previous screenshot").unwrap();
     let image = Image::solid(2, 2, [10, 20, 30, 255]);
     let second = save_numbered(&image, &original, SaveFormat::Png).unwrap();
-    assert_eq!(second, folder.join("Shot 002.png"));
+    assert_eq!(second, folder.join("002.png"));
     let third = save_numbered(&image, &original, SaveFormat::Png).unwrap();
-    assert_eq!(third, folder.join("Shot 003.png"));
+    assert_eq!(third, folder.join("003.png"));
     assert_eq!(std::fs::read(&original).unwrap(), b"previous screenshot");
     assert_eq!(load_png(&second).unwrap().pixels, image.pixels);
     assert_eq!(load_png(&third).unwrap().pixels, image.pixels);
@@ -24,7 +24,7 @@ fn numbered_save_never_overwrites_an_existing_capture() {
     let taken = folder.join("Shot 004.jpg");
     std::fs::write(&taken, b"previous jpeg").unwrap();
     let fifth = save_numbered(&image, &taken, SaveFormat::Jpeg).unwrap();
-    assert_eq!(fifth, folder.join("Shot 005.jpg"));
+    assert_eq!(fifth, folder.join("005.jpg"));
     assert_eq!(std::fs::read(&taken).unwrap(), b"previous jpeg");
     assert_eq!(&std::fs::read(&fifth).unwrap()[..3], &[0xFF, 0xD8, 0xFF]);
     std::fs::remove_dir_all(folder).unwrap();

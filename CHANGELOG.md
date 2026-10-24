@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.15 · 2026-10-24
+
+- Saved captures are now simply named 001, 002, 003 and so on. Less clutter, same order, and the count picks up where the old names left off.
+
 ## 0.3.14 · 2026-10-23
 
 - Hovering with the paint bucket now traces a dotted outline around what it's about to fill, instead of a pale tint that looked like see-through paint.

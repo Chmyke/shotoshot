@@ -85,37 +85,61 @@ try {
         # the machine has been calm for 30 seconds, at most 15 minutes; a failure then names the load.
         $load = {
             $cpu = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
-            $gpu = 0
-            try {
-                $engines = Get-Counter '\GPU Engine(*engtype_3D)\Utilization Percentage' -ErrorAction Stop
-                $gpu = [int]($engines.CounterSamples | Measure-Object CookedValue -Sum).Sum
-            } catch {}
+            # CIM, not Get-Counter: Get-Counter throws when a process ends while it samples (19
+            # samples in 40 on 2026-10-21), and each lost sample used to read as an idle GPU.
+            $gpu = [int](Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine |
+                Where-Object Name -like '*engtype_3D' | Measure-Object UtilizationPercentage -Sum).Sum
             [pscustomobject]@{ Cpu = $cpu; Gpu = $gpu; Calm = $cpu -lt 25 -and $gpu -lt 15 }
         }
         $deadline = (Get-Date).AddMinutes(15)
-        $calmSince = $null
-        do {
-            $machine = & $load
-            if (-not $machine.Calm) { $calmSince = $null }
-            elseif (-not $calmSince) { $calmSince = Get-Date }
-            if ($calmSince -and ((Get-Date) - $calmSince).TotalSeconds -ge 30) { break }
-            Start-Sleep -Seconds 5
-        } while ((Get-Date) -lt $deadline)
-        $busy = if ($calmSince) { '' } else {
+        $waitForCalm = {
+            $calmSince = $null
+            do {
+                $machine = & $load
+                if (-not $machine.Calm) { $calmSince = $null }
+                elseif (-not $calmSince) { $calmSince = Get-Date }
+                if ($calmSince -and ((Get-Date) - $calmSince).TotalSeconds -ge 30) { return '' }
+                Start-Sleep -Seconds 5
+            } while ((Get-Date) -lt $deadline)
             " The machine never stayed calm for 30 s in 15 min (last: CPU $($machine.Cpu) %, GPU $($machine.Gpu) %): rerun when it is."
         }
+        $busy = & $waitForCalm
         $before = (& $userState) -join "`n"
         foreach ($argument in @('--render-demo', '--diagnostic', '--warm-diagnostic', '--presentation-diagnostic', '--document-diagnostic', '--board-diagnostic')) {
-            $probe = Start-Process -FilePath (Join-Path $PSScriptRoot 'target/release/shotoshot.exe') -ArgumentList $argument -WindowStyle Hidden -PassThru
-            $null = $probe.Handle
-            $finished = $probe.WaitForExit(20000)
-            if (-not $finished) { $probe.Kill() }
-            if (((& $userState) -join "`n") -ne $before) {
-                throw "$argument changed the user's settings or board under $env:LOCALAPPDATA\Shotoshot."
+            # Only --diagnostic holds a time budget. Its verdict counts on a run the machine stayed
+            # calm through: other programs often start within its few seconds (2026-10-21: a test
+            # of another project at 80 % of the CPU took the first frame from 113 to 194 ms), so a
+            # disturbed failure is run again once they settle, within the same 15 minutes.
+            $timed = $argument -eq '--diagnostic'
+            do {
+                $disturbed = $null
+                $probe = Start-Process -FilePath (Join-Path $PSScriptRoot 'target/release/shotoshot.exe') -ArgumentList $argument -WindowStyle Hidden -PassThru
+                $null = $probe.Handle
+                $started = Get-Date
+                do {
+                    $finished = $probe.WaitForExit(1000)
+                    if ($timed -and -not $finished -and -not $disturbed) {
+                        $machine = & $load
+                        if (-not $machine.Calm) { $disturbed = $machine }
+                    }
+                } while (-not $finished -and ((Get-Date) - $started).TotalSeconds -lt 20)
+                if (-not $finished) { $probe.Kill() }
+                if (((& $userState) -join "`n") -ne $before) {
+                    throw "$argument changed the user's settings or board under $env:LOCALAPPDATA\Shotoshot."
+                }
+                if (-not $finished) { throw "Timed out: $argument" }
+                $probe.Refresh()
+                $retry = $probe.ExitCode -ne 0 -and $disturbed -and -not $busy -and (Get-Date) -lt $deadline
+                if ($retry) {
+                    Write-Output "$argument failed while disturbed (CPU $($disturbed.Cpu) %, GPU $($disturbed.Gpu) %): run again once calm."
+                    $busy = & $waitForCalm
+                    $retry = -not $busy
+                }
+            } while ($retry)
+            if ($probe.ExitCode -ne 0) {
+                $during = if ($disturbed) { " Disturbed: CPU $($disturbed.Cpu) %, GPU $($disturbed.Gpu) % during the run." } elseif ($timed) { ' The machine stayed calm during the run; figures in target/diagnostics.json.' } else { '' }
+                throw "Failed: $argument ($($probe.ExitCode)).$during$busy"
             }
-            if (-not $finished) { throw "Timed out: $argument" }
-            $probe.Refresh()
-            if ($probe.ExitCode -ne 0) { throw "Failed: $argument ($($probe.ExitCode)).$busy" }
         }
         # Rendered demo images must match byte for byte; -UpdateGolden records an intended change.
         $golden = Join-Path $PSScriptRoot 'crates/shotoshot-app/tests/render-golden.sha256'

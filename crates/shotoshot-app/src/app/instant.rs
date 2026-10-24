@@ -324,7 +324,7 @@ mod tests {
         let image = Image::solid(3, 2, [30, 90, 180, 255]);
         save_to(&image, &root).unwrap();
         assert_eq!(
-            crate::load_png(&root.join("Shot 002.png")).unwrap().pixels,
+            crate::load_png(&root.join("002.png")).unwrap().pixels,
             image.pixels
         );
         assert_eq!(std::fs::read(root.join("Capture 001.png")).unwrap(), b"old");

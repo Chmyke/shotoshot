@@ -49,7 +49,7 @@ choice is remembered.
 ## Instant screenshot
 
 **Scroll Lock** saves the screen of the active application straight to the Desktop, with no
-selection, no editor and no focus change. Files are named `Shot 001.png`, `Shot 002.png` and so
+selection, no editor and no focus change. Files are named `001.png`, `002.png` and so
 on, never replacing an existing capture. The **Instant screenshot** menu row changes this
 shortcut, and the setting is remembered.
 

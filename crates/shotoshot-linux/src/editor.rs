@@ -623,7 +623,7 @@ impl Editor {
     /// Saves without asking, since Linux has no Save window: a capture as a flattened PNG,
     /// a reopened document back into its file. `other` (Ctrl+Shift+S) saves in the other
     /// format: the capture as an editable document, the document as a PNG. A new file is
-    /// the next "Shot NNN" in `folder` (Pictures by default). Returns the file written and
+    /// the next "NNN" in `folder` (Pictures by default). Returns the file written and
     /// whether it is editable.
     fn save(
         &mut self,

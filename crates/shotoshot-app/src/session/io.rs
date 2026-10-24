@@ -571,12 +571,12 @@ mod save_dialog_tests {
         assert_eq!(
             names,
             [
-                "Shot 002.png",
+                "002.png",
                 // Renumbered for the folder reached, where a JPEG holds the largest number.
-                "Shot 012.png",
+                "012.png",
                 // The proposed name follows the type list, to the editable document too.
-                "Shot 012.shoto",
-                "Shot 012.jpg",
+                "012.shoto",
+                "012.jpg",
                 // A typed name is kept; only its image extension follows.
                 "Invoice May.png",
                 // The dialog reports a bare name with the extension it is about to append.

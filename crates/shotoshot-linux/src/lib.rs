@@ -100,7 +100,7 @@ fn dispatch(args: &[String]) -> Result<(), Box<dyn Error>> {
     editor::run(capture()?, None)
 }
 
-/// Saves the whole desktop as the next "Shot NNN.png" on the Desktop, without editing.
+/// Saves the whole desktop as the next "NNN.png" on the Desktop, without editing.
 fn instant() -> Result<(), Box<dyn Error>> {
     let image = capture()?;
     let folder = editor::user_dir("XDG_DESKTOP_DIR", "Desktop");
