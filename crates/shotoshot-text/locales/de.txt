@@ -229,7 +229,6 @@ installer.shoto_file = Bearbeitbares Shotoshot-Bild
 pointer.title = Zeigereffekte
 pointer.section_halo == Halo
 pointer.section_trail = Spur
-pointer.section_find = Zeiger finden
 pointer.section_clicks = Klicks
 pointer.section_spotlight == Spotlight
 pointer.shape = Form
@@ -241,7 +240,6 @@ pointer.thickness = Stärke
 pointer.movement = Bewegung
 pointer.style = Stil
 pointer.length = Länge
-pointer.shake = Maus schütteln
 pointer.animation == Animation
 pointer.left_click = Linksklick
 pointer.right_click = Rechtsklick

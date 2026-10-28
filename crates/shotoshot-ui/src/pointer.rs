@@ -1,5 +1,5 @@
-//! ROLE: Draws the pointer effects of the presentation (halo, trail, click waves, find
-//! animation, spotlight) on any `Canvas`.
+//! ROLE: Draws the pointer effects of the presentation (halo, trail, click waves, spotlight)
+//! on any `Canvas`.
 //! OWNER: The resident's pointer layer paints the live frame; the pointer window paints its
 //! preview with the same code, so the preview shows exactly what the desktop will.
 //! INVARIANTS: Device pixels; `origin` is the screen position of the canvas's top-left
@@ -18,8 +18,6 @@ use shotoshot_core::{
 pub const PRESSED: [u8; 3] = [237, 79, 92];
 /// Warm colours the sparks cycle through.
 const SPARKS: [[u8; 3]; 3] = [[255, 214, 92], [255, 150, 64], [255, 250, 220]];
-/// Logical radius the find animation starts from.
-const FIND_RADIUS: f64 = 200.;
 /// A soft edge or a trail is drawn as this many overlapping shapes of low opacity: where all
 /// overlap the opacity is full, and it falls off smoothly without a seam between pieces.
 const GRADIENT_STEPS: usize = 16;
@@ -63,9 +61,6 @@ pub fn paint<C: Canvas>(
     }
     if let Some(center) = effects.shown() {
         halo_shape(canvas, local(center), settings, halo, scale)?;
-        if let Some(progress) = effects.finding(now) {
-            find(canvas, local(center), settings, halo.color, progress, scale)?;
-        }
     }
     Ok(())
 }
@@ -376,46 +371,8 @@ fn click_wave<C: Canvas>(
     }
 }
 
-fn find<C: Canvas>(
-    canvas: &mut C,
-    center: Point,
-    settings: &PointerSettings,
-    rgb: [u8; 3],
-    progress: f64,
-    scale: f64,
-) -> Result<(), C::Error> {
-    let end = settings.halo_diameter as f64 * 0.5;
-    for (delay, width) in [(0., 5.), (0.18, 3.)] {
-        let local = ((progress - delay) / (1. - delay)).clamp(0., 1.);
-        if local <= 0. || local >= 1. {
-            continue;
-        }
-        let radius = (FIND_RADIUS + (end - FIND_RADIUS) * ease_out(local)) * scale;
-        let fade = (1. - local as f32).min(local as f32 * 4.).min(1.);
-        // A dark edge keeps the ring visible on a light page.
-        canvas.stroke_ellipse(
-            center,
-            Point {
-                x: radius,
-                y: radius,
-            },
-            Ink::with_alpha([0; 3], 0.35 * fade),
-            (width + 2.) * scale,
-        )?;
-        canvas.stroke_ellipse(
-            center,
-            Point {
-                x: radius,
-                y: radius,
-            },
-            Ink::with_alpha(rgb, 0.95 * fade),
-            width * scale,
-        )?;
-    }
-    Ok(())
-}
-
 /// The dimmed screen around the spotlight, for the preview: the live spotlight is a window.
+/// The soft edge is laid as stacked rings, each darkening what lies beyond it a little more.
 pub fn spotlight<C: Canvas>(
     canvas: &mut C,
     area: Rect,
@@ -494,7 +451,6 @@ mod tests {
             effects.moved(p, step * 8, scale, settings);
         }
         effects.clicked(at(250., 200.) * scale, Button::Left, 200);
-        effects.find(150);
         let mut canvas = recorder();
         let halo = HaloState {
             pulse: Some(0.5),
@@ -518,7 +474,6 @@ mod tests {
         for shape in HaloShape::ALL {
             let settings = PointerSettings {
                 halo_shape: *shape,
-                shake_to_find: false,
                 ..Default::default()
             };
             let mut effects = Effects::default();
@@ -543,7 +498,6 @@ mod tests {
                     trail_length: TrailLength::Long,
                     click: *click,
                     follow: Follow::Instant,
-                    shake_to_find: false,
                     ..Default::default()
                 };
                 let mut effects = Effects::default();

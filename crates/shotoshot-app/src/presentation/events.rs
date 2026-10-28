@@ -24,7 +24,7 @@ impl Presentation {
                         self.halo_state.mouse(flags, self.now());
                     }
                     if let Some(halo) = &self.halo
-                        && !self.frame_driven(self.now())
+                        && !self.frame_driven()
                     {
                         self.paint(halo.hwnd())?;
                     }

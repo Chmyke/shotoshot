@@ -2,7 +2,7 @@
 //! OWNER: Presentation, on its resident message loop.
 //! INVARIANTS: With the default settings the halo behaves as it always did: it moves with
 //! each event and repaints only on clicks. Effects that change every frame (trail, click
-//! waves, smooth follow, spotlight, find) paint from the timer, which runs only while they move.
+//! waves, smooth follow, spotlight) paint from the timer, which runs only while they move.
 use super::*;
 use shotoshot_core::pointer::{Button, ClickStyle, Follow, SpotlightShape, layer_radius};
 
@@ -42,18 +42,16 @@ fn point(p: POINT) -> Point {
 
 impl Presentation {
     /// Whether the halo layer is painted from frames rather than from clicks.
-    pub(super) fn frame_driven(&self, now: u64) -> bool {
+    pub(super) fn frame_driven(&self) -> bool {
         let settings = &self.preferences.pointer;
         settings.draws_around()
             || settings.follow == Follow::Smooth
             || settings.spotlight != SpotlightShape::Off
-            || self.effects.finding(now).is_some()
     }
     /// Side of the square halo layer at `at`, in device pixels. Rounded up to 32 pixels: a
     /// size slider dragged in the pointer window rebuilds the layer only now and then.
-    pub(super) fn halo_size(&self, at: POINT, now: u64) -> i32 {
-        let finding = self.effects.finding(now).is_some();
-        let side = 2. * layer_radius(&self.preferences.pointer, finding) * monitor_scale(at);
+    pub(super) fn halo_size(&self, at: POINT) -> i32 {
+        let side = 2. * layer_radius(&self.preferences.pointer) * monitor_scale(at);
         (side / 32.).ceil() as i32 * 32
     }
     /// A mouse event while the halo is on: `flags` are the raw button flags.
@@ -74,7 +72,7 @@ impl Presentation {
                 sound::play(settings.sound, settings.volume);
             }
         }
-        if self.frame_driven(now) {
+        if self.frame_driven() {
             self.pointer_dirty = true;
             // A frame due already is painted now rather than at the next timer tick: the
             // ribbon and the halo stay with the pointer instead of lagging behind it.

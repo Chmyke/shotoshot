@@ -94,7 +94,7 @@ pub(crate) struct Presentation {
     input_monitor: POINT,
     halo_state: halo::HaloState,
     capture_resume: Option<(Enabled, POINT)>,
-    /// Trail, click waves, shake to find and smooth follow of the halo.
+    /// Trail, click waves and smooth follow of the halo.
     effects: shotoshot_core::pointer::Effects,
     /// The halo layer's screen position and the monitor scale it was painted for.
     halo_origin: POINT,
@@ -221,7 +221,7 @@ impl Presentation {
                 },
                 self.now(),
             );
-            let size = self.halo_size(point, self.now());
+            let size = self.halo_size(point);
             Some(self.mirrored(
                 Layer::new(
                     self.address,
@@ -283,7 +283,7 @@ impl Presentation {
             if let Some(halo) = &self.halo {
                 self.paint(halo.hwnd())?;
             }
-            if self.enabled.halo && self.frame_driven(self.now()) {
+            if self.enabled.halo && self.frame_driven() {
                 self.pointer_frame()?;
             }
             self.sync_timer()
@@ -348,7 +348,7 @@ impl Presentation {
                     self.spotlight = None;
                 }
                 self.move_halo()?;
-                if self.frame_driven(self.now()) {
+                if self.frame_driven() {
                     self.pointer_frame()?;
                 } else if let Some(halo) = &self.halo {
                     self.paint(halo.hwnd())?;
@@ -512,7 +512,7 @@ impl Presentation {
             keys.invalidate();
         }
         self.check_spotlight_key();
-        if self.enabled.halo && (self.pointer_dirty || self.frame_driven(now)) {
+        if self.enabled.halo && (self.pointer_dirty || self.frame_driven()) {
             self.pointer_frame()?;
         } else if let Some(halo) = &self.halo {
             halo.invalidate();
@@ -521,11 +521,11 @@ impl Presentation {
     }
     fn move_halo(&mut self) -> Result<()> {
         // Frame-driven effects keep a surface that stays put (`pointer_frame`).
-        if !self.enabled.halo || self.frame_driven(self.now()) {
+        if !self.enabled.halo || self.frame_driven() {
             return Ok(());
         }
         let point = cursor()?;
-        let size = self.halo_size(point, self.now());
+        let size = self.halo_size(point);
         if self.halo.as_ref().is_none_or(|halo| halo.width != size) {
             let halo = Layer::new(
                 self.address,

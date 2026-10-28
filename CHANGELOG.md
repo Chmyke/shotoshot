@@ -2,6 +2,11 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.17 · 2026-10-28
+
+- The pointer's ribbon trail now flows in one smooth curve, even when you whip the mouse around: no more little corners giving away how it was drawn.
+- Shaking the mouse no longer sets off a giant circle around the pointer. It kept firing during ordinary back-and-forth moves, so it's gone for good.
+
 ## 0.3.16 · 2026-10-28
 
 - New Pointer effects window, right under the halo in the menu: pick a disc, a ring or a neon glow, add a trail of sparks or stars, ripples and sounds on clicks, a spotlight that dims everything else, and shake the mouse to find it. The window shows each change live, before your audience sees it.

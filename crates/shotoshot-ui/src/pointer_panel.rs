@@ -79,7 +79,6 @@ pub enum Field {
     Movement,
     Trail,
     TrailLength,
-    Shake,
     Click,
     LeftColor,
     RightColor,
@@ -120,7 +119,6 @@ const COLUMNS: [&[(Key, &[Field])]; 2] = [
             Key::PointerSectionTrail,
             &[Field::Trail, Field::TrailLength],
         ),
-        (Key::PointerSectionFind, &[Field::Shake]),
     ],
     &[
         (
@@ -147,7 +145,7 @@ const COLUMNS: [&[(Key, &[Field])]; 2] = [
     ],
 ];
 /// Every field in focus order: down the first column, then the second.
-pub const FIELDS: [Field; 21] = [
+pub const FIELDS: [Field; 20] = [
     Field::HaloShape,
     Field::HaloColor,
     Field::HaloSize,
@@ -157,7 +155,6 @@ pub const FIELDS: [Field; 21] = [
     Field::Movement,
     Field::Trail,
     Field::TrailLength,
-    Field::Shake,
     Field::Click,
     Field::LeftColor,
     Field::RightColor,
@@ -188,7 +185,7 @@ impl Field {
             | Self::SpotlightSize
             | Self::SpotlightDim => Control::Slider,
             Self::HaloColor | Self::LeftColor | Self::RightColor => Control::Colors,
-            Self::Shake | Self::SpotlightMoving => Control::Switch,
+            Self::SpotlightMoving => Control::Switch,
             Self::ClickShortcut | Self::SpotlightShortcut => Control::Shortcut,
         }
     }
@@ -203,7 +200,6 @@ impl Field {
             Self::Movement => Key::PointerMovement,
             Self::Trail => Key::PointerStyle,
             Self::TrailLength => Key::PointerLength,
-            Self::Shake => Key::PointerShake,
             Self::Click => Key::PointerAnimation,
             Self::LeftColor => Key::PointerLeftClick,
             Self::RightColor => Key::PointerRightClick,
@@ -1032,17 +1028,12 @@ impl Panel {
             _ => self.settings.right_click_color = rgb,
         }
     }
-    fn switch(&self, field: Field) -> bool {
-        match field {
-            Field::Shake => self.settings.shake_to_find,
-            _ => self.settings.spotlight_hidden_moving,
-        }
+    /// The one switch: the spotlight steps aside while the pointer moves.
+    fn switch(&self, _field: Field) -> bool {
+        self.settings.spotlight_hidden_moving
     }
-    fn toggle(&mut self, field: Field) {
-        match field {
-            Field::Shake => self.settings.shake_to_find ^= true,
-            _ => self.settings.spotlight_hidden_moving ^= true,
-        }
+    fn toggle(&mut self, _field: Field) {
+        self.settings.spotlight_hidden_moving ^= true;
     }
     fn changed(field: Field) -> Action {
         Action::Changed {
@@ -1478,9 +1469,9 @@ mod tests {
         let r = control_of(&panel, Field::LeftColor);
         panel.press(swatch_center(r, 5, 1.));
         assert_eq!(panel.settings.left_click_color, COLORS[5]);
-        let r = control_of(&panel, Field::Shake);
+        let r = control_of(&panel, Field::SpotlightMoving);
         panel.press(r.center());
-        assert!(!panel.settings.shake_to_find);
+        assert!(panel.settings.spotlight_hidden_moving);
         let r = control_of(&panel, Field::ClickShortcut);
         assert_eq!(panel.press(r.center()), Action::EditShortcut(0));
         panel.settings.click_shortcut = Some(Shortcut {
@@ -1509,7 +1500,7 @@ mod tests {
             panel.key(KeyInput::Next);
         }
         assert_eq!(panel.focus, Focus::Field(Field::HaloShape), "a full lap");
-        assert_eq!(seen.len(), 24);
+        assert_eq!(seen.len(), 23);
         assert!(seen.contains(&Focus::Button(Button::Close)));
         panel.key(KeyInput::Right);
         assert_eq!(panel.settings.halo_shape, HaloShape::Ring);

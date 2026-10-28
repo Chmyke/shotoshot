@@ -229,7 +229,6 @@ installer.shoto_file = Image Shotoshot modifiable
 pointer.title = Effets du pointeur
 pointer.section_halo == Halo
 pointer.section_trail = Traînée
-pointer.section_find = Retrouver le pointeur
 pointer.section_clicks = Clics
 pointer.section_spotlight = Projecteur
 pointer.shape = Forme
@@ -241,7 +240,6 @@ pointer.thickness = Épaisseur
 pointer.movement = Mouvement
 pointer.style == Style
 pointer.length = Longueur
-pointer.shake = Secouer la souris
 pointer.animation == Animation
 pointer.left_click = Clic gauche
 pointer.right_click = Clic droit

@@ -1,5 +1,5 @@
 //! ROLE: Pointer effects of the presentation: their settings, how they are stored, and the
-//! time-driven state (trail, click waves, shake to find, smooth follow, spotlight).
+//! time-driven state (trail, click waves, smooth follow, spotlight).
 //! OWNER: The resident presentation feeds pointer events and reads frames; the pointer window
 //! drives a copy for its preview.
 //! INVARIANTS: Time is injected in milliseconds; nothing here reads a clock or allocates per
@@ -130,8 +130,6 @@ pub struct PointerSettings {
     pub spotlight_hidden_moving: bool,
     /// With a shortcut, the spotlight shows only while it is held.
     pub spotlight_shortcut: Option<Shortcut>,
-    /// Shaking the mouse plays a large animation that leads the eye to the pointer.
-    pub shake_to_find: bool,
 }
 pub const HALO_DIAMETER_RANGE: (u32, u32) = (24, 160);
 pub const HALO_OPACITY_RANGE: (u32, u32) = (10, 100);
@@ -162,7 +160,6 @@ impl Default for PointerSettings {
             spotlight_dim: 60,
             spotlight_hidden_moving: false,
             spotlight_shortcut: None,
-            shake_to_find: true,
         }
     }
 }
@@ -233,7 +230,8 @@ impl PointerSettings {
             self.spotlight_dim.to_string(),
             u8::from(self.spotlight_hidden_moving).to_string(),
             shortcut(self.spotlight_shortcut),
-            u8::from(self.shake_to_find).to_string(),
+            // Shake to find, removed on 2026-10-28: always off, so an older version reads it so.
+            "0".to_string(),
             self.halo_softness.to_string(),
         ]
         .join(",")
@@ -276,6 +274,8 @@ impl PointerSettings {
             };
             Ok(Some(shortcut))
         };
+        // The retired shake to find flag is still checked, so a damaged line stays refused.
+        flag(fields[18])?;
         Ok(Self {
             halo_shape: HaloShape::decode(fields[0]).ok_or_else(invalid)?,
             halo_diameter: number(fields[1], HALO_DIAMETER_RANGE)?,
@@ -295,7 +295,6 @@ impl PointerSettings {
             spotlight_dim: number(fields[15], SPOTLIGHT_DIM_RANGE)?,
             spotlight_hidden_moving: flag(fields[16])?,
             spotlight_shortcut: shortcut(fields[17])?,
-            shake_to_find: flag(fields[18])?,
             halo_softness: match fields.get(19) {
                 Some(value) => number(value, HALO_SOFTNESS_RANGE)?,
                 None => 0,
@@ -303,15 +302,13 @@ impl PointerSettings {
         })
     }
     /// Whether something is drawn around the halo on every frame: the layer then needs room.
-    /// The find animation asks for room only while it plays.
     pub fn draws_around(&self) -> bool {
         self.trail != TrailStyle::Off || self.click != ClickStyle::Off
     }
 }
 
-/// Logical half-size of the square layer that carries the halo and the effects around it;
-/// `finding` while the find animation plays.
-pub fn layer_radius(settings: &PointerSettings, finding: bool) -> f64 {
+/// Logical half-size of the square layer that carries the halo and the effects around it.
+pub fn layer_radius(settings: &PointerSettings) -> f64 {
     let radius = settings.halo_diameter as f64 * 0.5;
     let soft = radius * SOFT_REACH * settings.halo_softness as f64 / 100.;
     let neon = if settings.halo_shape == HaloShape::Neon {
@@ -320,7 +317,7 @@ pub fn layer_radius(settings: &PointerSettings, finding: bool) -> f64 {
         0.
     };
     let halo = radius * (1. + PULSE_GROWTH) + 2. * NEON_GLOW + neon + soft;
-    if settings.draws_around() || finding {
+    if settings.draws_around() {
         halo.max(AROUND_RADIUS)
     } else {
         halo
@@ -336,14 +333,13 @@ pub const NEON_SOFT_GROWTH: f64 = 2.;
 pub const SOFT_REACH: f64 = 0.5;
 /// Logical reach of a click wave around its click, its stroke included.
 pub const CLICK_REACH: f64 = 42.;
-/// Room around the pointer for the trail, click waves and the shake animation.
+/// Room around the pointer for the trail and the click waves.
 const AROUND_RADIUS: f64 = 240.;
 
 pub const PULSE_MS: u64 = 300;
 pub const CLICK_MS: u64 = 450;
 /// Waves start one after the other, this far apart.
 pub const WAVE_GAP_MS: u64 = 120;
-pub const FIND_MS: u64 = 700;
 /// The spotlight returns this long after the last move when it steps aside while moving.
 const REST_MS: u64 = 250;
 const TRAIL_POINTS: usize = 96;
@@ -351,11 +347,6 @@ const TRAIL_POINTS: usize = 96;
 /// jitter of a resting hand would make the ribbon tremble.
 const MIN_VERTEX: f64 = 3.;
 const CLICKS: usize = 12;
-/// Logical distance a shake must travel between two turns.
-const SHAKE_SPAN: f64 = 40.;
-const SHAKE_TURNS: usize = 4;
-const SHAKE_WINDOW_MS: u64 = 700;
-const FIND_COOLDOWN_MS: u64 = 1200;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct TrailPoint {
@@ -375,63 +366,6 @@ pub struct Click {
     pub button: Button,
 }
 
-/// Recognises a shake: the pointer turns back and forth quickly along x.
-#[derive(Clone, Debug, Default)]
-struct Shake {
-    /// Where the pointer last turned, and the direction it now travels (-1, 0, 1).
-    extreme: Option<Point>,
-    direction: i8,
-    turns: [u64; SHAKE_TURNS],
-    count: usize,
-    last_find: Option<u64>,
-}
-impl Shake {
-    /// True when this move completes a shake.
-    fn moved(&mut self, at: Point, now: u64, scale: f64) -> bool {
-        let Some(extreme) = self.extreme else {
-            self.extreme = Some(at);
-            return false;
-        };
-        let dx = at.x - extreme.x;
-        let direction = if dx > 0. {
-            1
-        } else if dx < 0. {
-            -1
-        } else {
-            0
-        };
-        if direction == 0 {
-            return false;
-        }
-        if self.direction == 0 || direction == self.direction {
-            // Still travelling the same way: the turning point moves along.
-            self.direction = direction;
-            self.extreme = Some(at);
-            return false;
-        }
-        // Reversed. It counts only after a real span from the last turn.
-        if dx.abs() < SHAKE_SPAN * scale {
-            return false;
-        }
-        self.direction = direction;
-        self.extreme = Some(at);
-        self.turns.rotate_left(1);
-        self.turns[SHAKE_TURNS - 1] = now;
-        self.count = (self.count + 1).min(SHAKE_TURNS);
-        let quick =
-            self.count == SHAKE_TURNS && now.saturating_sub(self.turns[0]) <= SHAKE_WINDOW_MS;
-        let rested = self
-            .last_find
-            .is_none_or(|last| now.saturating_sub(last) >= FIND_COOLDOWN_MS);
-        if quick && rested {
-            self.count = 0;
-            self.last_find = Some(now);
-            return true;
-        }
-        false
-    }
-}
-
 /// The animated state of the pointer effects.
 #[derive(Clone, Debug)]
 pub struct Effects {
@@ -441,8 +375,6 @@ pub struct Effects {
     trail_start: usize,
     clicks: [Option<Click>; CLICKS],
     next_click: usize,
-    shake: Shake,
-    find_start: Option<u64>,
     /// Where the halo is drawn: the pointer, or behind it when following smoothly.
     shown: Option<Point>,
     pointer: Option<Point>,
@@ -458,8 +390,6 @@ impl Default for Effects {
             trail_start: 0,
             clicks: [None; CLICKS],
             next_click: 0,
-            shake: Shake::default(),
-            find_start: None,
             shown: None,
             pointer: None,
             last_move: None,
@@ -489,7 +419,7 @@ impl Effects {
                     .length()
                     < MIN_VERTEX * scale;
             if close {
-                return self.shake_moved(at, now, scale, settings);
+                return;
             }
             let point = TrailPoint { at, time: now };
             if self.trail_len < TRAIL_POINTS {
@@ -499,12 +429,6 @@ impl Effects {
                 self.trail[self.trail_start] = point;
                 self.trail_start = (self.trail_start + 1) % TRAIL_POINTS;
             }
-        }
-        self.shake_moved(at, now, scale, settings);
-    }
-    fn shake_moved(&mut self, at: Point, now: u64, scale: f64, settings: &PointerSettings) {
-        if settings.shake_to_find && self.shake.moved(at, now, scale) {
-            self.find_start = Some(now);
         }
     }
     /// A button went down at `at`, or the click shortcut asked for the animation there.
@@ -518,10 +442,6 @@ impl Effects {
             button,
         });
         self.next_click = (self.next_click + 1) % CLICKS;
-    }
-    /// Plays the shake animation now, whatever the mouse did.
-    pub fn find(&mut self, now: u64) {
-        self.find_start = Some(now);
     }
     /// Advances the smooth follow to `now`; returns where the halo is drawn.
     pub fn step(&mut self, now: u64, settings: &PointerSettings) -> Option<Point> {
@@ -616,17 +536,25 @@ impl Effects {
                 time: now,
             });
         }
+        smooth_vertices(&mut vertices);
         let count = vertices.len();
         for index in 0..count.saturating_sub(1) {
-            let p0 = vertices[index.saturating_sub(1)];
             let p1 = vertices[index];
             let p2 = vertices[index + 1];
-            let p3 = vertices[(index + 2).min(count - 1)];
+            // At either end, a phantom vertex mirrors the neighbour: the curve leaves straight.
+            let p0 = match index {
+                0 => p1.at + (p1.at - p2.at),
+                _ => vertices[index - 1].at,
+            };
+            let p3 = match vertices.get(index + 2) {
+                Some(next) => next.at,
+                None => p2.at + (p2.at - p1.at),
+            };
             let steps = ((p2.at - p1.at).length() / spacing).ceil().max(1.) as usize;
             for step in 0..steps {
                 let t = step as f64 / steps as f64;
                 out.push(TrailPoint {
-                    at: catmull_rom(p0.at, p1.at, p2.at, p3.at, t),
+                    at: catmull_rom(p0, p1.at, p2.at, p3, t),
                     time: p1.time + ((p2.time.saturating_sub(p1.time)) as f64 * t) as u64,
                 });
             }
@@ -645,10 +573,7 @@ impl Effects {
         let mut bounds: Option<crate::Rect> = None;
         let mut add = |r: crate::Rect| bounds = Some(bounds.map_or(r, |b| b.union(r)));
         if let Some(shown) = self.shown {
-            add(around(
-                shown,
-                layer_radius(settings, self.finding(now).is_some()) * scale + 2.,
-            ));
+            add(around(shown, layer_radius(settings) * scale + 2.));
         }
         // The widest trail mark: the ribbon's half width, a drifting spark, a star.
         let trail_reach = 26. * scale;
@@ -666,12 +591,6 @@ impl Effects {
             let age = now.saturating_sub(click.time);
             (age < CLICK_MS + 2 * WAVE_GAP_MS).then_some((*click, age as f64 / CLICK_MS as f64))
         })
-    }
-    /// Progress of the find animation in 0..1, None when it is not playing.
-    pub fn finding(&self, now: u64) -> Option<f64> {
-        let start = self.find_start?;
-        let age = now.saturating_sub(start);
-        (age < FIND_MS).then_some(age as f64 / FIND_MS as f64)
     }
     /// Whether the spotlight is lit now; `held` says whether its shortcut is pressed.
     pub fn spotlight_lit(&self, now: u64, held: bool, settings: &PointerSettings) -> bool {
@@ -697,7 +616,7 @@ impl Effects {
             && self
                 .last_move
                 .is_some_and(|last| now.saturating_sub(last) < REST_MS);
-        trail || clicks || following || resting || self.finding(now).is_some()
+        trail || clicks || following || resting
     }
     pub fn clear(&mut self) {
         *self = Self::default();
@@ -718,20 +637,44 @@ impl Effects {
     }
 }
 
-/// The uniform Catmull-Rom curve from `p1` (t = 0) to `p2` (t = 1).
-fn catmull_rom(p0: Point, p1: Point, p2: Point, p3: Point, t: f64) -> Point {
-    let t2 = t * t;
-    let t3 = t2 * t;
-    let axis = |a: f64, b: f64, c: f64, d: f64| {
-        0.5 * (2. * b
-            + (c - a) * t
-            + (2. * a - 5. * b + 4. * c - d) * t2
-            + (3. * b - a - 3. * c + d) * t3)
-    };
-    Point {
-        x: axis(p0.x, p1.x, p2.x, p3.x),
-        y: axis(p0.y, p1.y, p2.y, p3.y),
+/// Passes of the [1, 2, 1] filter over the trail's vertices before the curve goes through them.
+const SMOOTHING_PASSES: usize = 2;
+
+/// Eases the hand's jitter and the corners between mouse samples out of the vertices; the
+/// first and last stay put, so the ribbon still starts at its tail and ends under the halo.
+fn smooth_vertices(vertices: &mut [TrailPoint]) {
+    let count = vertices.len();
+    if count < 3 {
+        return;
     }
+    let mut previous: Vec<Point> = vertices.iter().map(|point| point.at).collect();
+    for _ in 0..SMOOTHING_PASSES {
+        for index in 1..count - 1 {
+            vertices[index].at =
+                (previous[index - 1] + previous[index] * 2. + previous[index + 1]) * 0.25;
+        }
+        for (kept, vertex) in previous.iter_mut().zip(vertices.iter()) {
+            *kept = vertex.at;
+        }
+    }
+}
+
+/// The centripetal Catmull-Rom curve from `p1` (t = 0) to `p2` (t = 1): unlike the uniform
+/// one, it never loops or spikes where the mouse samples are unevenly spaced.
+fn catmull_rom(p0: Point, p1: Point, p2: Point, p3: Point, t: f64) -> Point {
+    // Knot gaps are the square root of each chord; a vanishing one would divide by zero.
+    let gap = |a: Point, b: Point| (a - b).length().sqrt().max(1e-6);
+    let t1 = gap(p0, p1);
+    let t2 = t1 + gap(p1, p2);
+    let t3 = t2 + gap(p2, p3);
+    let u = t1 + (t2 - t1) * t;
+    let lerp = |a: Point, b: Point, from: f64, to: f64| a + (b - a) * ((u - from) / (to - from));
+    let a1 = lerp(p0, p1, 0., t1);
+    let a2 = lerp(p1, p2, t1, t2);
+    let a3 = lerp(p2, p3, t2, t3);
+    let b1 = lerp(a1, a2, 0., t2);
+    let b2 = lerp(a2, a3, t1, t3);
+    lerp(b1, b2, t1, t2)
 }
 
 /// The spotlight's light as a polygon, in the coordinates of `screen` (device pixels), around
@@ -817,11 +760,17 @@ mod tests {
             }),
             spotlight: SpotlightShape::Horizontal,
             spotlight_hidden_moving: true,
-            shake_to_find: false,
             ..Default::default()
         };
         let line = settings.encode();
-        assert_eq!(PointerSettings::decode(&line), Ok(settings));
+        assert_eq!(PointerSettings::decode(&line), Ok(settings.clone()));
+        // The retired shake to find field is written off and read whatever 0.3.16 saved.
+        let mut fields: Vec<String> = line.split(',').map(String::from).collect();
+        assert_eq!(fields[18], "0");
+        fields[18] = "1".into();
+        assert_eq!(PointerSettings::decode(&fields.join(",")), Ok(settings));
+        fields[18] = "2".into();
+        assert!(PointerSettings::decode(&fields.join(",")).is_err(), "flag");
         assert_eq!(
             PointerSettings::decode(&PointerSettings::default().encode()),
             Ok(PointerSettings::default())
@@ -931,7 +880,8 @@ mod tests {
         }
         let mut path = Vec::new();
         effects.trail_path(140, &settings, 4., &mut path);
-        assert!(path.len() > 40, "{}", path.len());
+        // 160 pixels of polyline, a little less once the corner is cut round.
+        assert!(path.len() > 32, "{}", path.len());
         assert_eq!(path.first().map(|p| p.at), Some(at(0., 0.)));
         assert_eq!(
             path.last().map(|p| p.at),
@@ -949,6 +899,38 @@ mod tests {
         let off = PointerSettings::default();
         effects.trail_path(140, &off, 4., &mut path);
         assert!(path.is_empty());
+    }
+
+    #[test]
+    fn a_quick_shaky_stroke_leaves_a_ribbon_without_visible_corners() {
+        let settings = PointerSettings {
+            trail: TrailStyle::Line,
+            trail_length: TrailLength::Long,
+            ..Default::default()
+        };
+        let mut effects = Effects::default();
+        // Far apart samples of a fast hand that wobbles by 5 pixels, unevenly spaced.
+        for step in 0..16u64 {
+            let x = (step * 30 + step % 3 * 9) as f64;
+            let y = if step % 2 == 0 { 0. } else { 5. };
+            effects.moved(at(x, y), step * 8, 1., &settings);
+        }
+        let mut path = Vec::new();
+        effects.trail_path(130, &settings, 2.5, &mut path);
+        let mut sharpest: f64 = 0.;
+        for triple in path.windows(3) {
+            let a = triple[1].at - triple[0].at;
+            let b = triple[2].at - triple[1].at;
+            if a.length() < 1e-6 || b.length() < 1e-6 {
+                continue;
+            }
+            let cos = ((a.x * b.x + a.y * b.y) / (a.length() * b.length())).clamp(-1., 1.);
+            sharpest = sharpest.max(cos.acos().to_degrees());
+        }
+        assert!(
+            sharpest < 3.,
+            "the ribbon turns by {sharpest:.1} degrees between samples"
+        );
     }
 
     #[test]
@@ -1028,7 +1010,7 @@ mod tests {
     }
 
     #[test]
-    fn a_quick_shake_finds_the_pointer_and_slow_moves_do_not() {
+    fn shaking_the_mouse_plays_nothing() {
         let settings = PointerSettings::default();
         let mut effects = Effects::default();
         let mut now = 0;
@@ -1036,36 +1018,16 @@ mod tests {
             now += 60;
             effects.moved(at(x, 0.), now, 1., &settings);
         }
-        assert!(effects.finding(now).is_some(), "shaken");
-        assert!(effects.finding(now + FIND_MS).is_none(), "it ends");
-
-        let mut slow = Effects::default();
-        let mut now = 0;
-        for x in [0., 100., 0., 100., 0., 100.] {
-            now += 600;
-            slow.moved(at(x, 0.), now, 1., &settings);
-        }
-        assert!(slow.finding(now).is_none(), "too slow");
-
-        let mut small = Effects::default();
-        let mut now = 0;
-        for x in [0., 10., 0., 10., 0., 10., 0.] {
-            now += 30;
-            small.moved(at(x, 0.), now, 1., &settings);
-        }
-        assert!(small.finding(now).is_none(), "jitter is not a shake");
-
-        let off = PointerSettings {
-            shake_to_find: false,
-            ..Default::default()
-        };
-        let mut none = Effects::default();
-        let mut now = 0;
-        for x in [0., 100., 0., 100., 0., 100.] {
-            now += 60;
-            none.moved(at(x, 0.), now, 1., &off);
-        }
-        assert!(none.finding(now).is_none(), "switched off");
+        assert!(
+            !effects.animating(now, &settings),
+            "no animation after a shake"
+        );
+        let halo = layer_radius(&settings) + 2.;
+        let bounds = effects.bounds(now, &settings, 1.).unwrap();
+        assert_eq!(
+            (bounds.min, bounds.max),
+            (at(100. - halo, -halo), at(100. + halo, halo))
+        );
     }
 
     #[test]
@@ -1145,15 +1107,11 @@ mod tests {
     #[test]
     fn the_layer_grows_only_for_effects_around_the_halo() {
         let quiet = PointerSettings::default();
-        assert!(
-            layer_radius(&quiet, false) < 60.,
-            "the default halo stays small"
-        );
-        assert!(layer_radius(&quiet, true) >= AROUND_RADIUS, "finding");
+        assert!(layer_radius(&quiet) < 60., "the default halo stays small");
         let trail = PointerSettings {
             trail: TrailStyle::Dots,
             ..Default::default()
         };
-        assert!(layer_radius(&trail, false) >= AROUND_RADIUS);
+        assert!(layer_radius(&trail) >= AROUND_RADIUS);
     }
 }
