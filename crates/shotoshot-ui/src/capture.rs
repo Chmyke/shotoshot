@@ -6,7 +6,7 @@ use crate::{
     toolbar::{self, Action, Button, HoverHint, Motion},
     wheel,
 };
-use shotoshot_core::{Editor, FillChange, Object, Point, Rect, Shape, Tool, arrow_points};
+use shotoshot_core::{Editor, FillChange, Label, Object, Point, Rect, Shape, Tool, arrow_points};
 use shotoshot_text::Key;
 
 /// Margin of the size badge on each side of what it shows, in logical pixels.
@@ -120,6 +120,11 @@ pub struct Capture {
     /// The region came back from the previous capture: until the next press inside it, a
     /// press outside starts a new one instead of drawing.
     pub(crate) recalled_region: bool,
+    /// A press of the label tool, and where the pointer is now: a click fits the panel to
+    /// the text, a drag sets its width.
+    pub(crate) label_drag: Option<(Point, Point)>,
+    /// The panel the next new text opens with, set by the label tool for `Host::begin_text`.
+    pub new_label: Option<Label>,
 }
 impl Capture {
     pub fn new(image: Image) -> Self {
@@ -133,6 +138,8 @@ impl Capture {
             copied_sequence: 0,
             paste_count: 0,
             text_size: 24.,
+            label_drag: None,
+            new_label: None,
             live: false,
             reopened: false,
             searching: false,
@@ -707,7 +714,7 @@ impl Capture {
         if self.bucket {
             return CursorKind::Cross;
         }
-        if self.editor.tool == Tool::Text {
+        if matches!(self.editor.tool, Tool::Text | Tool::Label) {
             // A click on a text edits it, anywhere else it starts one: two shapes to tell.
             return if self.text_at(f).is_some() {
                 CursorKind::IBeam
@@ -958,7 +965,7 @@ mod tests {
             c.region = Rect::new(point(800., 600.), point(2400., 1500.));
             let region = c.region.unwrap();
             let buttons = c.buttons();
-            assert_eq!(buttons.len(), 25);
+            assert_eq!(buttons.len(), 26);
             for b in &buttons {
                 let size = b.bounds.size();
                 assert!(

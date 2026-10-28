@@ -403,7 +403,6 @@ fn presentation_preferences_reapply_the_language_only_after_reading_the_settings
     app.settings.language = LanguageChoice::Fixed(Language::De);
     let mut preferences = app.settings.presentation.clone();
     preferences.stroke_width = 9;
-    preferences.input_locked = true;
     preferences.input_offset = Some([12, 34]);
     let reloaded = app.store_presentation_preferences(&preferences).unwrap();
     assert!(
@@ -411,7 +410,6 @@ fn presentation_preferences_reapply_the_language_only_after_reading_the_settings
         "nothing was read back: the language is not applied"
     );
     assert_eq!(app.settings.presentation.stroke_width, 9);
-    assert!(app.settings.presentation.input_locked);
     assert_eq!(app.settings.presentation.input_offset, Some([12, 34]));
     assert_eq!(app.settings.language, LanguageChoice::Fixed(Language::De));
 }

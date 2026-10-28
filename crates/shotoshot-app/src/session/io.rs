@@ -175,13 +175,14 @@ impl Native {
     pub fn begin_text(&mut self, capture: &mut Capture, hwnd: HWND, p: Point) -> Result<()> {
         unsafe {
             let existing = capture.text_at(p);
-            let (position, value, id, size, rgb, rotation) = if let Some(Object {
+            let (position, value, id, size, rgb, rotation, label) = if let Some(Object {
                 id,
                 shape:
                     Shape::Text {
                         position,
                         text,
                         size,
+                        label,
                         ..
                     },
                 style,
@@ -196,6 +197,7 @@ impl Native {
                     *size as f32,
                     style.color,
                     *rotation,
+                    *label,
                 )
             } else {
                 (
@@ -205,6 +207,7 @@ impl Native {
                     capture.text_size,
                     capture.editor.style.color,
                     0.,
+                    capture.new_label,
                 )
             };
             let width = (capture.image.width as f64 - position.x).max(1.) as i32;
@@ -245,6 +248,7 @@ impl Native {
                 size,
                 face: Face::Annotation,
                 color: rgb,
+                label,
                 font,
                 drag_anchor: None,
                 scroll: Default::default(),
@@ -265,7 +269,14 @@ impl Native {
                     let mut buffer = vec![0u16; length + 1];
                     let copied = GetWindowTextW(input.window, &mut buffer) as usize;
                     let text = String::from_utf16_lossy(&buffer[..copied]);
-                    let extent = match self.renderer.measure_annotation_text(&text, input.size) {
+                    let wrap = input.label.and_then(Label::wrap).map(|w| w as f32);
+                    let measured = match wrap {
+                        Some(width) => self
+                            .renderer
+                            .measure_wrapped_annotation_text(&text, input.size, width),
+                        None => self.renderer.measure_annotation_text(&text, input.size),
+                    };
+                    let extent = match measured {
                         Ok(extent) => extent,
                         Err(error) => {
                             // The title says what failed, the body why, as Windows put it.
@@ -290,12 +301,13 @@ impl Native {
                             input.size as f64,
                         );
                         capture.select_committed_text(id);
-                    } else if let Some(id) = capture.editor.add_text_measured_sized_colored(
+                    } else if let Some(id) = capture.editor.add_label(
                         input.position,
                         text,
                         extent,
                         input.color,
                         input.size as f64,
+                        input.label,
                     ) {
                         capture.select_committed_text(id);
                     }

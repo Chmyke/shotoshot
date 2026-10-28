@@ -84,6 +84,9 @@ pub(crate) struct Presentation {
     lock: Option<Layer>,
     broadcast: Option<Rc<Broadcast>>,
     input_drag: Option<(POINT, POINT)>,
+    /// The whole diagram is shown and draggable, until its lock, Enter or Esc ends the move.
+    /// Otherwise only pressed keys and buttons appear and every click passes through.
+    pub moving: bool,
     wheel_travel: wheel::Notches,
     scene: Scene,
     origin: POINT,
@@ -130,6 +133,7 @@ impl Presentation {
             lock: None,
             broadcast: None,
             input_drag: None,
+            moving: false,
             wheel_travel: Default::default(),
             scene: Scene::default(),
             origin: POINT::default(),
@@ -267,6 +271,7 @@ impl Presentation {
         self.sync_pointer_keys();
         if !enabled.devices() {
             self.end_input_drag(false)?;
+            self.moving = false;
             self.keys = None;
             self.lock = None;
         }
@@ -309,6 +314,7 @@ impl Presentation {
         self.lock = None;
         self.broadcast = None;
         self.input_drag = None;
+        self.moving = false;
         self.devices.clear();
         self.halo_state.clear();
         self.effects.clear();
@@ -553,7 +559,6 @@ impl Presentation {
     /// What the input diagram shows now.
     fn plan(&self) -> diagram::Plan {
         diagram::Plan {
-            layout: self.preferences.input_layout,
             keyboard: self.enabled.keys,
             mouse: self.enabled.mouse,
         }
@@ -603,7 +608,7 @@ impl Presentation {
             } else {
                 (x, y)
             };
-            keys.mouse_interactive(!self.preferences.input_locked)?;
+            keys.mouse_interactive(self.moving)?;
             keys.position(info.rcWork.left + x, info.rcWork.top + y)?;
             self.paint(keys.hwnd())?;
             keys.show(true);
@@ -642,15 +647,15 @@ impl Presentation {
         if let Some(keys) = &self.keys
             && keys.hwnd() == hwnd
         {
-            keys.begin(!self.preferences.input_locked)?;
-            keys.devices(&self.devices, now);
+            keys.begin(self.moving)?;
+            keys.devices(&self.devices, now, self.moving);
             return keys.end();
         }
         if let Some(lock) = &self.lock
             && lock.hwnd() == hwnd
         {
             lock.begin(true)?;
-            lock.lock_icon(self.preferences.input_locked);
+            lock.lock_icon(false);
             return lock.end();
         }
         if let Some(canvas) = &self.canvas

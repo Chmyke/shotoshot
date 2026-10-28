@@ -147,7 +147,9 @@ pub(super) fn selection(hwnd: HWND) -> (u32, u32) {
     (start, end)
 }
 
-fn layout(text: &[u16], size: f32, face: Face) -> Result<IDWriteTextLayout> {
+/// The field's text as it is drawn: one line per typed line, broken at `wrap` when given,
+/// exactly as the committed label lays it out (`Renderer::measure_wrapped_annotation_text`).
+fn layout(text: &[u16], size: f32, face: Face, wrap: Option<f32>) -> Result<IDWriteTextLayout> {
     unsafe {
         let factory: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
         let format = match face {
@@ -162,8 +164,29 @@ fn layout(text: &[u16], size: f32, face: Face) -> Result<IDWriteTextLayout> {
                 w!("en-US"),
             )?,
         };
-        format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
-        factory.CreateTextLayout(text, &format, 1_000_000., 1_000_000.)
+        if wrap.is_none() {
+            format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
+        }
+        factory.CreateTextLayout(text, &format, wrap.unwrap_or(1_000_000.), 1_000_000.)
+    }
+}
+fn input_layout(input: &TextInput) -> Result<IDWriteTextLayout> {
+    let text = value(input.window);
+    let Some(label) = input.label else {
+        return layout(&text, input.size, input.face, None);
+    };
+    unsafe {
+        let factory: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
+        let format = annotation_font::label_format(&factory, input.size, label)?;
+        let width = label.wrap().unwrap_or(1_000_000.) as f32;
+        let layout = factory.CreateTextLayout(&text, &format, width, 1_000_000.)?;
+        if label.wrap().is_none() {
+            // Centred within the text's own width, as the committed label is.
+            let mut metrics = DWRITE_TEXT_METRICS::default();
+            layout.GetMetrics(&mut metrics)?;
+            layout.SetMaxWidth(metrics.widthIncludingTrailingWhitespace)?;
+        }
+        Ok(layout)
     }
 }
 
@@ -240,7 +263,7 @@ fn scrolled(
 }
 
 pub(super) fn hit(input: &TextInput, point: Point) -> Result<(u32, bool)> {
-    let layout = layout(&value(input.window), input.size, input.face)?;
+    let layout = input_layout(input)?;
     let mut point = rotate_point(point, text_center(input, &layout)?, -input.rotation);
     point.x += input.scroll.get().offset as f64;
     let (mut trailing, mut inside) = (BOOL(0), BOOL(0));
@@ -409,7 +432,7 @@ impl Native {
         scale: f64,
     ) -> Result<()> {
         let text = value(input.window);
-        let layout = layout(&text, input.size, input.face)?;
+        let layout = input_layout(input)?;
         let (start, end) = selection(input.window);
         if let Some(view) = view {
             let shown =
@@ -436,7 +459,29 @@ impl Native {
         }
         let result = (|| -> Result<()> {
             unsafe {
-                let brush = target.CreateSolidColorBrush(&color(input.color, 1.), None)?;
+                let ink = match input.label {
+                    Some(_) => shotoshot_core::label_ink(input.color),
+                    None => input.color,
+                };
+                if input.label.is_some() {
+                    let size = input.size as f64;
+                    let pad = Label::padding(size);
+                    let panel = Rect {
+                        min: input.position - pad,
+                        max: input.position + text_block(input, &layout)? + pad,
+                    };
+                    let fill = target.CreateSolidColorBrush(&color(input.color, 1.), None)?;
+                    let radius = Label::radius(size) as f32;
+                    target.FillRoundedRectangle(
+                        &D2D1_ROUNDED_RECT {
+                            rect: crate::render::rect(panel),
+                            radiusX: radius,
+                            radiusY: radius,
+                        },
+                        &fill,
+                    );
+                }
+                let brush = target.CreateSolidColorBrush(&color(ink, 1.), None)?;
                 if end > start {
                     let mut count = 0;
                     let _ = layout.HitTestTextRange(
@@ -521,16 +566,23 @@ impl Native {
     }
 }
 
-fn text_center(input: &TextInput, layout: &IDWriteTextLayout) -> Result<Point> {
+/// The text block the committed object will have: its lines, and a wrapped label's whole
+/// width, so the field turns around the centre the object will turn around.
+fn text_block(input: &TextInput, layout: &IDWriteTextLayout) -> Result<Point> {
     let mut metrics = DWRITE_TEXT_METRICS::default();
     unsafe {
         layout.GetMetrics(&mut metrics)?;
     }
-    Ok(input.position
-        + Point {
-            x: metrics.widthIncludingTrailingWhitespace as f64 / 2.,
-            y: metrics.height as f64 / 2.,
-        })
+    Ok(Point {
+        x: input
+            .label
+            .and_then(Label::wrap)
+            .unwrap_or(metrics.widthIncludingTrailingWhitespace as f64),
+        y: metrics.height as f64,
+    })
+}
+fn text_center(input: &TextInput, layout: &IDWriteTextLayout) -> Result<Point> {
+    Ok(input.position + text_block(input, layout)? * 0.5)
 }
 
 #[cfg(test)]
@@ -640,6 +692,7 @@ mod tests {
                 size: 24.,
                 face: Face::Annotation,
                 color: [255; 3],
+                label: None,
                 font,
                 drag_anchor: None,
                 scroll: Default::default(),
@@ -678,7 +731,7 @@ mod tests {
     #[test]
     fn directwrite_caret_tracks_utf16_and_multiline_text() -> Result<()> {
         let text: Vec<u16> = "é😀\r\n第二行".encode_utf16().collect();
-        let layout = layout(&text, 24., Face::Annotation)?;
+        let layout = layout(&text, 24., Face::Annotation, None)?;
         let (mut x, mut y) = (0., 0.);
         let mut metric = DWRITE_HIT_TEST_METRICS::default();
         unsafe {

@@ -105,7 +105,6 @@ fn display_change_preserves_each_feature_choice_and_preferences() {
         };
         resident.presentation(|p| {
             p.preferences.input_offset = Some([2300, 6700]);
-            p.preferences.input_locked = true;
             p.set_enabled(enabled).unwrap();
         });
         for _ in 0..2 {
@@ -116,7 +115,7 @@ fn display_change_preserves_each_feature_choice_and_preferences() {
                     "display change lost active features, mask {mask}"
                 );
                 assert_eq!(p.preferences.input_offset, Some([2300, 6700]));
-                assert!(p.preferences.input_locked);
+                assert!(!p.moving, "a display change ends a move");
             });
         }
     }

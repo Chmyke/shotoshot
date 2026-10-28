@@ -265,6 +265,17 @@ fn paint<C: Canvas>(
                 .stroke_round_rect(barrel, 1.6 * scale, g.ink, 1.6 * scale)?;
             g.outline(&[(3., 4.5), (10., 4.5)], false)?;
         }
+        // A panel of the tint with a letter on it, in the ink a label gives that panel.
+        Action::Tool(Tool::Label) => {
+            let panel = g.rect(1.5, 4., 18.5, 16.);
+            let radius = 3. * scale;
+            g.canvas.fill_round_rect(panel, radius, Ink::solid(tint))?;
+            g.canvas
+                .stroke_round_rect(panel, radius, g.ink, 1.6 * scale)?;
+            let ink = Ink::solid(shotoshot_core::label_ink(tint));
+            g.band((6., 8.), (14., 8.), ink, 1.6)?;
+            g.band((10., 8.), (10., 13.), ink, 1.6)?;
+        }
         Action::Tool(Tool::Text) => {
             g.line((3., 3.), (17., 3.))?;
             g.line((10., 3.), (10., 18.))?;

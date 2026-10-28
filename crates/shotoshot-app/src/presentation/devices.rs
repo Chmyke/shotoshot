@@ -95,17 +95,21 @@ impl Devices {
         self.labels[index][..text.len()].copy_from_slice(text);
         self.label_lengths[index] = text.len() as u8;
     }
-    pub fn label(&self, scan: u16, extended: bool, now: u64) -> (&[u16], f32) {
+    /// 1 while the key is held, fading to 0 over 600 ms once released.
+    pub fn presence(&self, scan: u16, extended: bool, now: u64) -> f32 {
         if scan >= 128 {
-            return (&[], 0.);
+            return 0.;
         }
-        let index = scan as usize + usize::from(extended) * 128;
-        let key = self.keys[index];
-        let alpha = if key.down {
+        let key = self.keys[scan as usize + usize::from(extended) * 128];
+        if key.down {
             1.
         } else {
             key.until.saturating_sub(now).min(LABEL_FADE_MS) as f32 / LABEL_FADE_MS as f32
-        };
+        }
+    }
+    pub fn label(&self, scan: u16, extended: bool, now: u64) -> (&[u16], f32) {
+        let alpha = self.presence(scan, extended, now);
+        let index = scan as usize + usize::from(extended) * 128;
         if alpha == 0. {
             return (&[], 0.);
         }
@@ -120,10 +124,8 @@ impl Devices {
             .is_some_and(|button| button.active(now))
     }
     pub fn needs_animation(&self, now: u64) -> bool {
-        self.keys
-            .iter()
-            .enumerate()
-            .any(|(index, key)| !key.down && key.until > now && self.label_lengths[index] > 0)
+        // Every released key fades, labelled or not: the ghost diagram shows its keycap.
+        self.keys.iter().any(|key| !key.down && key.until > now)
             || self
                 .mouse
                 .iter()

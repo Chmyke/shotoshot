@@ -148,7 +148,87 @@ pub fn render_demo() -> Result<()> {
     )?;
     dense_interface(&path.with_file_name("shotoshot-interface-200.png"))?;
     shape_samples::render(&path.with_file_name("shotoshot-shape-scales.png"))?;
+    labels(&renderer, &path.with_file_name("shotoshot-labels.png"))?;
     crate::presentation::demo::render()
+}
+
+/// Texts on their panels, as exported: fitted and wrapped, short and long, accents and
+/// several lines, light and dark panels, one turned, over a light and a dark ground.
+fn labels(renderer: &Renderer, path: &std::path::Path) -> Result<()> {
+    let at = |x: f64, y: f64| Point { x, y };
+    let mut image = Image::solid(900, 520, [248, 245, 242, 255]);
+    for y in 0..520 {
+        for x in 450..900 {
+            let index = (y * 900 + x) * 4;
+            image.pixels[index..index + 4].copy_from_slice(&[40, 44, 52, 255]);
+        }
+    }
+    let mut editor = Editor::default();
+    let samples = [
+        (at(40., 40.), "Note", 24., [250, 192, 66], None),
+        (
+            at(160., 40.),
+            "Step 1
+Open the menu",
+            20.,
+            [237, 79, 92],
+            None,
+        ),
+        (
+            at(40., 170.),
+            "Ça déjà vu : le garçon naïf mange une crème brûlée, ü ß ñ.",
+            20.,
+            [28, 31, 40],
+            Some(300.),
+        ),
+        (
+            at(40., 340.),
+            "Averyveryverylongwordthatbreaks",
+            18.,
+            [245, 245, 248],
+            Some(160.),
+        ),
+        (at(500., 40.), "On a dark ground", 22., [80, 153, 244], None),
+        (
+            at(500., 150.),
+            "Wrapped on a white panel, three lines or so.",
+            18.,
+            [245, 245, 248],
+            Some(200.),
+        ),
+        (at(560., 360.), "Turned", 28., [64, 199, 128], None),
+    ];
+    for (corner, text, size, color, wrap) in samples {
+        let extent = match wrap {
+            Some(width) => {
+                renderer.measure_wrapped_annotation_text(text, size as f32, width as f32)?
+            }
+            None => renderer.measure_annotation_text(text, size as f32)?,
+        };
+        let label = Some(wrap.map_or(Label::Fit, Label::Wrap));
+        editor.add_label(
+            corner + Label::padding(size),
+            text.into(),
+            extent,
+            color,
+            size,
+            label,
+        );
+    }
+    let mut objects = editor.objects().to_vec();
+    if let Some(turned) = objects.last_mut() {
+        turned.rotate(turned.local_bounds().center(), -0.3);
+    }
+    let output = renderer.export(
+        &image,
+        &[],
+        &objects,
+        Rect {
+            min: Point::default(),
+            max: at(900., 520.),
+        },
+    )?;
+    save_png(&output, path)
 }
 
 /// The interface on a 200 % screen, from real gestures: controls, handles and the default

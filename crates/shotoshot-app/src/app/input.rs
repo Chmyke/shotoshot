@@ -126,7 +126,6 @@ impl App {
                 tray_menu::shortcut(shapes[index], conflicts[index])
             }),
             duration_ms: self.settings.presentation.duration_ms,
-            layout: self.settings.presentation.input_layout,
             size: self.settings.presentation.input_scale,
             halo: enabled.halo,
             temporary_shapes: enabled.shapes,

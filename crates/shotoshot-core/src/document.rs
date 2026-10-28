@@ -1,4 +1,6 @@
-use crate::{Paint, Point, Rect, coat_seen, remap_walls, rotate_point, segment_distance};
+use crate::{
+    Label, Paint, Point, Rect, coat_seen, label_ink, remap_walls, rotate_point, segment_distance,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Style {
@@ -37,10 +39,14 @@ pub enum Shape {
         highlight: bool,
     },
     Text {
+        /// Top-left of the first line, inside the panel's margins when there is one.
         position: Point,
         text: String,
         size: f64,
+        /// The laid-out text, without the panel: lines wrapped at the label's width.
         extent: Point,
+        /// A panel of the object's colour behind the text, which is then black or white.
+        label: Option<Label>,
     },
 }
 #[derive(Clone, Debug, PartialEq)]
@@ -173,11 +179,38 @@ impl Object {
                 })
                 .unwrap_or_default(),
             Shape::Text {
-                position, extent, ..
-            } => Rect {
-                min: *position,
-                max: *position + *extent,
-            },
+                position,
+                extent,
+                size,
+                label,
+                ..
+            } => {
+                let text = Rect {
+                    min: *position,
+                    max: *position
+                        + Point {
+                            x: label.and_then(Label::wrap).unwrap_or(extent.x),
+                            y: extent.y,
+                        },
+                };
+                match label {
+                    Some(_) => {
+                        let pad = Label::padding(*size);
+                        Rect {
+                            min: text.min - pad,
+                            max: text.max + pad,
+                        }
+                    }
+                    None => text,
+                }
+            }
+        }
+    }
+    /// The colour a text is drawn in: its own, or the contrast of its panel.
+    pub fn text_ink(&self) -> [u8; 3] {
+        match self.shape {
+            Shape::Text { label: Some(_), .. } => label_ink(self.style.color),
+            _ => self.style.color,
         }
     }
     pub fn translate(&mut self, delta: Point) {
@@ -191,6 +224,7 @@ impl Object {
         );
     }
     pub fn transform(&mut self, from: Rect, to: Rect) {
+        let own = self.local_bounds();
         let map = |p: Point| Point {
             x: to.min.x
                 + (p.x - from.min.x)
@@ -220,13 +254,29 @@ impl Object {
                     *p = map(*p);
                 }
             }
+            // A wrapped label changes its width and keeps its font: the host lays its
+            // lines out again (`Editor::reflow`). Its height follows the text, not `to`.
+            Shape::Text {
+                position,
+                size,
+                label: Some(Label::Wrap(wrap)),
+                ..
+            } => {
+                let pad = Label::padding(*size);
+                let (min, max) = (map(own.min), map(own.max));
+                *position = Point {
+                    x: min.x.min(max.x),
+                    y: min.y.min(max.y),
+                } + pad;
+                *wrap = ((max.x - min.x).abs() - 2. * pad.x).max(Label::min_wrap(*size));
+            }
             Shape::Text {
                 position,
                 size,
                 extent,
+                label,
                 ..
             } => {
-                *position = map(*position);
                 let scale = if from.size().y > 0.001 {
                     to.size().y / from.size().y
                 } else {
@@ -234,6 +284,9 @@ impl Object {
                 };
                 let new_size = (*size * scale).clamp(8., 300.);
                 *extent = *extent * (new_size / *size);
+                // The panel's corner moves with the gesture; its margins with the font.
+                let pad = |size| label.map_or(Point::default(), |_| Label::padding(size));
+                *position = map(own.min) + pad(new_size);
                 *size = new_size;
             }
         }

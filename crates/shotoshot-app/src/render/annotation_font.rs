@@ -77,6 +77,23 @@ pub fn format_in(
     }
 }
 
+/// The text format of a label at `size`: lines centred in the panel, broken at its width
+/// when it wraps, never otherwise.
+pub fn label_format(
+    write: &IDWriteFactory,
+    size: f32,
+    label: shotoshot_core::Label,
+) -> Result<IDWriteTextFormat> {
+    let format = format(write, size)?;
+    unsafe {
+        format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;
+        if label.wrap().is_none() {
+            format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
+        }
+    }
+    Ok(format)
+}
+
 /// A GDI font of the same face, owned by the caller: the hidden EDIT control moves its
 /// caret with its own layout, which must agree with DirectWrite.
 pub fn gdi_font(size: f32) -> Result<HFONT> {

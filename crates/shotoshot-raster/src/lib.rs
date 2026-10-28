@@ -5,7 +5,7 @@
 use cosmic_text::{
     Attrs, Buffer, Color, Family, FontSystem, Metrics, Shaping, SwashCache, Weight, fontdb,
 };
-use shotoshot_core::{Object, Point, Rect, Shape, paths, stroke_runs};
+use shotoshot_core::{Label, Object, Point, Rect, Shape, paths, stroke_runs, text_lines};
 use shotoshot_ui::{Canvas, Face, Image, Ink, annotation_font};
 use std::sync::Arc;
 use tiny_skia::{
@@ -65,6 +65,25 @@ impl Raster {
     /// Extent of annotation `text` at `size`, exactly as annotations draw it.
     pub fn measure_annotation_text(&mut self, text: &str, size: f64) -> Point {
         self.extent(text, size, Face::Annotation)
+    }
+    /// The lines a label draws `text` on, without the spaces they end with: typed lines,
+    /// broken at `wrap` when given. The break is decided here, then nothing breaks again.
+    pub fn label_lines<'t>(&mut self, text: &'t str, size: f64, wrap: Option<f64>) -> Vec<&'t str> {
+        let mut measure = |s: &str| self.measure_annotation_text(s, size).x;
+        text_lines(text, wrap, &mut measure)
+            .into_iter()
+            .map(|line| text[line].trim_end())
+            .collect()
+    }
+    /// `text` broken into the lines a label `width` wide draws, one per line of the result.
+    pub fn wrapped_annotation_text(&mut self, text: &str, size: f64, width: f64) -> String {
+        self.label_lines(text, size, Some(width)).join("\n")
+    }
+    /// Extent of annotation `text` at `size` broken into lines `width` wide, exactly as a
+    /// wrapped label draws it.
+    pub fn measure_wrapped_annotation_text(&mut self, text: &str, size: f64, width: f64) -> Point {
+        let lines = self.wrapped_annotation_text(text, size, width);
+        self.measure_annotation_text(&lines, size)
     }
     fn extent(&mut self, text: &str, size: f64, face: Face) -> Point {
         let fonts = &mut self.fonts;
@@ -526,6 +545,7 @@ impl Canvas for SkiaCanvas<'_> {
                     text,
                     size,
                     extent,
+                    label,
                 } => {
                     let center = o.local_bounds().center();
                     let transform = Transform::from_rotate_at(
@@ -533,12 +553,36 @@ impl Canvas for SkiaCanvas<'_> {
                         center.x as f32,
                         center.y as f32,
                     );
-                    let r = Rect {
-                        min: *position,
-                        max: *position + *extent + Point { x: 20., y: 20. },
+                    if label.is_some() {
+                        let panel = round_rect(o.local_bounds(), Label::radius(*size));
+                        self.fill_path(panel, Ink::solid(o.style.color), transform);
+                    }
+                    let ink = Ink::solid(o.text_ink());
+                    let Some(label) = label else {
+                        let r = Rect {
+                            min: *position,
+                            max: *position + *extent + Point { x: 20., y: 20. },
+                        };
+                        self.text_at(text, r, (Face::Annotation, *size), ink, transform, false);
+                        continue;
                     };
-                    let ink = Ink::solid(o.style.color);
-                    self.text_at(text, r, (Face::Annotation, *size), ink, transform, false);
+                    // Each line of a label sits in the middle of its panel.
+                    let width = label.wrap().unwrap_or(extent.x);
+                    let line_height = *size * annotation_font::LINE_HEIGHT as f64;
+                    let lines = self.raster.label_lines(text, *size, label.wrap());
+                    for (row, line) in lines.into_iter().enumerate() {
+                        let measured = self.raster.measure_annotation_text(line, *size).x;
+                        let min = *position
+                            + Point {
+                                x: ((width - measured) / 2.).max(0.),
+                                y: row as f64 * line_height,
+                            };
+                        let r = Rect {
+                            min,
+                            max: min + Point { x: 1e6, y: 1e6 },
+                        };
+                        self.text_at(line, r, (Face::Annotation, *size), ink, transform, false);
+                    }
                 }
                 Shape::Stroke { highlight, .. } => {
                     // Fill the union once, so translucent highlighter runs do not

@@ -42,6 +42,8 @@ pub struct TextInput {
     /// Typeface the hidden control and its DirectWrite presentation share.
     pub face: Face,
     pub color: [u8; 3],
+    /// The panel the text sits on; a wrapped one breaks the lines at its width.
+    pub label: Option<Label>,
     pub font: HFONT,
     pub drag_anchor: Option<u32>,
     /// What a one-line field shows of a text wider than itself; a text with no field
@@ -366,10 +368,22 @@ impl Host for WinHost<'_> {
     fn set_text_size(&mut self, size: f32) -> Result<()> {
         self.native.set_text_size(self.hwnd, size)
     }
+    fn set_text_label(&mut self, position: Point, label: Option<Label>) {
+        if let Some(text) = &mut self.native.text {
+            text.position = position;
+            text.label = label;
+            self.native.text_event_updated(self.hwnd);
+        }
+    }
     fn measure_text(&mut self, text: &str, size: f64) -> Result<Point> {
         self.native
             .renderer
             .measure_annotation_text(text, size as f32)
+    }
+    fn measure_wrapped_text(&mut self, text: &str, size: f64, width: f64) -> Result<Point> {
+        self.native
+            .renderer
+            .measure_wrapped_annotation_text(text, size as f32, width as f32)
     }
     fn dimensions_active(&self) -> bool {
         self.native.dimensions.is_some()

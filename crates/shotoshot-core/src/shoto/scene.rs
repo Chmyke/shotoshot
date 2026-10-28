@@ -1,8 +1,9 @@
 //! ROLE: The scene text inside a `.shoto` file: frame, region and objects. Version 2 adds
 //! stacked coats and the shapes each spares (`Paint`); version 1 has one plain coat at most.
+//! Version 3 adds the panel of a text (`Label`).
 //! INVARIANTS: `decode` gives back the scene `encode` wrote, and accepts nothing it does not
 //! fully understand: skipping an unknown field could drop a mask at the next save.
-use crate::{Attachment, Object, Paint, Point, Rect, Shape, Style};
+use crate::{Attachment, Label, Object, Paint, Point, Rect, Shape, Style};
 use std::fmt::Write;
 
 /// Largest frame side, far above any desktop.
@@ -59,10 +60,14 @@ impl Scene {
             })
     }
     /// The lowest format version that holds this scene: 2 once a zone has more than one coat
-    /// or a coat spares a shape, so simpler files still open in an earlier Shotoshot.
+    /// or a coat spares a shape, 3 once a text sits on a panel, so simpler files still open
+    /// in an earlier Shotoshot.
     pub fn version(&self) -> u32 {
         let plain = |coats: &[Paint]| coats.len() <= 1 && coats.iter().all(|c| c.walls.is_empty());
-        if plain(&self.background) && self.objects.iter().all(|o| plain(&o.fill)) {
+        let labelled = |o: &Object| matches!(o.shape, Shape::Text { label: Some(_), .. });
+        if self.objects.iter().any(labelled) {
+            3
+        } else if plain(&self.background) && self.objects.iter().all(|o| plain(&o.fill)) {
             1
         } else {
             2
@@ -151,8 +156,12 @@ fn object_valid(object: &Object, points: &mut usize) -> bool {
                 text,
                 size,
                 extent,
+                label,
             } => {
-                position.finite()
+                label
+                    .and_then(Label::wrap)
+                    .is_none_or(|w| w.is_finite() && w > 0.)
+                    && position.finite()
                     && (8. ..=300.).contains(size)
                     && extent.finite()
                     && extent.x >= 0.
@@ -230,12 +239,19 @@ fn encode_object(out: &mut String, object: &Object) -> std::fmt::Result {
             text,
             size,
             extent,
+            label,
         } => {
             write!(
                 out,
-                " at={},{} size={size} extent={},{} text=",
+                " at={},{} size={size} extent={},{}",
                 position.x, position.y, extent.x, extent.y
             )?;
+            match label {
+                Some(Label::Fit) => out.push_str(" label=fit"),
+                Some(Label::Wrap(width)) => write!(out, " label=wrap:{width}")?,
+                None => {}
+            }
+            out.push_str(" text=");
             for byte in text.bytes() {
                 write!(out, "{byte:02x}")?;
             }
@@ -440,10 +456,17 @@ fn decode_object(line: &str, version: u32, points: &mut usize) -> Option<Object>
         "text" => {
             let [x, y] = numbers(f.take("at")?)?;
             let [w, h] = numbers(f.take("extent")?)?;
+            let label = match f.take("label") {
+                Some(_) if version < 3 => return None,
+                Some("fit") => Some(Label::Fit),
+                Some(text) => Some(Label::Wrap(number(text.strip_prefix("wrap:")?)?)),
+                None => None,
+            };
             Shape::Text {
                 position: pair(x, y),
                 size: number(f.take("size")?)?,
                 extent: pair(w, h),
+                label,
                 text: String::from_utf8(hex(f
                     .take("text")
                     .filter(|t| t.len() <= 2 * MAX_TEXT)?)?)
@@ -557,6 +580,7 @@ pub(super) mod tests {
                         text: "Héllo\r\nwörld".into(),
                         size: 24.,
                         extent: pair(120.5, 64.),
+                        label: None,
                     },
                 ),
             ],
@@ -785,6 +809,90 @@ object id=3 kind=ellipse color=000000 width=1 rotation=0.5 rect=-5.5,0,40,30
             assert!(VERSION_2.contains(from), "{from:?} is not in the reference");
             let text = VERSION_2.replacen(from, to, 1);
             assert_eq!(decode(&text, 2), None, "{from:?} replaced by {to:?}");
+        }
+    }
+    /// Version 3 as it was first written: a text fitted to its panel and one wrapped at a
+    /// width. Files with this text exist: it never changes.
+    const VERSION_3: &str = "\
+frame 1920 1080
+origin -1920 0
+region 100.5 200 900 700.25
+last 3
+object id=1 kind=text color=fac042 width=3 rotation=0 at=50,60 size=24 extent=120.5,29 label=fit text=4e6f7465
+object id=3 kind=text color=1c1f28 width=3 rotation=0.5 at=10,20 size=32 extent=180,77 label=wrap:200.25 text=c3876120646f69742072657374657220696369
+";
+    fn labelled() -> Scene {
+        let text = |text: &str, position, size, extent, label| Shape::Text {
+            position,
+            text: text.into(),
+            size,
+            extent,
+            label: Some(label),
+        };
+        Scene {
+            background: Vec::new(),
+            objects: vec![
+                object(
+                    1,
+                    0.,
+                    [250, 192, 66],
+                    3.,
+                    text("Note", pair(50., 60.), 24., pair(120.5, 29.), Label::Fit),
+                ),
+                object(
+                    3,
+                    0.5,
+                    [28, 31, 40],
+                    3.,
+                    text(
+                        "Ça doit rester ici",
+                        pair(10., 20.),
+                        32.,
+                        pair(180., 77.),
+                        Label::Wrap(200.25),
+                    ),
+                ),
+            ],
+            last_id: 3,
+            ..sample()
+        }
+    }
+    #[test]
+    fn version_3_text_is_frozen() {
+        assert_eq!(labelled().version(), 3);
+        assert_eq!(labelled().encode(), VERSION_3);
+        assert_eq!(decode(VERSION_3, 3), Some(labelled()));
+        assert_eq!(
+            decode(VERSION_1, 3),
+            Some(sample()),
+            "version 3 reads version 1"
+        );
+        assert_eq!(decode(VERSION_2, 3), Some(layered()), "and version 2");
+    }
+    #[test]
+    fn earlier_versions_know_no_label() {
+        assert_eq!(decode(VERSION_3, 2), None);
+        assert_eq!(decode(VERSION_3, 1), None);
+        let plain = VERSION_3
+            .replacen(" label=fit", "", 1)
+            .replacen(" label=wrap:200.25", "", 1);
+        assert!(decode(&plain, 2).is_some(), "the same texts without panels");
+    }
+    #[test]
+    fn labels_not_fully_understood_are_refused() {
+        for (from, to) in [
+            ("label=fit", "label=fits"),
+            ("label=fit", "label="),
+            ("label=fit", "label=fit label=fit"),
+            ("label=wrap:200.25", "label=wrap:"),
+            ("label=wrap:200.25", "label=wrap:-1"),
+            ("label=wrap:200.25", "label=wrap:0"),
+            ("label=wrap:200.25", "label=wrap:inf"),
+            ("label=wrap:200.25", "label=200.25"),
+        ] {
+            assert!(VERSION_3.contains(from), "{from:?} is not in the reference");
+            let text = VERSION_3.replacen(from, to, 1);
+            assert_eq!(decode(&text, 3), None, "{from:?} replaced by {to:?}");
         }
     }
     #[test]

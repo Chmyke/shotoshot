@@ -43,8 +43,15 @@ impl Session {
         let mut renderer = Renderer::with(Backend::Hardware, false)?;
         renderer.set_image(&frame)?;
         let monitors = hint::monitors_from(frame.left, frame.top);
-        let measure =
-            |text: &str, size: f64| renderer.measure_annotation_text(text, size as f32).ok();
+        let measure = |text: &str, size: f64, label: Option<Label>| {
+            match label.and_then(Label::wrap) {
+                Some(width) => {
+                    renderer.measure_wrapped_annotation_text(text, size as f32, width as f32)
+                }
+                None => renderer.measure_annotation_text(text, size as f32),
+            }
+            .ok()
+        };
         let capture = Capture::reopen(scene, frame, monitors, measure).ok_or_else(damaged)?;
         Ok(Self {
             capture,

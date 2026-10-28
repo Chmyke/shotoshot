@@ -173,6 +173,18 @@ impl Editor {
         color: [u8; 3],
         size: f64,
     ) -> Option<u64> {
+        self.add_label(position, text, extent, color, size, None)
+    }
+    /// A text on a panel of `color` when `label` is given, or a plain text otherwise.
+    pub fn add_label(
+        &mut self,
+        position: Point,
+        text: String,
+        extent: Point,
+        color: [u8; 3],
+        size: f64,
+        label: Option<Label>,
+    ) -> Option<u64> {
         if text.trim().is_empty()
             || !position.finite()
             || !extent.finite()
@@ -180,6 +192,9 @@ impl Editor {
             || extent.y < 0.
             || !size.is_finite()
             || !(8. ..=300.).contains(&size)
+            || label
+                .and_then(Label::wrap)
+                .is_some_and(|w| !w.is_finite() || w <= 0.)
         {
             return None;
         }
@@ -195,6 +210,7 @@ impl Editor {
                 text,
                 size,
                 extent,
+                label,
             },
             style: Style {
                 color,
@@ -317,6 +333,18 @@ impl Editor {
     }
     pub fn set_text_size(&mut self, id: u64, size: f64, extent: Point) -> bool {
         self.set_text_sizes(&[(id, size, extent)])
+    }
+    /// The lines of text `id` laid out again at `extent` during a gesture that resized its
+    /// label, so its panel follows before the gesture commits; nothing outside a gesture.
+    pub fn reflow(&mut self, id: u64, measured: Point) {
+        if self.gesture.is_none() || !measured.finite() || measured.x < 0. || measured.y < 0. {
+            return;
+        }
+        if let Some(o) = self.objects.iter_mut().find(|o| o.id == id)
+            && let Shape::Text { extent, .. } = &mut o.shape
+        {
+            *extent = measured;
+        }
     }
     pub fn copy_selected(&self) -> Vec<Object> {
         self.objects

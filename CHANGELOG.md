@@ -2,6 +2,18 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.20 · 2026-10-28
+
+- New Text box tool (B): click and type to get text on a rounded colour panel, or drag first to choose how wide it is and let the lines wrap by themselves. The text sits in the middle and turns black or white so it always reads.
+- A text box behaves like any other annotation: move it, recolour it, copy it, undo it. Dragging a corner of a wrapped box changes its width, not its font, and it reopens just as editable from a .shoto file.
+
+## 0.3.19 · 2026-10-28
+
+- The on-screen keyboard and mouse now keep out of sight: only the keys and buttons you press show up, right where they sit, then fade away. Your audience sees what you do, not a keyboard parked on the screen.
+- To place them, pick Move keyboard and mouse in the menu: they show in full until you lock them again, and once locked they never catch a click meant for the window below.
+- The keyboard layout menu is gone: a keyboard that only shows the keys you press takes no room, so it's always the full one now.
+- Moving the spotlight no longer flashes a thin see-through gap at the edge of its shadow.
+
 ## 0.3.18 · 2026-10-28
 
 - The spotlight's shadow now fades in gently around the light instead of starting at a hard edge, for circles and bands alike. Less flashlight, more stage lighting.

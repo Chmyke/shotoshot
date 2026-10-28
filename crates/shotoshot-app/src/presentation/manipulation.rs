@@ -2,8 +2,30 @@
 use super::*;
 
 impl Presentation {
+    /// Shows the whole diagram, draggable, with its lock; a diagram turned off comes on first.
+    pub(super) fn start_move(&mut self) -> Result<()> {
+        if !self.enabled.devices() {
+            self.set_enabled(Enabled {
+                keys: true,
+                ..self.enabled
+            })?;
+        }
+        self.moving = true;
+        self.show_devices()
+    }
+    /// Back to the still ghost: only pressed keys show and clicks pass through.
+    pub(super) fn end_move(&mut self) -> Result<()> {
+        if !self.moving {
+            return Ok(());
+        }
+        self.end_input_drag(true)?;
+        self.moving = false;
+        self.show_devices()
+    }
     pub(super) fn show_lock(&mut self) -> Result<()> {
-        let Some(keys) = &self.keys else {
+        // The lock exists only during a move: a still diagram takes no click anywhere.
+        let Some(keys) = self.keys.as_ref().filter(|_| self.moving) else {
+            self.lock = None;
             return Ok(());
         };
         let mut bounds = RECT::default();
@@ -81,13 +103,8 @@ impl Presentation {
         }
         match msg {
             WM_MOUSEACTIVATE => return Ok(Some(LRESULT(MA_NOACTIVATE as isize))),
-            WM_LBUTTONDOWN if lock => {
-                self.end_input_drag(true)?;
-                self.preferences.input_locked = !self.preferences.input_locked;
-                self.show_devices()?;
-                self.input_preferences_changed()?;
-            }
-            WM_LBUTTONDOWN if !self.preferences.input_locked => {
+            WM_LBUTTONDOWN if lock => self.end_move()?,
+            WM_LBUTTONDOWN if self.moving => {
                 let mut bounds = RECT::default();
                 unsafe {
                     GetWindowRect(hwnd, &mut bounds)?;
@@ -157,7 +174,7 @@ mod tests {
             assert_ne!(style & WS_EX_NOACTIVATE.0, 0);
         }
         layer.begin(true).unwrap();
-        layer.devices(&Devices::default(), 0);
+        layer.devices(&Devices::default(), 0, true);
         layer.end().unwrap();
         assert!(layer.pixel(2, 50)[3] < 90, "the panel remains transparent");
         assert!(

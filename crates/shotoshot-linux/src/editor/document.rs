@@ -153,7 +153,12 @@ impl Editor {
         (frame.left, frame.top) = corner;
         let raster = &mut self.native.raster;
         // The font is not in the file: text is measured again with the one drawn here.
-        let measure = |text: &str, size: f64| Some(raster.measure_annotation_text(text, size));
+        let measure = |text: &str, size: f64, label: Option<shotoshot_core::Label>| {
+            Some(match label.and_then(shotoshot_core::Label::wrap) {
+                Some(width) => raster.measure_wrapped_annotation_text(text, size, width),
+                None => raster.measure_annotation_text(text, size),
+            })
+        };
         let capture = Capture::reopen(scene, frame, Vec::new(), measure).ok_or_else(damaged)?;
         self.show(capture)?;
         Ok(Some(place))

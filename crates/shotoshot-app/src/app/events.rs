@@ -419,7 +419,6 @@ impl App {
             self.settings.clone()
         };
         next.presentation.input_offset = preferences.input_offset;
-        next.presentation.input_locked = preferences.input_locked;
         next.presentation.stroke_width = preferences.stroke_width;
         if self.persist_preferences {
             next.save().map_err(crate::settings::unsaved)?;

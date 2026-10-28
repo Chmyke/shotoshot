@@ -39,6 +39,7 @@ toolbar.line = Linie
 toolbar.arrow = Pfeil
 toolbar.pen = Stift
 toolbar.highlighter = Textmarker
+toolbar.label = Textfeld
 toolbar.text == Text
 toolbar.eraser = Radierer
 toolbar.live_capture = Live-Aufnahme · {shortcut} · beim Kopieren oder Speichern aktualisiert
@@ -87,7 +88,7 @@ menu.pointer_halo = Zeiger-Halo
 menu.pointer_effects = Zeigereffekte
 menu.keyboard = Tastatur
 menu.mouse = Maus
-menu.keyboard_layout = Tastaturlayout
+menu.move_input = Tastatur und Maus verschieben
 menu.input_size = Größe von Tastatur und Maus
 menu.temporary_shapes = Temporäre Formen
 menu.shape_duration = Anzeigedauer der Formen
@@ -102,9 +103,6 @@ menu.quit = Shotoshot beenden
 menu.duration_1 = 1 Sekunde
 menu.duration_3 = 3 Sekunden
 menu.duration_5 = 5 Sekunden
-menu.layout_full = Vollständig
-menu.layout_compact = Kompakt
-menu.layout_gaming == Gaming
 menu.seconds = {n} s
 menu.percent = {n} %
 menu.shortcut_in_use = {shortcut} (belegt)

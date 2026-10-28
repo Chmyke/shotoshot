@@ -3,7 +3,10 @@
 //! INVARIANTS: `caret` and `anchor` are byte offsets on char boundaries of `text`;
 //! geometry comes from the caller's text measure, the same one that renders the text.
 use crate::{Canvas, Capture, Ink, caret, keys};
-use shotoshot_core::{Modifiers, Object, Point, Rect, Shape, rotate_point};
+use shotoshot_core::{
+    Label, Modifiers, Object, Point, Rect, Shape, label_ink, rotate_point, text_lines,
+};
+use std::ops::Range;
 
 const KEY_BACKSPACE: u32 = 8;
 const KEY_END: u32 = 35;
@@ -36,6 +39,8 @@ pub struct TextField {
     pub color: [u8; 3],
     /// Clockwise radians around the text centre, inherited from an edited object.
     pub rotation: f64,
+    /// The panel the text sits on, whose width may break its lines.
+    pub label: Option<Label>,
     /// Newlines are refused (typed, pasted or Enter); used by the crop-size fields.
     single_line: bool,
     text: String,
@@ -56,6 +61,7 @@ impl TextField {
                         position,
                         text,
                         size,
+                        label,
                         ..
                     },
                 style,
@@ -67,6 +73,7 @@ impl TextField {
                 size: *size as f32,
                 color: style.color,
                 rotation: *rotation,
+                label: *label,
                 caret: text.len(),
                 anchor: text.len(),
                 text: text.clone(),
@@ -80,6 +87,7 @@ impl TextField {
                 size: capture.text_size,
                 color: capture.editor.style.color,
                 rotation: 0.,
+                label: capture.new_label,
                 single_line: false,
                 text: String::new(),
                 caret: 0,
@@ -97,6 +105,7 @@ impl TextField {
             size,
             color,
             rotation: 0.,
+            label: None,
             single_line: true,
             caret: text.len(),
             anchor: 0,
@@ -176,12 +185,42 @@ impl TextField {
             self.anchor = offset;
         }
     }
-    fn line_bounds(&self, offset: usize) -> (usize, usize) {
-        let start = self.text[..offset].rfind('\n').map_or(0, |i| i + 1);
-        let end = self.text[offset..]
-            .find('\n')
-            .map_or(self.text.len(), |i| offset + i);
-        (start, end)
+    /// Byte ranges of the lines as drawn: typed lines, broken at the label's width.
+    fn lines(&self, measure: &mut impl FnMut(&str) -> Point) -> Vec<Range<usize>> {
+        let wrap = self.label.and_then(Label::wrap);
+        text_lines(&self.text, wrap, &mut |s| measure(s).x)
+    }
+    /// The drawn line `offset` is on; at a break inside a typed line, the one it starts.
+    fn row(lines: &[Range<usize>], offset: usize) -> usize {
+        lines.iter().rposition(|l| l.start <= offset).unwrap_or(0)
+    }
+    /// How far line `row` starts right of `position`: a label sets each line in the middle
+    /// of a block `width` wide, a plain text at its left.
+    fn indent(
+        &self,
+        lines: &[Range<usize>],
+        row: usize,
+        width: f64,
+        measure: &mut impl FnMut(&str) -> Point,
+    ) -> f64 {
+        if self.label.is_none() {
+            return 0.;
+        }
+        let shown = self.text[lines[row].clone()].trim_end();
+        ((width - measure(shown).x) / 2.).max(0.)
+    }
+    /// Where the caret may stand on line `row`: before the spaces a wrapped line ends with,
+    /// since that end is where the next line starts.
+    fn reach(&self, lines: &[Range<usize>], row: usize) -> Range<usize> {
+        let line = lines[row].clone();
+        if lines
+            .get(row + 1)
+            .is_some_and(|next| next.start == line.end)
+        {
+            line.start..line.start + self.text[line].trim_end_matches(' ').len()
+        } else {
+            line
+        }
     }
 
     /// Editing keys (virtual-key codes). Escape and Ctrl+Enter belong to the session.
@@ -220,32 +259,38 @@ impl TextField {
                 };
                 self.move_to(to, extend);
             }
-            KEY_HOME => {
-                let to = if m.ctrl {
-                    0
-                } else {
-                    self.line_bounds(self.caret).0
-                };
+            KEY_HOME | KEY_END if m.ctrl => {
+                let to = if key == KEY_HOME { 0 } else { self.text.len() };
                 self.move_to(to, extend);
             }
-            KEY_END => {
-                let to = if m.ctrl {
-                    self.text.len()
+            KEY_HOME | KEY_END => {
+                let lines = self.lines(measure);
+                let line = self.reach(&lines, Self::row(&lines, self.caret));
+                let to = if key == KEY_HOME {
+                    line.start
                 } else {
-                    self.line_bounds(self.caret).1
+                    line.end
                 };
                 self.move_to(to, extend);
             }
             keys::KEY_UP | keys::KEY_DOWN => {
-                let (start, end) = self.line_bounds(self.caret);
-                let x = measure(&self.text[start..self.caret]).x;
+                let lines = self.lines(measure);
+                let width = self.block(measure).x;
+                let row = Self::row(&lines, self.caret);
+                let start = lines[row].start;
+                let x = self.indent(&lines, row, width, measure)
+                    + measure(&self.text[start..self.caret]).x;
                 let target = if key == keys::KEY_UP {
-                    (start > 0).then(|| self.line_bounds(start - 1))
+                    row.checked_sub(1)
                 } else {
-                    (end < self.text.len()).then(|| self.line_bounds(end + 1))
+                    Some(row + 1).filter(|r| *r < lines.len())
                 };
                 let to = match target {
-                    Some((s, e)) => s + nearest_offset(&self.text[s..e], x, measure),
+                    Some(r) => {
+                        let line = self.reach(&lines, r);
+                        let x = x - self.indent(&lines, r, width, measure);
+                        line.start + nearest_offset(&self.text[line], x, measure)
+                    }
                     None if key == keys::KEY_UP => 0,
                     None => self.text.len(),
                 };
@@ -273,23 +318,39 @@ impl TextField {
     fn line_height(&self, measure: &mut impl FnMut(&str) -> Point) -> f64 {
         measure("X").y.max(1.)
     }
-    fn center(&self, measure: &mut impl FnMut(&str) -> Point) -> Point {
-        self.position + measure(&self.text) * 0.5
+    /// Size of the text block the committed object will have: its lines, and a wrapped
+    /// label's whole width.
+    fn block(&self, measure: &mut impl FnMut(&str) -> Point) -> Point {
+        let Some(wrap) = self.label.and_then(Label::wrap) else {
+            return measure(&self.text);
+        };
+        let lines = self.lines(measure);
+        Point {
+            x: wrap,
+            y: lines.len() as f64 * self.line_height(measure),
+        }
     }
-    /// Byte offset nearest to `p` and whether `p` lies on the field's text.
+    fn center(&self, measure: &mut impl FnMut(&str) -> Point) -> Point {
+        self.position + self.block(measure) * 0.5
+    }
+    /// Byte offset nearest to `p` and whether `p` lies on the field's text or its panel.
     pub fn hit(&self, p: Point, measure: &mut impl FnMut(&str) -> Point) -> (usize, bool) {
         let local = rotate_point(p, self.center(measure), -self.rotation) - self.position;
         let line_height = self.line_height(measure);
-        let extent = measure(&self.text);
-        let lines: Vec<&str> = self.text.split('\n').collect();
+        let extent = self.block(measure);
+        let lines = self.lines(measure);
         let row = ((local.y / line_height).floor().max(0.) as usize).min(lines.len() - 1);
-        let start: usize = lines[..row].iter().map(|l| l.len() + 1).sum();
-        let offset = start + nearest_offset(lines[row], local.x, measure);
+        let line = self.reach(&lines, row);
+        let x = local.x - self.indent(&lines, row, extent.x, measure);
+        let offset = line.start + nearest_offset(&self.text[line], x, measure);
+        let pad = self
+            .label
+            .map_or(Point::default(), |_| Label::padding(self.size()));
         // A slack margin keeps an empty or thin field easy to click.
-        let inside = local.x >= -4.
-            && local.y >= -4.
-            && local.x <= extent.x.max(line_height) + 4.
-            && local.y <= extent.y.max(line_height) + 4.;
+        let inside = local.x >= -4. - pad.x
+            && local.y >= -4. - pad.y
+            && local.x <= extent.x.max(line_height) + 4. + pad.x
+            && local.y <= extent.y.max(line_height) + 4. + pad.y;
         (offset, inside)
     }
     /// Places the caret (Shift extends); true when the press is on the field.
@@ -331,12 +392,13 @@ impl TextField {
                 .editor
                 .update_text_measured_sized_colored(id, self.text, extent, self.color, size);
             capture.select_committed_text(id);
-        } else if let Some(id) = capture.editor.add_text_measured_sized_colored(
+        } else if let Some(id) = capture.editor.add_label(
             self.position,
             self.text,
             extent,
             self.color,
             size,
+            self.label,
         ) {
             capture.select_committed_text(id);
         }
@@ -355,15 +417,24 @@ impl TextField {
         };
         let line_height = self.line_height(&mut measure);
         let center = self.center(&mut measure);
+        let block = self.block(&mut measure);
+        let lines = self.lines(&mut measure);
+        let caret_row = Self::row(&lines, self.caret);
         // Selection rectangles and caret, computed before borrowing the canvas to draw.
         let (a, b) = self.selection();
         let mut marks = Vec::new();
-        let mut line_start = 0;
-        for (row, line) in self.text.split('\n').enumerate() {
-            let line_end = line_start + line.len();
+        // What is drawn: each line as broken here, never broken again by the canvas.
+        let mut drawn = Vec::with_capacity(lines.len());
+        for (row, line) in lines.iter().enumerate() {
+            let (line_start, line_end) = (line.start, line.end);
             let top = self.position.y + row as f64 * line_height;
+            let left = self.position.x + self.indent(&lines, row, block.x, &mut measure);
+            drawn.push((
+                Point { x: left, y: top },
+                self.text[line.clone()].trim_end(),
+            ));
             let x_at = |offset: usize, measure: &mut dyn FnMut(&str) -> Point| {
-                self.position.x + measure(&self.text[line_start..offset]).x
+                left + measure(&self.text[line_start..offset]).x
             };
             if b > a && a <= line_end && b >= line_start {
                 let from = x_at(a.max(line_start), &mut measure);
@@ -372,18 +443,29 @@ impl TextField {
                 let to = if b > line_end { to + size * 0.3 } else { to };
                 marks.push((from, to, top, true));
             }
-            if caret && a == b && (line_start..=line_end).contains(&self.caret) {
+            if caret && a == b && row == caret_row {
                 let place = caret::Place::of(self.caret > line_start, self.caret < line_end);
                 let x = caret::center(x_at(self.caret, &mut measure), size, scale, place);
                 marks.push((x, x, top, false));
             }
-            line_start = line_end + 1;
         }
+        let ink = match self.label {
+            Some(_) => label_ink(self.color),
+            None => self.color,
+        };
         if let Some(error) = measure_error {
             return Err(error);
         }
         canvas.set_rotation((self.rotation != 0.).then_some((center, self.rotation)))?;
         let result = (|| {
+            if self.label.is_some() {
+                let pad = Label::padding(size);
+                let panel = Rect {
+                    min: self.position - pad,
+                    max: self.position + block + pad,
+                };
+                canvas.fill_round_rect(panel, Label::radius(size), Ink::solid(self.color))?;
+            }
             for &(from, to, top, selected) in &marks {
                 if selected {
                     let r = Rect {
@@ -396,11 +478,13 @@ impl TextField {
                     canvas.fill_rect(r, SELECTION)?;
                 }
             }
-            let bounds = Rect {
-                min: self.position,
-                max: self.position + Point { x: 1e6, y: 1e6 },
-            };
-            canvas.annotation_text(&self.text, bounds, size, Ink::solid(self.color))?;
+            for &(min, line) in &drawn {
+                let bounds = Rect {
+                    min,
+                    max: min + Point { x: 1e6, y: 1e6 },
+                };
+                canvas.annotation_text(line, bounds, size, Ink::solid(ink))?;
+            }
             for &(x, _, top, selected) in &marks {
                 if !selected {
                     let a = Point { x, y: top };
@@ -408,7 +492,7 @@ impl TextField {
                         x,
                         y: top + line_height,
                     };
-                    canvas.line(a, b, Ink::solid(self.color), caret::width(size, scale))?;
+                    canvas.line(a, b, Ink::solid(ink), caret::width(size, scale))?;
                 }
             }
             Ok(())
@@ -560,5 +644,26 @@ mod tests {
         let empty = TextField::open(&capture, Point { x: 300., y: 200. });
         empty.commit(&mut capture, Point::default());
         assert_eq!(capture.editor.objects().len(), 1);
+    }
+    #[test]
+    fn a_wrapped_label_moves_the_caret_along_its_drawn_lines() {
+        let mut capture = Capture::new(Image::solid(400, 300, [0; 4]));
+        capture.new_label = Some(Label::Wrap(50.));
+        let mut f = TextField::open(&capture, Point { x: 50., y: 60. });
+        // Lines "ab cd " and "efg" at 10 px a letter.
+        f.insert("ab cd efg");
+        assert_eq!(f.label, Some(Label::Wrap(50.)));
+        f.key(KEY_HOME, none(), &mut measure);
+        assert_eq!(f.caret(), 6, "the second line starts after the space");
+        // Lines are centred: "efg" starts 10 px in, under the "b" of "ab cd".
+        f.key(keys::KEY_UP, none(), &mut measure);
+        assert_eq!(f.caret(), 1);
+        f.key(KEY_END, none(), &mut measure);
+        assert_eq!(f.caret(), 5, "before the space the line ends with");
+        f.key(keys::KEY_DOWN, none(), &mut measure);
+        assert_eq!(f.caret(), 9, "the end of the shorter line below");
+        // A click on the second line, inside the panel's left margin.
+        let (offset, inside) = f.hit(Point { x: 46., y: 85. }, &mut measure);
+        assert_eq!((offset, inside), (6, true));
     }
 }

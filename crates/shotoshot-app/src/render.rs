@@ -1,7 +1,7 @@
 //! ROLE: Shared Direct2D drawing for the overlay and flattened output.
 //! OWNER: Each capture owns one renderer; no rendering exists while resident.
 use crate::{Image, ImageExt};
-use shotoshot_core::{Object, Paint, Point, Rect, Shape, paths};
+use shotoshot_core::{Label, Object, Paint, Point, Rect, Shape, paths};
 use shotoshot_ui::{Canvas, Ink, View};
 use windows::{
     Win32::{
@@ -174,6 +174,20 @@ impl Renderer {
     /// Extent of annotation `text` at `size`, exactly as annotations draw it.
     pub fn measure_annotation_text(&self, text: &str, size: f32) -> Result<Point> {
         self.measure(text, &annotation_font::format(&self.write, size)?, None)
+    }
+    /// Extent of annotation `text` at `size` broken into lines `width` wide, exactly as a
+    /// wrapped label draws it.
+    pub fn measure_wrapped_annotation_text(
+        &self,
+        text: &str,
+        size: f32,
+        width: f32,
+    ) -> Result<Point> {
+        self.measure(
+            text,
+            &annotation_font::format(&self.write, size)?,
+            Some(width),
+        )
     }
     /// Extent of `text` on one line, or wrapped at `wrap` when given.
     fn measure(&self, text: &str, format: &IDWriteTextFormat, wrap: Option<f32>) -> Result<Point> {
@@ -394,7 +408,7 @@ impl Renderer {
         let format = annotation_font::format(&self.write, size)?;
         self.draw_text(target, text, r, &format, ink)
     }
-    fn draw_text(
+    pub(crate) fn draw_text(
         &self,
         target: &ID2D1RenderTarget,
         text: &str,
@@ -488,6 +502,7 @@ impl Renderer {
                     text,
                     size,
                     extent,
+                    label,
                 } = &o.shape
                 {
                     let mut previous = Matrix3x2::identity();
@@ -497,16 +512,47 @@ impl Renderer {
                         vector(o.local_bounds().center()),
                     );
                     target.SetTransform(&(rotation * previous));
-                    let result = self.annotation_text(
-                        target,
-                        text,
-                        Rect {
+                    let result = (|| {
+                        if label.is_some() {
+                            let panel =
+                                target.CreateSolidColorBrush(&color(o.style.color, 1.), None)?;
+                            let radius = Label::radius(*size) as f32;
+                            target.FillRoundedRectangle(
+                                &D2D1_ROUNDED_RECT {
+                                    rect: rect(o.local_bounds()),
+                                    radiusX: radius,
+                                    radiusY: radius,
+                                },
+                                &panel,
+                            );
+                        }
+                        let room = *extent + Point { x: 20., y: 20. };
+                        let Some(label) = label else {
+                            return self.annotation_text(
+                                target,
+                                text,
+                                Rect {
+                                    min: *position,
+                                    max: *position + room,
+                                },
+                                *size as f32,
+                                (o.text_ink(), 1.),
+                            );
+                        };
+                        // Laid out exactly as wide as it was measured, each line centred.
+                        let width = label.wrap().unwrap_or(extent.x);
+                        let r = Rect {
                             min: *position,
-                            max: *position + *extent + Point { x: 20., y: 20. },
-                        },
-                        *size as f32,
-                        (o.style.color, 1.),
-                    );
+                            max: *position
+                                + Point {
+                                    x: width,
+                                    y: room.y,
+                                },
+                        };
+                        let format =
+                            annotation_font::label_format(&self.write, *size as f32, *label)?;
+                        self.draw_text(target, text, r, &format, (o.text_ink(), 1.))
+                    })();
                     target.SetTransform(&previous);
                     result?;
                 } else {

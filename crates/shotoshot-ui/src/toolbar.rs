@@ -102,7 +102,7 @@ pub const COLORS: [[u8; 3]; 6] = [
     [28, 31, 40],
 ];
 // One source for toolbar hints and keyboard dispatch. Native text fields handle their own keys.
-const SHORTCUTS: [(Key, Action, u32, bool, bool); 25] = [
+const SHORTCUTS: [(Key, Action, u32, bool, bool); 26] = [
     (
         Key::ToolbarSelect,
         Action::Tool(Tool::Select),
@@ -137,6 +137,13 @@ const SHORTCUTS: [(Key, Action, u32, bool, bool); 25] = [
         Key::ToolbarHighlighter,
         Action::Tool(Tool::Highlight),
         72,
+        false,
+        false,
+    ),
+    (
+        Key::ToolbarLabel,
+        Action::Tool(Tool::Label),
+        66,
         false,
         false,
     ),
@@ -677,7 +684,7 @@ mod tests {
     use shotoshot_text::Language;
 
     /// The English hints as they were written before translation, in listing order.
-    const ENGLISH_HINTS: [&str; 35] = [
+    const ENGLISH_HINTS: [&str; 36] = [
         "Select · V · Page Up/Down forward or back",
         "Rectangle · R",
         "Ellipse · C",
@@ -685,6 +692,7 @@ mod tests {
         "Arrow · A",
         "Pen · P",
         "Highlighter · H",
+        "Text box · B",
         "Text · T",
         "Eraser · E",
         "Live capture · F2 · refresh on copy or save",
@@ -1004,7 +1012,7 @@ mod tests {
                 .unwrap(),
             ] {
                 let buttons = buttons(r, w, h);
-                assert_eq!(buttons.len(), 25);
+                assert_eq!(buttons.len(), 26);
                 let panels = panels(&buttons, 1.);
                 let screen = Rect {
                     min: Point::default(),

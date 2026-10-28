@@ -49,7 +49,15 @@ impl Session {
         renderer.set_image(&frame)?;
         renderer.set_overlay(icons)?;
         let monitors = hint::monitors_from(frame.left, frame.top);
-        let measure = |text: &str, size: f64| renderer.measure_text(text, size as f32).ok();
+        let measure = |text: &str, size: f64, label: Option<Label>| {
+            match label.and_then(Label::wrap) {
+                Some(width) => {
+                    renderer.measure_wrapped_annotation_text(text, size as f32, width as f32)
+                }
+                None => renderer.measure_text(text, size as f32),
+            }
+            .ok()
+        };
         let mut capture = Capture::reopen(scene, frame, monitors, measure).ok_or_else(damaged)?;
         capture.board = true;
         // A board is drawn in zones: it opens with the rectangle, a capture with the arrow.

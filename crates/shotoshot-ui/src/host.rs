@@ -2,7 +2,7 @@
 //! OWNER: Each platform implements it over its window, text field and crop-size fields.
 //! INVARIANTS: Methods that edit the document receive the capture they act on.
 use crate::Capture;
-use shotoshot_core::Point;
+use shotoshot_core::{Label, Point};
 
 pub trait Host {
     type Error;
@@ -27,8 +27,30 @@ pub trait Host {
     fn text_size(&self) -> Option<f32>;
     /// Gives the open field's font a new size; nothing without a field.
     fn set_text_size(&mut self, size: f32) -> Result<(), Self::Error>;
+    /// Moves the open field's first line to `position` and sets the panel it sits on;
+    /// nothing without a field. A new field takes its panel from `Capture::new_label`.
+    fn set_text_label(&mut self, position: Point, label: Option<Label>);
     /// Extent of committed annotation text at `size`, as the renderer lays it out.
     fn measure_text(&mut self, text: &str, size: f64) -> Result<Point, Self::Error>;
+    /// `measure_text` with lines also broken at `width`, as a wrapped label lays them out.
+    fn measure_wrapped_text(
+        &mut self,
+        text: &str,
+        size: f64,
+        width: f64,
+    ) -> Result<Point, Self::Error>;
+    /// Extent of a text object's lines: wrapped at its label's width when it has one.
+    fn measure_text_object(
+        &mut self,
+        text: &str,
+        size: f64,
+        label: Option<Label>,
+    ) -> Result<Point, Self::Error> {
+        match label.and_then(Label::wrap) {
+            Some(width) => self.measure_wrapped_text(text, size, width),
+            None => self.measure_text(text, size),
+        }
+    }
 
     /// Whether the crop-size fields are open.
     fn dimensions_active(&self) -> bool;

@@ -1,6 +1,5 @@
 //! ROLE: Produces a synthetic preview using the actual presentation renderers.
 use super::*;
-use crate::settings::InputLayout;
 use shotoshot_core::{Object, Rect, Shape, Style};
 
 /// Where the lock sits on the full diagram the previews show.
@@ -62,7 +61,7 @@ fn layers(width: i32, height: i32, shapes: [(Shape, f32); 3]) -> Result<Layers> 
     devices.set_label(0x2e, false, &[67]);
     devices.keyboard(83, true, true, 0);
     devices.mouse(1, 0);
-    keys.devices(&devices, 0);
+    keys.devices(&devices, 0, true);
     keys.end()?;
     lock.begin(true)?;
     lock.lock_icon(false);
@@ -163,7 +162,7 @@ pub(crate) fn render() -> Result<()> {
     )?;
     devices.ansi = true;
     keys.begin(false)?;
-    keys.devices(&devices, 0);
+    keys.devices(&devices, 0, true);
     keys.end()?;
     let american = crate::paint_image(diagram::WIDTH as u32, diagram::HEIGHT as u32, |dc| {
         keys.composite(dc, 0, 0)
@@ -175,35 +174,34 @@ pub(crate) fn render() -> Result<()> {
     render_plans()
 }
 
-/// Reference picture of what the menu can ask for: each layout, a lone keyboard, a lone
-/// mouse, the ANSI left-hand block and a larger size, every one with its lock in place.
+/// Reference picture of what the menu can ask for: a lone keyboard, a lone mouse and both
+/// on an ANSI keyboard, each whole with its lock as while moved, then both as a still ghost.
 fn render_plans() -> Result<()> {
-    let plan = |layout, keyboard, mouse| diagram::Plan {
-        layout,
-        keyboard,
-        mouse,
-    };
+    let plan = |keyboard, mouse| diagram::Plan { keyboard, mouse };
     let mut devices = Devices::default();
-    // Shift, Space and the key AZERTY labels Z; right Ctrl is held but outside the block.
+    // Shift, Space, the key AZERTY labels Z and right Ctrl.
     for (scan, extended) in [(0x2a, false), (0x39, false), (0x11, false), (0x1d, true)] {
         devices.keyboard(scan, extended, true, 0);
     }
     devices.set_label(0x11, false, &[b'Z' as u16]);
     devices.mouse(1, 0);
     let mut drawn = Vec::new();
-    for (plan, ansi, scale, x, y) in [
-        (plan(InputLayout::Full, true, false), false, 1., 20, 20),
-        (plan(InputLayout::Full, false, true), false, 1., 480, 20),
-        (plan(InputLayout::Compact, true, true), false, 1., 20, 180),
-        (plan(InputLayout::Gaming, true, false), true, 1., 480, 180),
-        (plan(InputLayout::Gaming, true, true), false, 1., 20, 340),
-        (plan(InputLayout::Gaming, true, false), false, 1.5, 280, 340),
+    for (plan, ansi, whole, x, y) in [
+        (plan(true, false), false, true, 20, 20),
+        (plan(false, true), false, true, 480, 20),
+        (plan(true, true), true, true, 20, 180),
+        (plan(true, true), false, false, 20, 340),
     ] {
+        let scale = 1.;
         devices.ansi = ansi;
         let keys = Layer::diagram(std::ptr::null(), plan, scale)?;
         keys.begin(false)?;
-        keys.devices(&devices, 0);
+        keys.devices(&devices, 0, whole);
         keys.end()?;
+        drawn.push((keys, x, y));
+        if !whole {
+            continue;
+        }
         let size = (diagram::LOCK_SIZE as f64 * scale) as i32;
         let lock = Layer::new(std::ptr::null(), -32000, -32000, size, size)?;
         lock.begin(true)?;
@@ -211,7 +209,6 @@ fn render_plans() -> Result<()> {
         lock.end()?;
         let at = plan.lock();
         let offset = |logical: i32| (logical as f64 * scale) as i32;
-        drawn.push((keys, x, y));
         drawn.push((lock, x + offset(at.0), y + offset(at.1)));
     }
     let renderer = crate::Renderer::new()?;
@@ -357,7 +354,7 @@ impl LiveFilm<'_> {
         );
         self.halo.end()?;
         self.keys.begin(false)?;
-        self.keys.devices(&self.devices, self.now);
+        self.keys.devices(&self.devices, self.now, true);
         self.keys.end()?;
         let backdrop = self.backdrop;
         let (width, height) = (backdrop.width, backdrop.height);

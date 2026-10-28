@@ -2,7 +2,11 @@
 //! INVARIANTS: Inline native fields get the first chance at each press; a press never
 //! both starts a gesture and triggers a button.
 use crate::{Capture, Host, color_picker::ColorPicker, toolbar::Action, wheel};
-use shotoshot_core::{Modifiers, Point, Rect, Shape, Tool};
+use shotoshot_core::{Label, Modifiers, Point, Rect, Shape, Tool};
+
+/// How far, in interface pixels, a press of the label tool travels before it is a drag that
+/// sets the panel's width rather than a click that fits it to the text.
+const LABEL_DRAG: f64 = 6.;
 
 impl Capture {
     /// Returns the toolbar action to run, if the press hit an enabled button.
@@ -137,7 +141,10 @@ impl Capture {
         // The crop limits export only: every tool but the bucket works off the region too, so
         // a shape set down beside it joins the capture once the region grows over it.
         if self.editor.tool == Tool::Text {
+            self.new_label = None;
             host.begin_text(self, f)?;
+        } else if self.editor.tool == Tool::Label {
+            self.begin_label(host, f)?;
         } else {
             self.editor.begin(f, modifiers);
             host.capture_pointer();
@@ -180,6 +187,11 @@ impl Capture {
         if host.text_pointer_move(f) {
             return;
         }
+        if let Some((origin, _)) = self.label_drag {
+            self.label_drag = Some((origin, f));
+            self.place_label(host);
+            return;
+        }
         if let Some(origin) = self.region_origin {
             if let (Some(index), Some(before)) = (self.region_resize, self.region_before) {
                 let mut min = before.min;
@@ -202,6 +214,69 @@ impl Capture {
             }
         } else {
             self.editor.update_with_modifiers(f, modifiers);
+            self.reflow_labels(host);
+        }
+    }
+    /// The label tool's press: on a text it edits it, elsewhere it opens a new text on a
+    /// panel fitted to it, whose width a drag then sets (`place_label`).
+    fn begin_label<H: Host>(&mut self, host: &mut H, f: Point) -> Result<(), H::Error> {
+        if self.text_at(f).is_some() {
+            self.new_label = None;
+            return host.begin_text(self, f);
+        }
+        self.new_label = Some(Label::Fit);
+        host.begin_text(self, f)?;
+        self.label_drag = Some((f, f));
+        self.place_label(host);
+        host.capture_pointer();
+        Ok(())
+    }
+    /// The panel of a label being drawn: its top-left corner at the press, fitted to the text
+    /// until the drag goes further than a click, then as wide as the drag.
+    fn place_label<H: Host>(&mut self, host: &mut H) {
+        let (Some((origin, current)), Some(size)) = (self.label_drag, host.text_size()) else {
+            return;
+        };
+        let size = size as f64;
+        let pad = Label::padding(size);
+        let drag = current - origin;
+        if drag.x.abs().max(drag.y.abs()) < LABEL_DRAG * self.pick_scale() {
+            host.set_text_label(origin + pad, Some(Label::Fit));
+            return;
+        }
+        let corner = Point {
+            x: origin.x.min(current.x),
+            y: origin.y.min(current.y),
+        };
+        let wrap = (drag.x.abs() - 2. * pad.x).max(Label::min_wrap(size));
+        host.set_text_label(corner + pad, Some(Label::Wrap(wrap)));
+    }
+    /// Lays out again the lines of wrapped labels a gesture is resizing, so their panels
+    /// follow the hand before it lets go.
+    fn reflow_labels<H: Host>(&mut self, host: &mut H) {
+        if !self.editor.resizing() {
+            return;
+        }
+        let wrapped: Vec<_> = self
+            .editor
+            .objects()
+            .iter()
+            .filter(|o| self.editor.selected.contains(&o.id))
+            .filter_map(|o| match &o.shape {
+                Shape::Text {
+                    text,
+                    size,
+                    label: label @ Some(Label::Wrap(_)),
+                    ..
+                } => Some((o.id, text.clone(), *size, *label)),
+                _ => None,
+            })
+            .collect();
+        for (id, text, size, label) in wrapped {
+            // A failed measure keeps the lines of the last frame.
+            if let Ok(extent) = host.measure_text_object(&text, size, label) {
+                self.editor.reflow(id, extent);
+            }
         }
     }
     pub fn pointer_up<H: Host>(&mut self, host: &mut H, p: Point, modifiers: Modifiers) {
@@ -221,6 +296,10 @@ impl Capture {
             return;
         }
         if host.text_pointer_up() {
+            host.release_pointer();
+            return;
+        }
+        if self.label_drag.take().is_some() {
             host.release_pointer();
             return;
         }
@@ -360,9 +439,11 @@ impl Capture {
             .iter()
             .filter_map(|o| {
                 if self.editor.selected.contains(&o.id)
-                    && let Shape::Text { text, size, .. } = &o.shape
+                    && let Shape::Text {
+                        text, size, label, ..
+                    } = &o.shape
                 {
-                    Some((o.id, text.clone(), *size))
+                    Some((o.id, text.clone(), *size, *label))
                 } else {
                     None
                 }
@@ -370,16 +451,16 @@ impl Capture {
             .collect();
         if !texts.is_empty() {
             let mut changes = Vec::with_capacity(texts.len());
-            for (id, text, size) in texts {
+            for (id, text, size, label) in texts {
                 let size = wheel::text_size_after(size, notches);
                 // Sizes go through f32 exactly as the native text field stores them.
-                let extent = host.measure_text(&text, size as f32 as f64)?;
+                let extent = host.measure_text_object(&text, size as f32 as f64, label)?;
                 changes.push((id, size, extent));
                 self.text_size = size as f32;
             }
             self.editor.set_text_sizes(&changes);
             self.width_preview = false;
-        } else if self.editor.tool == Tool::Text {
+        } else if matches!(self.editor.tool, Tool::Text | Tool::Label) {
             self.text_size = wheel::text_size_after(self.text_size.into(), notches) as f32;
         } else {
             let step = if notches > 0 {
@@ -1015,5 +1096,87 @@ mod tests {
         assert!(c.cancel_gesture(&mut host));
         c.wheel(&mut host, 90).unwrap();
         assert_eq!(c.editor.style.width, 4.);
+    }
+    #[test]
+    fn a_label_click_fits_its_panel_and_a_drag_sets_its_width() {
+        let m = Modifiers::default();
+        let (mut c, mut host) = selected();
+        c.action(&mut host, Action::Tool(Tool::Label));
+        c.text_size = 20.;
+        // 20 px font: 8 px margins across, 5 px down.
+        let pad = Label::padding(20.);
+        c.pointer_down(&mut host, p(200., 200.), m).unwrap();
+        assert!(
+            host.text_open,
+            "the field opens at the press, ready for typing"
+        );
+        assert_eq!(host.label, Some((p(200., 200.) + pad, Some(Label::Fit))));
+        c.pointer_move(&mut host, p(203., 202.), m);
+        assert_eq!(host.label.unwrap().1, Some(Label::Fit), "a shaking click");
+        c.pointer_up(&mut host, p(203., 202.), m);
+        assert!(!host.captured && c.label_drag.is_none());
+
+        host.text_open = false;
+        c.pointer_down(&mut host, p(400., 300.), m).unwrap();
+        c.pointer_move(&mut host, p(250., 380.), m);
+        // Dragged to the left: the panel starts at the left edge, 150 px wide.
+        assert_eq!(
+            host.label,
+            Some((p(250., 300.) + pad, Some(Label::Wrap(150. - 16.))))
+        );
+        c.pointer_up(&mut host, p(250., 380.), m);
+        assert_eq!(host.label.unwrap().1, Some(Label::Wrap(134.)));
+
+        host.text_open = false;
+        c.pointer_down(&mut host, p(400., 300.), m).unwrap();
+        c.pointer_move(&mut host, p(410., 300.), m);
+        assert_eq!(
+            host.label.unwrap().1,
+            Some(Label::Wrap(20.)),
+            "never narrower than two letters"
+        );
+    }
+    #[test]
+    fn the_text_tool_opens_a_text_without_a_panel() {
+        let (mut c, mut host) = selected();
+        c.new_label = Some(Label::Fit);
+        c.action(&mut host, Action::Tool(Tool::Text));
+        c.pointer_down(&mut host, p(200., 200.), Modifiers::default())
+            .unwrap();
+        assert_eq!(host.label, Some((p(200., 200.), None)));
+    }
+    #[test]
+    fn the_label_tool_edits_a_text_it_presses() {
+        let (mut c, mut host) = selected();
+        c.editor
+            .add_label(p(200., 200.), "hi".into(), p(20., 20.), [0; 3], 20., None)
+            .unwrap();
+        c.action(&mut host, Action::Tool(Tool::Label));
+        c.pointer_down(&mut host, p(205., 205.), Modifiers::default())
+            .unwrap();
+        assert_eq!(host.label, Some((p(205., 205.), None)), "no panel is added");
+        assert!(c.label_drag.is_none(), "no drag follows");
+    }
+    #[test]
+    fn the_wheel_measures_a_wrapped_label_at_its_width() {
+        let (mut c, mut host) = selected();
+        let id = c
+            .editor
+            .add_label(
+                p(200., 200.),
+                "aaaa bbbb".into(),
+                p(20., 20.),
+                [0; 3],
+                20.,
+                Some(Label::Wrap(50.)),
+            )
+            .unwrap();
+        c.editor.selected = vec![id];
+        c.wheel(&mut host, 120).unwrap();
+        let Shape::Text { size, extent, .. } = c.editor.objects()[0].shape else {
+            panic!("text expected");
+        };
+        // The stand-in measure gives half the size per letter: one word per line.
+        assert_eq!(extent.y, 2. * size);
     }
 }

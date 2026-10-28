@@ -661,20 +661,15 @@ mod tests {
                 // Switches: the menu stays open to set several in a row.
                 101..=104 | 4 | 5 | 7 | 9 => Effect::Apply(row.id),
                 // They open a submenu, which stays open on its choices too.
-                120 | 130 | 140 | 150 => Effect::Open,
+                120 | 140 | 150 => Effect::Open,
                 // Each opens or runs something else.
-                1 | 2 | 3 | 6 | 8 | 10 | 13 | 105 | 110..=112 => Effect::Run(row.id),
+                1 | 2 | 3 | 6 | 8 | 10 | 13 | 105 | 106 | 110..=112 => Effect::Run(row.id),
                 _ => Effect::None,
             };
             assert_eq!(effect(row), expected, "{}", label_in(row, Language::En));
         }
         // A language is a setting too: the menu shows it at once.
-        for choice in DURATIONS
-            .iter()
-            .chain(LAYOUTS)
-            .chain(SIZES)
-            .chain(&LANGUAGES)
-        {
+        for choice in DURATIONS.iter().chain(SIZES).chain(&LANGUAGES) {
             assert_eq!(
                 effect(choice),
                 Effect::Apply(choice.id),
@@ -776,33 +771,33 @@ mod tests {
                     tops,
                     width: 0,
                 },
-                index(130),
+                index(140),
             );
             let (sub, tops) = {
                 let model = popup.model.borrow();
-                assert_eq!(model.open, Some(index(130)));
+                assert_eq!(model.open, Some(index(140)));
                 (model.sub, model.columns[1].tops.clone())
             };
             assert!(IsWindowVisible(sub).as_bool());
             click(
                 sub,
                 &Column {
-                    rows: LAYOUTS,
+                    rows: SIZES,
                     tops,
                     width: 0,
                 },
                 2,
             );
-            assert_eq!(posted(owner.0), [(COMMAND, 133, 1)]);
+            assert_eq!(posted(owner.0), [(COMMAND, 143, 1)]);
             assert!(IsWindowVisible(sub).as_bool() && IsWindowVisible(popup.root()).as_bool());
             // The shown choice follows the setting App applied.
             popup
                 .update(Values {
-                    layout: InputLayout::Gaming,
+                    size: 200,
                     ..Default::default()
                 })
                 .unwrap();
-            assert!(popup.model.borrow().values.checked(133));
+            assert!(popup.model.borrow().values.checked(143));
         }
     }
 
@@ -820,7 +815,7 @@ mod tests {
         assert_eq!(popup.model.borrow().selected[0], Some(index(101)));
         key(VK_SPACE);
         assert_eq!(posted(owner.0), [(COMMAND, 101, 1)]);
-        // Past the pointer effects, into the size submenu and its middle choice.
+        // Past the pointer effects and the move, into the size submenu and its middle choice.
         for _ in 0..5 {
             key(VK_DOWN);
         }

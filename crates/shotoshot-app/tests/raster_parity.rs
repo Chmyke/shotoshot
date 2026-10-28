@@ -406,6 +406,7 @@ fn both_renderers_set_annotation_text_in_the_same_embedded_face() {
             text: text.into(),
             size: size as f64,
             extent,
+            label: None,
         },
     };
     let objects = std::slice::from_ref(&object);
@@ -415,6 +416,87 @@ fn both_renderers_set_annotation_text_in_the_same_embedded_face() {
         assert!(
             a.abs_diff(b) <= 2,
             "ink bounds {direct:?} against {raster:?}"
+        );
+    }
+}
+
+#[test]
+fn both_renderers_set_a_label_on_the_same_panel_and_lines() {
+    let _com = ComApartment::new().unwrap();
+    let native = Renderer::new().unwrap();
+    let mut portable = Raster::new();
+    // Words of clearly different widths: both line breakers must cut after "panel".
+    let (text, size, width) = ("A white panel with dark ink", 24., 170.);
+    let extent = native
+        .measure_wrapped_annotation_text(text, size, width)
+        .unwrap();
+    let other = portable.measure_wrapped_annotation_text(text, size as f64, width as f64);
+    assert!(
+        (extent.y - other.y).abs() < 1.5,
+        "Direct2D {extent:?}, portable {other:?}: not the same lines"
+    );
+    let image = Image::solid(420, 200, [0, 0, 0, 255]);
+    let crop = Rect::new(Point::default(), Point { x: 420., y: 200. }).unwrap();
+    let object = Object {
+        rotation: 0.,
+        fill: Vec::new(),
+        id: 1,
+        style: Style {
+            color: [255, 255, 255],
+            width: 2.,
+        },
+        shape: Shape::Text {
+            position: Point { x: 40., y: 40. },
+            text: text.into(),
+            size: size as f64,
+            extent,
+            label: Some(Label::Wrap(width as f64)),
+        },
+    };
+    let objects = std::slice::from_ref(&object);
+    let direct = native.export(&image, &[], objects, crop).unwrap();
+    let raster = portable.export(&image, &[], objects, crop).unwrap();
+    // The white panel: its bounds are those of the pixels brighter than mid grey.
+    let panel = |image: &Image| {
+        let (mut left, mut top, mut right, mut bottom) = (u32::MAX, u32::MAX, 0, 0);
+        for y in 0..image.height {
+            for x in 0..image.width {
+                if image.pixels[((y * image.width + x) * 4) as usize] >= 128 {
+                    (left, top) = (left.min(x), top.min(y));
+                    (right, bottom) = (right.max(x), bottom.max(y));
+                }
+            }
+        }
+        [left, top, right, bottom]
+    };
+    for (a, b) in panel(&direct).into_iter().zip(panel(&raster)) {
+        assert!(
+            a.abs_diff(b) <= 1,
+            "panels {:?} against {:?}",
+            panel(&direct),
+            panel(&raster)
+        );
+    }
+    // The dark ink inside it, set on the same lines and centred alike.
+    let inside = |image: &Image| {
+        let [l, t, r, b] = panel(image);
+        let (mut left, mut top, mut right, mut bottom) = (u32::MAX, u32::MAX, 0, 0);
+        for y in t + 4..b - 4 {
+            for x in l + 4..r - 4 {
+                if image.pixels[((y * image.width + x) * 4) as usize] < 128 {
+                    (left, top) = (left.min(x), top.min(y));
+                    (right, bottom) = (right.max(x), bottom.max(y));
+                }
+            }
+        }
+        [left, top, right, bottom]
+    };
+    for (a, b) in inside(&direct).into_iter().zip(inside(&raster)) {
+        assert!(
+            a.abs_diff(b) <= 2,
+            "ink {:?} against {:?}",
+            inside(&direct),
+            inside(&raster)
         );
     }
 }

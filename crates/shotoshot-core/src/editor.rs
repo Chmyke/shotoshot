@@ -21,6 +21,8 @@ pub enum Tool {
     Pen,
     Highlight,
     Text,
+    /// A text on a rounded panel: a click fits the panel to the text, a drag sets its width.
+    Label,
     /// A disc that removes the freehand ink it passes over and whole other objects.
     Eraser,
 }

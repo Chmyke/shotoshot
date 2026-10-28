@@ -1,5 +1,4 @@
 use super::*;
-use crate::settings::InputLayout;
 
 #[test]
 fn live_shapes_have_soft_corners_and_independently_sized_arrowheads() {
@@ -150,7 +149,8 @@ fn physical_keys_render_press_release_and_pause_without_an_idle_timer() {
         ..Default::default()
     });
     p.paint(hwnd).unwrap();
-    assert_ne!(idle, p.keys.as_ref().unwrap().pixel(10, 119));
+    let pressed = p.keys.as_ref().unwrap().pixel(10, 119);
+    assert_ne!(idle, pressed);
     p.sync_timer().unwrap();
     assert!(!p.timer, "a held key does not need animation");
     p.keyboard(RAWKEYBOARD {
@@ -162,7 +162,9 @@ fn physical_keys_render_press_release_and_pause_without_an_idle_timer() {
     p.sync_timer().unwrap();
     assert!(p.timer, "modifier labels fade after release");
     p.paint(hwnd).unwrap();
-    assert_eq!(idle, p.keys.as_ref().unwrap().pixel(10, 119));
+    // The selection colour leaves at once; the ghost key then fades out.
+    let released = p.keys.as_ref().unwrap().pixel(10, 119);
+    assert!(released != pressed && released != idle);
     let now = p.now();
     p.devices.keyboard(46, false, true, now);
     p.devices.set_label(46, false, &[67]);
@@ -411,7 +413,6 @@ fn capture_restores_keyboard_and_lock_but_explicit_stop_cancels_restore() {
     let state = Presentation::new(owner.0, PresentationSettings::default()).unwrap();
     let mut p = state.borrow_mut();
     p.enabled.keys = true;
-    p.preferences.input_locked = true;
     p.preferences.input_offset = Some([1000, 2000]);
     p.input_monitor = POINT { x: 100, y: 100 };
     p.suspend_capture().unwrap();
@@ -420,8 +421,10 @@ fn capture_restores_keyboard_and_lock_but_explicit_stop_cancels_restore() {
     assert!(p.keys.is_none() && p.lock.is_none());
     p.resume_capture().unwrap();
     assert!(p.enabled.keys);
-    assert!(p.keys.is_some() && p.lock.is_some());
-    assert!(p.preferences.input_locked);
+    assert!(
+        p.keys.is_some() && p.lock.is_none(),
+        "a resumed diagram is a still ghost"
+    );
     assert_eq!(p.preferences.input_offset, Some([1000, 2000]));
     assert_eq!((p.input_monitor.x, p.input_monitor.y), (100, 100));
     p.suspend_capture().unwrap();
@@ -444,7 +447,7 @@ fn iso_enter_has_one_outline_and_clear_gaps_to_neighbours() {
     let mut devices = Devices::default();
     devices.keyboard(28, false, true, 0);
     layer.begin(false).unwrap();
-    layer.devices(&devices, 0);
+    layer.devices(&devices, 0, true);
     layer.end().unwrap();
     // Both arms share one uninterrupted fill, without a rectangle border at y=65.
     assert_eq!(layer.pixel(271, 62), layer.pixel(271, 65));
@@ -454,7 +457,7 @@ fn iso_enter_has_one_outline_and_clear_gaps_to_neighbours() {
     let iso_upper_enter = layer.pixel(271, 62);
     devices.ansi = true;
     layer.begin(false).unwrap();
-    layer.devices(&devices, 0);
+    layer.devices(&devices, 0, true);
     layer.end().unwrap();
     assert_ne!(
         layer.pixel(271, 62),
@@ -544,13 +547,13 @@ fn thumb_buttons_follow_bottom_back_and_top_forward_positions() {
     let mut devices = Devices::default();
     devices.mouse(64, 0); // XBUTTON1 / Back, bottom button.
     layer.begin(false).unwrap();
-    layer.devices(&devices, 0);
+    layer.devices(&devices, 0, true);
     layer.end().unwrap();
     assert!(layer.pixel(451, 84)[0] > layer.pixel(451, 64)[0]);
     devices.clear();
     devices.mouse(256, 0); // XBUTTON2 / Forward, top button.
     layer.begin(false).unwrap();
-    layer.devices(&devices, 0);
+    layer.devices(&devices, 0, true);
     layer.end().unwrap();
     assert!(layer.pixel(451, 64)[0] > layer.pixel(451, 84)[0]);
 }
@@ -627,14 +630,10 @@ fn plain_owner(title: PCWSTR) -> crate::resources::OwnedWindow {
 }
 
 #[test]
-fn a_key_outside_the_layout_is_tracked_without_lighting_or_animating() {
+fn a_key_outside_the_keyboard_is_tracked_without_lighting_or_animating() {
     let _com = crate::ComApartment::new().unwrap();
     let owner = plain_owner(w!("Hidden key test"));
-    let preferences = PresentationSettings {
-        input_layout: InputLayout::Gaming,
-        ..Default::default()
-    };
-    let state = Presentation::new(owner.0, preferences).unwrap();
+    let state = Presentation::new(owner.0, PresentationSettings::default()).unwrap();
     let mut p = state.borrow_mut();
     p.enabled.keys = true;
     let key = |vk: u16, scan: u16, up: bool| RAWKEYBOARD {
@@ -643,31 +642,25 @@ fn a_key_outside_the_layout_is_tracked_without_lighting_or_animating() {
         Flags: u16::from(up),
         ..Default::default()
     };
-    // Right Shift and J lie outside the left-hand block.
-    assert!(!p.keyboard(key(0xa1, 54, false)));
-    assert!(!p.keyboard(key(0x4a, 36, false)));
+    // F13 has no key on the drawn keyboard.
+    assert!(!p.keyboard(key(0x7c, 0x64, false)));
     assert!(
-        p.devices.active(54, false, 0),
-        "a held hidden modifier still shapes the labels"
+        p.devices.active(0x64, false, 0),
+        "a held hidden key is still known"
     );
-    assert!(p.devices.label(36, false, p.now()).0.is_empty());
-    assert!(!p.keyboard(key(0x4a, 36, true)));
-    assert!(!p.keyboard(key(0xa1, 54, true)));
+    assert!(p.devices.label(0x64, false, p.now()).0.is_empty());
+    assert!(!p.keyboard(key(0x7c, 0x64, true)));
     assert!(
         !p.devices.needs_animation(p.now()),
         "a hidden key must not start the fade timer"
     );
-    assert!(p.keyboard(key(0x57, 17, false)), "W belongs to the block");
-    assert!(p.devices.active(17, false, 0));
-    assert!(p.keyboard(key(0x57, 17, true)));
-    // The full keyboard shows the same key again.
-    p.preferences.input_layout = InputLayout::Full;
-    assert!(p.keyboard(key(0x4a, 36, false)));
+    assert!(p.keyboard(key(0x4a, 36, false)), "J is drawn");
+    assert!(p.devices.active(36, false, 0));
     assert!(p.keyboard(key(0x4a, 36, true)));
 }
 
 #[test]
-fn the_diagram_window_follows_the_shown_devices_the_layout_and_the_size() {
+fn the_diagram_window_follows_the_shown_devices_and_the_size() {
     let _com = crate::ComApartment::new().unwrap();
     let owner = plain_owner(w!("Diagram plan test"));
     let state = Presentation::new(owner.0, PresentationSettings::default()).unwrap();
@@ -708,34 +701,32 @@ fn the_diagram_window_follows_the_shown_devices_the_layout_and_the_size() {
     })
     .unwrap();
     assert_eq!(shown(&p), (mouse, width_of(mouse, 1.)));
-    assert!(p.lock.is_some(), "a lone mouse keeps its lock");
+    assert!(
+        p.lock.is_none(),
+        "a still diagram has no lock to catch clicks"
+    );
 
     p.set_enabled(both).unwrap();
     let preferences = PresentationSettings {
-        input_layout: InputLayout::Gaming,
         input_scale: 150,
         ..p.preferences.clone()
     };
     p.update_preferences(preferences).unwrap();
-    let gaming = diagram::Plan {
-        layout: InputLayout::Gaming,
-        ..full
-    };
-    assert_eq!(shown(&p), (gaming, width_of(gaming, 1.5)));
-    assert!(width_of(gaming, 1.5) < width_of(full, 1.));
+    assert_eq!(shown(&p), (full, width_of(full, 1.5)));
 
-    // The lock stays on its key place of the resized diagram.
+    // During a move, the lock stays on its key place of the resized diagram.
+    p.start_move().unwrap();
     let (mut diagram_at, mut lock_at) = (RECT::default(), RECT::default());
     unsafe {
         GetWindowRect(p.keys.as_ref().unwrap().hwnd(), &mut diagram_at).unwrap();
         GetWindowRect(p.lock.as_ref().unwrap().hwnd(), &mut lock_at).unwrap();
     }
-    let scale = shown(&p).1 as f64 / gaming.width() as f64;
+    let scale = shown(&p).1 as f64 / full.width() as f64;
     assert_eq!(
         (lock_at.left - diagram_at.left, lock_at.top - diagram_at.top),
         (
-            (gaming.lock().0 as f64 * scale) as i32,
-            (gaming.lock().1 as f64 * scale) as i32
+            (full.lock().0 as f64 * scale) as i32,
+            (full.lock().1 as f64 * scale) as i32
         )
     );
     assert_eq!(
@@ -747,33 +738,17 @@ fn the_diagram_window_follows_the_shown_devices_the_layout_and_the_size() {
 }
 
 #[test]
-fn gaming_draws_the_left_hand_block_with_the_mouse_right_beside_it() {
+fn a_lone_mouse_shows_its_click_without_a_keyboard_panel() {
     let _com = crate::ComApartment::new().unwrap();
-    let plan = diagram::Plan {
-        layout: InputLayout::Gaming,
-        ..diagram::Plan::FULL
-    };
-    let layer = Layer::diagram(std::ptr::null(), plan, 1.).unwrap();
-    assert_eq!((layer.width, layer.height), (plan.width(), diagram::HEIGHT));
     let mut devices = Devices::default();
-    devices.keyboard(17, false, true, 0); // W
     devices.mouse(1, 0);
-    layer.begin(false).unwrap();
-    layer.devices(&devices, 0);
-    layer.end().unwrap();
-    assert!(layer.pixel(55, 55)[0] > 200, "W is lit");
-    assert!(layer.pixel(73, 55)[0] < 100, "E is not");
-    assert_eq!(layer.pixel(150, 60)[3], 0, "nothing after the block");
-    assert!(layer.pixel(178, 50)[0] > 200, "left button is lit");
-    assert!(layer.pixel(200, 50)[0] < 100, "right button is not");
-
     let alone = diagram::Plan {
         keyboard: false,
         ..diagram::Plan::FULL
     };
     let layer = Layer::diagram(std::ptr::null(), alone, 1.).unwrap();
     layer.begin(false).unwrap();
-    layer.devices(&devices, 0);
+    layer.devices(&devices, 0, true);
     layer.end().unwrap();
     assert_eq!(layer.width, alone.width());
     assert!(layer.pixel(22, 50)[0] > 200, "a lone mouse shows its click");
@@ -871,4 +846,145 @@ fn a_region_frame_redraws_and_sends_only_its_area() {
     layer.end_region(left).unwrap();
     assert_eq!(layer.pixel(75 + 24, 100)[3], 0, "erased");
     assert!(layer.pixel(225 + 24, 100)[3] > 0, "the other half kept");
+}
+
+/// The box around every pixel at least `alpha` opaque, None on a blank layer.
+fn opaque_bounds(layer: &Layer, alpha: u8) -> Option<[u32; 4]> {
+    let mut bounds: Option<[u32; 4]> = None;
+    for y in 0..layer.height as u32 {
+        for x in 0..layer.width as u32 {
+            if layer.pixel(x, y)[3] >= alpha {
+                let b = bounds.get_or_insert([x, y, x, y]);
+                *b = [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)];
+            }
+        }
+    }
+    bounds
+}
+
+#[test]
+fn a_still_diagram_is_a_ghost_showing_only_the_pressed_key_then_nothing() {
+    let _com = crate::ComApartment::new().unwrap();
+    let layer = Layer::diagram(std::ptr::null(), diagram::Plan::FULL, 1.).unwrap();
+    let paint = |devices: &Devices, now, whole| {
+        layer.begin(false).unwrap();
+        layer.devices(devices, now, whole);
+        layer.end().unwrap();
+    };
+    let mut devices = Devices::default();
+    paint(&devices, 0, false);
+    assert_eq!(opaque_bounds(&layer, 1), None, "nothing at rest");
+    paint(&devices, 0, true);
+    assert!(
+        opaque_bounds(&layer, 1).is_some(),
+        "the whole diagram while moved"
+    );
+
+    devices.keyboard(30, false, true, 0); // A
+    devices.set_label(30, false, &[65]);
+    paint(&devices, 0, false);
+    let [left, top, right, bottom] = opaque_bounds(&layer, 120).unwrap();
+    assert!(
+        right - left < diagram::HEIGHT as u32 / 6 && bottom - top < diagram::HEIGHT as u32 / 6,
+        "only one keycap is solid: {left},{top} to {right},{bottom}"
+    );
+    let outline = opaque_bounds(&layer, 1).unwrap();
+    assert!(
+        outline[2] - outline[0] > layer.width as u32 / 2,
+        "a pale outline frames the keyboard while a key is held"
+    );
+    assert!(
+        (0..layer.height as u32).all(|y| layer.pixel(1, y)[3] < 80),
+        "the outline stays pale"
+    );
+
+    devices.keyboard(30, false, false, 100);
+    paint(&devices, 400, false);
+    let fading = opaque_bounds(&layer, 1).unwrap();
+    assert!(
+        fading[2] - fading[0] > layer.width as u32 / 2,
+        "key and outline fade together"
+    );
+    assert!(devices.needs_animation(400));
+    paint(&devices, 700, false);
+    assert_eq!(opaque_bounds(&layer, 1), None, "gone after the fade");
+    assert!(!devices.needs_animation(700), "no timer once gone");
+
+    // A key without a label still shows, and still fades out.
+    devices.keyboard(58, true, true, 1000);
+    devices.keyboard(58, true, false, 1000);
+    assert!(devices.needs_animation(1300));
+}
+
+#[test]
+fn a_ghost_mouse_shows_only_the_pressed_button() {
+    let _com = crate::ComApartment::new().unwrap();
+    let plan = diagram::Plan {
+        keyboard: false,
+        ..diagram::Plan::FULL
+    };
+    let layer = Layer::diagram(std::ptr::null(), plan, 1.).unwrap();
+    let solid = |devices: &Devices| {
+        layer.begin(false).unwrap();
+        layer.devices(devices, 0, false);
+        layer.end().unwrap();
+        opaque_bounds(&layer, 120)
+    };
+    let mut devices = Devices::default();
+    assert_eq!(solid(&devices), None, "nothing at rest");
+    devices.mouse(1, 0); // left down
+    let left = solid(&devices).unwrap();
+    devices.mouse(2 | 4, 0); // left up, right down
+    devices.clear();
+    devices.mouse(4, 0);
+    let right = solid(&devices).unwrap();
+    assert!(
+        left[2] < right[0],
+        "left {left:?} and right {right:?} buttons stand apart"
+    );
+}
+
+#[test]
+fn moving_shows_the_whole_diagram_until_the_lock_enter_or_esc() {
+    let _com = crate::ComApartment::new().unwrap();
+    let owner = plain_owner(w!("Diagram move test"));
+    let state = Presentation::new(owner.0, PresentationSettings::default()).unwrap();
+    let mut p = state.borrow_mut();
+    // Asking for a move with nothing shown brings the keyboard.
+    p.command(106).unwrap();
+    assert!(p.enabled.keys && p.moving);
+    assert!(
+        p.keys.as_ref().unwrap().intercepts(),
+        "the moved diagram is draggable"
+    );
+    assert!(p.lock.is_some(), "its lock ends the move");
+
+    let esc = |up| RAWKEYBOARD {
+        VKey: VK_ESCAPE.0,
+        MakeCode: 1,
+        Flags: u16::from(up),
+        ..Default::default()
+    };
+    p.key_event(esc(false)).unwrap();
+    assert!(!p.moving, "Esc ends the move");
+    assert!(
+        !p.keys.as_ref().unwrap().intercepts(),
+        "a still diagram lets every click through"
+    );
+    assert!(p.lock.is_none());
+    p.key_event(esc(true)).unwrap();
+    p.key_event(esc(false)).unwrap();
+    assert!(
+        !p.moving && p.lock.is_none(),
+        "Esc outside a move changes nothing"
+    );
+
+    p.command(106).unwrap();
+    let lock = p.lock.as_ref().unwrap().hwnd();
+    p.input_window_message(lock, WM_LBUTTONDOWN).unwrap();
+    assert!(!p.moving && p.lock.is_none(), "the lock ends the move");
+
+    p.command(106).unwrap();
+    p.stop().unwrap();
+    assert!(!p.moving, "turning everything off ends the move");
 }

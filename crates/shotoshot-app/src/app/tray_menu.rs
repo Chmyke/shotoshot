@@ -4,7 +4,7 @@
 use super::*;
 use crate::presentation::menu as commands;
 use crate::render::{D2dCanvas, Renderer};
-use crate::settings::{InputLayout, Shortcut};
+use crate::settings::Shortcut;
 use shotoshot_core::{Rect, Tool};
 use shotoshot_text::{Key, Language, LanguageChoice, Text, language, tr_in};
 use shotoshot_ui::{Canvas, Ink};
@@ -33,7 +33,6 @@ pub(super) enum Icon {
     Halo,
     Keyboard,
     Mouse,
-    Layout,
     Size,
     Clock,
     Power,
@@ -101,7 +100,12 @@ const ROOT: &[Row] = &[
     row(105, Key::MenuPointerEffects, Icon::Halo, Kind::Command),
     row(103, Key::MenuKeyboard, Icon::Keyboard, Kind::Toggle),
     row(104, Key::MenuMouse, Icon::Mouse, Kind::Toggle),
-    row(130, Key::MenuKeyboardLayout, Icon::Layout, Kind::Submenu),
+    row(
+        106,
+        Key::MenuMoveInput,
+        Icon::Toolbar(Action::Tool(Tool::Select)),
+        Kind::Command,
+    ),
     row(140, Key::MenuInputSize, Icon::Size, Kind::Submenu),
     row(
         102,
@@ -165,11 +169,6 @@ const DURATIONS: &[Row] = &[
     choice(122, Label::Text(Key::MenuDuration3)),
     choice(123, Label::Text(Key::MenuDuration5)),
 ];
-const LAYOUTS: &[Row] = &[
-    choice(131, Label::Text(Key::MenuLayoutFull)),
-    choice(132, Label::Text(Key::MenuLayoutCompact)),
-    choice(133, Label::Text(Key::MenuLayoutGaming)),
-];
 const SIZES: &[Row] = &[
     choice(141, Label::Percent(100)),
     choice(142, Label::Percent(150)),
@@ -189,7 +188,6 @@ const LANGUAGES: [Row; 1 + Language::ALL.len()] = {
 fn choices(id: u32) -> &'static [Row] {
     match id {
         120 => DURATIONS,
-        130 => LAYOUTS,
         140 => SIZES,
         150 => &LANGUAGES,
         _ => &[],
@@ -198,7 +196,6 @@ fn choices(id: u32) -> &'static [Row] {
 fn find(id: u32) -> Option<&'static Row> {
     ROOT.iter()
         .chain(DURATIONS)
-        .chain(LAYOUTS)
         .chain(SIZES)
         .chain(&LANGUAGES)
         .find(|row| row.id == id)
@@ -238,7 +235,6 @@ pub(super) struct Values {
     /// Arrow, rectangle, ellipse.
     pub shapes: [usize; 3],
     pub duration_ms: u32,
-    pub layout: InputLayout,
     /// Size of the input diagram, in percent.
     pub size: u32,
     pub halo: bool,
@@ -268,7 +264,6 @@ impl Values {
             9 => self.board,
             _ => {
                 commands::duration_ms(id) == Some(self.duration_ms)
-                    || commands::layout(id) == Some(self.layout)
                     || commands::scale(id) == Some(self.size)
             }
         }
@@ -280,9 +275,8 @@ impl Values {
             8 | 13 => self.board_shortcut,
             110..=112 => self.shapes[(id - 110) as usize],
             120 => self.duration_ms as usize,
-            130 => self.layout.index(),
             140 => self.size as usize,
-            // The position of the current choice in its submenu, as for the layout.
+            // The position of the current choice in its submenu.
             150 => LANGUAGES
                 .iter()
                 .position(|row| on_language_choice(row.id) == Some(self.language))
@@ -316,7 +310,7 @@ fn detail_in(row: &Row, data: usize, language: Language) -> String {
     match row.kind {
         Kind::Command => shortcut_text_in(data, language),
         Kind::Submenu => match row.id {
-            130 | 150 => choices(row.id)
+            150 => choices(row.id)
                 .get(data)
                 .map_or(String::new(), |current| label_in(current, language).into()),
             140 => percent_in(data, language),
@@ -514,25 +508,6 @@ pub(super) fn draw_icon<C: Canvas>(
                 1.6 * scale,
             )?;
             segments(canvas, origin, scale, rgb, &[(10., 5.), (10., 8.5)])?;
-        }
-        Icon::Layout => {
-            // A keyboard with its left part set apart.
-            canvas.stroke_round_rect(
-                Rect {
-                    min: at(1., 4.),
-                    max: at(19., 16.),
-                },
-                2.5 * scale,
-                ink,
-                1.6 * scale,
-            )?;
-            for stroke in [
-                [(11., 4.), (11., 16.)],
-                [(4.5, 8.5), (7.5, 8.5)],
-                [(4.5, 12.5), (7.5, 12.5)],
-            ] {
-                segments(canvas, origin, scale, rgb, &stroke)?;
-            }
         }
         Icon::Size => {
             // Two corners pulled apart along a diagonal.
@@ -861,7 +836,6 @@ fn sample() -> Values {
             shortcut(shapes[2], false),
         ],
         duration_ms: defaults.presentation.duration_ms,
-        layout: defaults.presentation.input_layout,
         size: defaults.presentation.input_scale,
         halo: true,
         temporary_shapes: true,
@@ -1013,17 +987,12 @@ mod tests {
         assert!(drawn(&current, ICON_X, ICON_X + 16., 1.) > 15);
         let values = Values {
             duration_ms: 3000,
-            layout: InputLayout::Gaming,
             size: 150,
             ..Default::default()
         };
         assert_eq!(
             [121, 122, 123].map(|id| values.checked(id)),
             [false, true, false]
-        );
-        assert_eq!(
-            [131, 132, 133].map(|id| values.checked(id)),
-            [false, false, true]
         );
         assert_eq!(
             [141, 142, 143].map(|id| values.checked(id)),
@@ -1035,15 +1004,11 @@ mod tests {
     fn a_submenu_row_names_its_current_choice() {
         let values = Values {
             duration_ms: 5000,
-            layout: InputLayout::Compact,
             size: 200,
             ..Default::default()
         };
         let shown = |id| detail_in(find(id).unwrap(), values.data(id), Language::En);
-        assert_eq!(
-            [shown(120), shown(130), shown(140)],
-            ["5 s", "Compact", "200%"]
-        );
+        assert_eq!([shown(120), shown(140)], ["5 s", "200%"]);
         // The presentation submenus offer three values; the language one, every language.
         for row in ROOT
             .iter()
@@ -1051,10 +1016,6 @@ mod tests {
         {
             assert_eq!(choices(row.id).len(), 3, "{}", english(row));
         }
-        assert_eq!(
-            LAYOUTS.iter().map(english).collect::<Vec<_>>(),
-            ["Full", "Compact", "Gaming"]
-        );
     }
 
     #[test]
@@ -1147,7 +1108,7 @@ mod tests {
                 "Pointer effects",
                 "Keyboard",
                 "Mouse",
-                "Keyboard layout",
+                "Move keyboard and mouse",
                 "Keyboard and mouse size",
                 "Temporary shapes",
                 "Shape duration",
@@ -1302,7 +1263,7 @@ mod tests {
         let _open = Open;
         let values = sample();
         for language in Language::ALL {
-            for rows in [ROOT, DURATIONS, LAYOUTS, SIZES, &LANGUAGES[..]] {
+            for rows in [ROOT, DURATIONS, SIZES, &LANGUAGES[..]] {
                 let width = widest(rows, &values, language);
                 assert!(
                     width <= 480.,
@@ -1326,7 +1287,7 @@ mod tests {
 
     #[test]
     fn a_closed_menu_keeps_no_renderer() {
-        for open in [120, 130, 140] {
+        for open in [120, 140] {
             render(&sample(), 110, open, 1.).unwrap();
         }
         assert!(PAINTER.with(|painter| painter.borrow().is_none()));

@@ -1,6 +1,6 @@
 //! Test double for `Host`: records native requests and owns no widgets.
 use crate::{Capture, Host};
-use shotoshot_core::Point;
+use shotoshot_core::{Label, Point};
 
 #[derive(Default)]
 pub struct FakeHost {
@@ -8,6 +8,8 @@ pub struct FakeHost {
     pub text_at: Option<Point>,
     pub text_open: bool,
     pub text_size: f32,
+    /// Where the open field's first line is and the panel it sits on.
+    pub label: Option<(Point, Option<Label>)>,
 }
 impl Host for FakeHost {
     type Error = ();
@@ -29,6 +31,7 @@ impl Host for FakeHost {
         self.text_at = Some(p);
         self.text_open = true;
         self.text_size = capture.text_size;
+        self.label = Some((p, capture.new_label));
         Ok(())
     }
     fn finish_text(&mut self, _: &mut Capture, _: bool) {
@@ -50,10 +53,26 @@ impl Host for FakeHost {
         self.text_size = size;
         Ok(())
     }
+    fn set_text_label(&mut self, position: Point, label: Option<Label>) {
+        if self.text_open {
+            self.label = Some((position, label));
+        }
+    }
     fn measure_text(&mut self, text: &str, size: f64) -> Result<Point, ()> {
         Ok(Point {
             x: text.chars().count() as f64 * size * 0.5,
             y: size,
+        })
+    }
+    fn measure_wrapped_text(&mut self, text: &str, size: f64, width: f64) -> Result<Point, ()> {
+        let advance = |s: &str| s.chars().count() as f64 * size * 0.5;
+        let lines = shotoshot_core::text_lines(text, Some(width), &mut |s| advance(s));
+        Ok(Point {
+            x: lines
+                .iter()
+                .map(|r| advance(text[r.clone()].trim_end()))
+                .fold(0., f64::max),
+            y: lines.len() as f64 * size,
         })
     }
     fn dimensions_active(&self) -> bool {

@@ -47,35 +47,6 @@ impl DisplayPosition {
         }
     }
 }
-/// Which part of the keyboard the presentation diagram shows.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum InputLayout {
-    /// Every key, numeric pad included.
-    #[default]
-    Full,
-    /// Without the numeric pad.
-    Compact,
-    /// The left-hand block games use, with a shortened space bar.
-    Gaming,
-}
-impl InputLayout {
-    pub const ALL: [Self; 3] = [Self::Full, Self::Compact, Self::Gaming];
-    pub fn index(self) -> usize {
-        match self {
-            Self::Full => 0,
-            Self::Compact => 1,
-            Self::Gaming => 2,
-        }
-    }
-    fn decode(value: &str) -> std::result::Result<Self, String> {
-        match value {
-            "0" => Ok(Self::Full),
-            "1" => Ok(Self::Compact),
-            "2" => Ok(Self::Gaming),
-            _ => Err("Invalid input display layout".into()),
-        }
-    }
-}
 /// Image file format written by Save; the dialog reopens on the last one chosen.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum SaveFormat {
@@ -182,8 +153,6 @@ pub struct PresentationSettings {
     pub input_position: DisplayPosition,
     /// Normalized free position, each axis in 0..=10000.
     pub input_offset: Option<[u16; 2]>,
-    pub input_locked: bool,
-    pub input_layout: InputLayout,
     /// One of `INPUT_SCALES`.
     pub input_scale: u32,
     pub duration_ms: u32,
@@ -202,8 +171,6 @@ impl Default for PresentationSettings {
             shape_shortcuts: DEFAULT_SHAPE_SHORTCUTS,
             input_position: DisplayPosition::default(),
             input_offset: None,
-            input_locked: false,
-            input_layout: InputLayout::default(),
             input_scale: 100,
             duration_ms: 3000,
             halo_color: [255, 211, 64],
@@ -254,8 +221,6 @@ impl PresentationSettings {
             shape_shortcuts: DEFAULT_SHAPE_SHORTCUTS,
             input_position: DisplayPosition::default(),
             input_offset: None,
-            input_locked: false,
-            input_layout: InputLayout::default(),
             input_scale: 100,
             duration_ms,
             halo_color: color(halo)?,
@@ -438,17 +403,21 @@ impl Settings {
                 };
                 Some([coordinate(x)?, coordinate(y)?])
             };
-            presentation.input_locked = match fields[16] {
-                "0" => false,
-                "1" => true,
-                _ => return Err("Invalid input display lock".into()),
-            };
+            // The retired lock flag is still checked, so a damaged line stays refused. The
+            // diagram now unlocks only for a move asked from the menu, never at startup.
+            if !matches!(fields[16], "0" | "1") {
+                return Err("Invalid input display lock".into());
+            }
         }
         if fields.len() >= 30 {
             presentation.pointer = crate::pointer::PointerSettings::decode(fields[29])?;
         }
         if fields.len() >= 24 {
-            presentation.input_layout = InputLayout::decode(fields[22])?;
+            // The retired keyboard layout (full, compact, gaming) is still checked, so a damaged
+            // line stays refused; the ghost diagram always shows the whole keyboard.
+            if !matches!(fields[22], "0" | "1" | "2") {
+                return Err("Invalid input display layout".into());
+            }
             presentation.input_scale = INPUT_SCALES
                 .into_iter()
                 .find(|scale| scale.to_string() == fields[23])
@@ -590,14 +559,16 @@ impl Settings {
             self.presentation
                 .input_offset
                 .map_or_else(|| "-".to_string(), |[x, y]| format!("{x},{y}")),
-            u8::from(self.presentation.input_locked),
+            // Retired lock flag, written locked so an older version keeps the diagram still.
+            1,
             color(self.last_custom_color),
             u8::from(self.start_with_windows),
             self.capture_stroke_width,
             self.instant_shortcut.modifiers,
             self.instant_shortcut.key,
             1,
-            self.presentation.input_layout.index(),
+            // Retired keyboard layout, written full so an older version shows the whole keyboard.
+            0,
             self.presentation.input_scale,
             self.save_format.index(),
             self.board_shortcut.modifiers,
@@ -951,7 +922,7 @@ mod tests {
         }
     }
     #[test]
-    fn input_layout_and_size_roundtrip_and_older_files_keep_the_full_keyboard() {
+    fn input_size_roundtrips_and_the_retired_layout_still_loads() {
         let fields: Vec<String> = Settings::default()
             .encode()
             .lines()
@@ -962,16 +933,21 @@ mod tests {
             let mut old = fields[..22].to_vec();
             old[0] = format!("shotoshot-settings-{version}");
             let migrated = Settings::decode(&old.join("\n")).unwrap();
-            assert_eq!(migrated.presentation.input_layout, InputLayout::Full);
             assert_eq!(migrated.presentation.input_scale, 100);
         }
-        for layout in InputLayout::ALL {
-            for scale in INPUT_SCALES {
-                let mut settings = Settings::default();
-                settings.presentation.input_layout = layout;
-                settings.presentation.input_scale = scale;
-                assert_eq!(Settings::decode(&settings.encode()).unwrap(), settings);
-            }
+        for scale in INPUT_SCALES {
+            let mut settings = Settings::default();
+            settings.presentation.input_scale = scale;
+            assert_eq!(Settings::decode(&settings.encode()).unwrap(), settings);
+        }
+        // A file saved with the compact or gaming keyboard still loads.
+        for layout in ["1", "2"] {
+            let mut saved = fields.clone();
+            saved[22] = layout.into();
+            assert!(
+                Settings::decode(&(saved.join("\n") + "\n")).is_ok(),
+                "{layout}"
+            );
         }
         for (index, invalid) in [
             (22, "3"),
@@ -1071,7 +1047,6 @@ mod tests {
             ..Default::default()
         };
         resident.presentation.input_offset = Some([1234, 8765]);
-        resident.presentation.input_locked = true;
         resident.save_to(&path, None, Some(7), rename).unwrap();
         resident.save_to(&path, None, None, rename).unwrap();
         Settings::save_custom_color_to(&path, [10, 20, 30], rename).unwrap();
@@ -1079,7 +1054,6 @@ mod tests {
         assert!(!loaded.start_with_windows);
         assert_eq!(loaded.capture_stroke_width, 7);
         assert_eq!(loaded.presentation.input_offset, Some([1234, 8765]));
-        assert!(loaded.presentation.input_locked);
         std::fs::remove_file(path).unwrap();
         assert!(Settings::default().start_with_windows);
         let old = Settings::default()
@@ -1207,12 +1181,9 @@ mod tests {
     #[test]
     fn free_input_position_and_lock_roundtrip_and_validate() {
         for offset in [None, Some([0, 0]), Some([10000, 10000]), Some([3210, 7890])] {
-            for locked in [false, true] {
-                let mut settings = Settings::default();
-                settings.presentation.input_offset = offset;
-                settings.presentation.input_locked = locked;
-                assert_eq!(Settings::decode(&settings.encode()).unwrap(), settings);
-            }
+            let mut settings = Settings::default();
+            settings.presentation.input_offset = offset;
+            assert_eq!(Settings::decode(&settings.encode()).unwrap(), settings);
         }
         let valid = Settings::default().encode();
         for (index, values) in [
@@ -1239,7 +1210,6 @@ mod tests {
         let text = "shotoshot-settings-6\n3\n65\n1\n43,3a,2f,e9\n1\n5000\n010203\n040506\n2\n6,112\n2,113\n9,114\n12\n40\n";
         let settings = Settings::decode(text).unwrap();
         assert_eq!(settings.presentation.input_offset, None);
-        assert!(!settings.presentation.input_locked);
         assert_eq!(settings.presentation.stroke_width, 12);
         assert_eq!(settings.presentation.arrow_size, 40);
         assert_eq!(
@@ -1456,7 +1426,7 @@ mod tests {
             assert_eq!(
                 settings.encode(),
                 format!(
-                    "shotoshot-settings-17\n3\n65\n1\n43,3a,2f,e9\n{live_capture}\n3000\nffd340\ned4f5c\n4\n1,65\n1,82\n1,67\n5\n28\n-\n0\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n1,48,100,2,0,0,1,0,ed4f5c,409cff,0,1,-,0,240,60,0,-,0,0\n"
+                    "shotoshot-settings-17\n3\n65\n1\n43,3a,2f,e9\n{live_capture}\n3000\nffd340\ned4f5c\n4\n1,65\n1,82\n1,67\n5\n28\n-\n1\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n1,48,100,2,0,0,1,0,ed4f5c,409cff,0,1,-,0,240,60,0,-,0,0\n"
                 )
             );
         }
@@ -1471,7 +1441,7 @@ mod tests {
             assert_eq!(
                 settings.encode(),
                 format!(
-                    "shotoshot-settings-17\n3\n65\n0\n43,3a,2f,e9\n1\n{duration}\n00aaff\nff0001\n4\n1,65\n1,82\n1,67\n5\n28\n-\n0\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n1,48,100,2,0,0,1,0,ed4f5c,409cff,0,1,-,0,240,60,0,-,0,0\n"
+                    "shotoshot-settings-17\n3\n65\n0\n43,3a,2f,e9\n1\n{duration}\n00aaff\nff0001\n4\n1,65\n1,82\n1,67\n5\n28\n-\n1\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n1,48,100,2,0,0,1,0,ed4f5c,409cff,0,1,-,0,240,60,0,-,0,0\n"
                 )
             );
         }
@@ -1531,8 +1501,6 @@ mod tests {
                 shape_shortcuts: DEFAULT_SHAPE_SHORTCUTS,
                 input_position: DisplayPosition::TopRight,
                 input_offset: None,
-                input_locked: false,
-                input_layout: InputLayout::Gaming,
                 input_scale: 150,
                 duration_ms: 1000,
                 halo_color: [0, 128, 255],

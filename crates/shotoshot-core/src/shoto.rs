@@ -9,7 +9,7 @@ pub use scene::Scene;
 
 const HEADER: &[u8] = b"shotoshot-document ";
 /// The latest version read; a file is written in the lowest one that holds it (`Scene::version`).
-const VERSION: u32 = 2;
+const VERSION: u32 = 3;
 const FRAME: &[u8] = b"frame-png ";
 /// Larger files are refused unread: far above any desktop saved as two PNG images.
 pub const MAX_FILE: u64 = 256 << 20;
@@ -133,6 +133,14 @@ mod tests {
         let payload = png::extract(&file).unwrap();
         assert!(payload.starts_with(b"shotoshot-document 2\n"));
         assert_eq!(unpack(&file), Ok((layered, FRAME_IMAGE)));
+        let mut labelled = sample();
+        if let crate::Shape::Text { label, .. } = &mut labelled.objects[6].shape {
+            *label = Some(crate::Label::Fit);
+        }
+        let file = pack(&PIXEL, &labelled, FRAME_IMAGE).unwrap();
+        let payload = png::extract(&file).unwrap();
+        assert!(payload.starts_with(b"shotoshot-document 3\n"));
+        assert_eq!(unpack(&file), Ok((labelled, FRAME_IMAGE)));
     }
     #[test]
     fn what_cannot_be_read_back_is_not_written() {
@@ -148,7 +156,7 @@ mod tests {
         assert_eq!(unpack(&PIXEL), Err(Error::NotEditable));
         assert_eq!(unpack(b"plain text"), Err(Error::NotEditable));
         assert_eq!(
-            unpack(&with("shotoshot-document 3\nanything at all\n")),
+            unpack(&with("shotoshot-document 4\nanything at all\n")),
             Err(Error::Newer)
         );
         for payload in [

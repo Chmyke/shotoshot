@@ -42,15 +42,21 @@ impl Presentation {
                 if self.bindings.priority_active() && key.Flags & 1 == 0 {
                     return Ok(());
                 }
-                if self.keyboard(key) {
-                    if let Some(keys) = &self.keys {
-                        self.paint(keys.hwnd())?;
-                    }
-                    self.sync_timer()?;
-                }
+                self.key_event(key)?;
             }
         }
         Ok(())
+    }
+    /// Shows a key event; Enter or Esc pressed during a move ends it, as the lock does.
+    pub(super) fn key_event(&mut self, key: RAWKEYBOARD) -> Result<()> {
+        let shown = self.keyboard(key);
+        if self.moving && key.Flags & 1 == 0 && [VK_RETURN.0, VK_ESCAPE.0].contains(&key.VKey) {
+            return self.end_move();
+        }
+        if shown && let Some(keys) = &self.keys {
+            self.paint(keys.hwnd())?;
+        }
+        self.sync_timer()
     }
     /// Records a key event. False when the diagram does not show that key: nothing to repaint.
     pub(super) fn keyboard(&mut self, key: RAWKEYBOARD) -> bool {
@@ -285,17 +291,12 @@ pub(crate) fn resident_message(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> Op
             let result = if msg == WM_INPUT {
                 p.raw_input(l)
             } else if msg == OBSERVED_KEY && p.enabled.keys {
-                let shown = p.keyboard(RAWKEYBOARD {
+                p.key_event(RAWKEYBOARD {
                     VKey: w.0 as u16,
                     MakeCode: (l.0 as u32 & 0xffff) as u16,
                     Flags: ((l.0 as u32) >> 16) as u16,
                     ..Default::default()
-                });
-                let result = match &p.keys {
-                    Some(keys) if shown => p.paint(keys.hwnd()),
-                    _ => Ok(()),
-                };
-                result.and_then(|_| p.sync_timer())
+                })
             } else if hotkey {
                 let _ = EndMenu();
                 p.hotkey(w.0 as i32)

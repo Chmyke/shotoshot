@@ -545,7 +545,8 @@ impl Layer {
             crate::D2dCanvas::with_brush(&self.renderer, &self.renderer.dc, self.brush.clone());
         shotoshot_ui::pointer::paint(&mut canvas, origin, effects, settings, halo, scale, now)
     }
-    pub fn devices(&self, devices: &Devices, now: u64) {
+    /// Paints the input diagram, `whole` while it is moved, else only what is pressed.
+    pub fn devices(&self, devices: &Devices, now: u64, whole: bool) {
         self.mark_all();
         diagram::draw(
             &self.renderer.dc,
@@ -554,6 +555,7 @@ impl Layer {
             &self.outlines,
             devices,
             now,
+            whole,
         );
     }
     pub fn end(&self) -> Result<()> {

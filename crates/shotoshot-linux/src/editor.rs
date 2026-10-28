@@ -7,7 +7,7 @@ mod document;
 use crate::{clipboard, files, keymap, monitors, notice, png_io, settings};
 use document::{Document, Place};
 pub use document::{PROBE, open};
-use shotoshot_core::{Modifiers, Point, settings::Settings};
+use shotoshot_core::{Label, Modifiers, Point, settings::Settings};
 use shotoshot_raster::{Raster, pixmap_from_bgra};
 use shotoshot_text::{Key, Text, tr};
 use shotoshot_ui::{
@@ -96,9 +96,13 @@ impl Host for Native {
         if let Some(field) = self.field.take()
             && commit
         {
-            let extent = self
-                .raster
-                .measure_annotation_text(field.text(), field.size as f64);
+            let (text, size) = (field.text(), field.size as f64);
+            let extent = match field.label.and_then(Label::wrap) {
+                Some(width) => self
+                    .raster
+                    .measure_wrapped_annotation_text(text, size, width),
+                None => self.raster.measure_annotation_text(text, size),
+            };
             field.commit(capture, extent);
         }
     }
@@ -129,8 +133,24 @@ impl Host for Native {
         }
         Ok(())
     }
+    fn set_text_label(&mut self, position: Point, label: Option<Label>) {
+        if let Some(field) = &mut self.field {
+            field.position = position;
+            field.label = label;
+        }
+    }
     fn measure_text(&mut self, text: &str, size: f64) -> Result<Point, Self::Error> {
         Ok(self.raster.measure_annotation_text(text, size))
+    }
+    fn measure_wrapped_text(
+        &mut self,
+        text: &str,
+        size: f64,
+        width: f64,
+    ) -> Result<Point, Self::Error> {
+        Ok(self
+            .raster
+            .measure_wrapped_annotation_text(text, size, width))
     }
     fn dimensions_active(&self) -> bool {
         self.dimensions.is_some()

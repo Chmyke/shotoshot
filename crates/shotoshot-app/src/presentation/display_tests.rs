@@ -89,7 +89,6 @@ fn display_change_rebuilds_layers_and_returns_keyboard_to_a_work_area() {
     };
     p.set_enabled(enabled).unwrap();
     p.preferences.input_offset = Some([10000, 10000]);
-    p.preferences.input_locked = true;
     // Model the old monitor having disappeared, with surfaces sized for the old topology.
     p.input_monitor = POINT {
         x: -1_000_000,

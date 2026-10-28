@@ -48,7 +48,7 @@ impl Editor {
                 },
                 _ => Shape::Rectangle(Rect { min: p, max: p }),
             };
-            if self.tool == Tool::Text {
+            if matches!(self.tool, Tool::Text | Tool::Label) {
                 return;
             }
             self.objects.push(Object {
@@ -369,6 +369,12 @@ impl Editor {
             }
             GestureKind::Marquee => {}
         }
+    }
+    /// Whether a corner of the selection is being dragged.
+    pub fn resizing(&self) -> bool {
+        self.gesture
+            .as_ref()
+            .is_some_and(|g| matches!(g.kind, GestureKind::Resize { .. }))
     }
     pub fn finish(&mut self) {
         let Some(g) = self.gesture.take() else {

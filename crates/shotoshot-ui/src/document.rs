@@ -3,7 +3,7 @@
 //! INVARIANTS: A document holds nothing outside its frame: no other screen, no object that
 //! would be out of reach once reopened.
 use crate::{Capture, Image, Monitor};
-use shotoshot_core::{Editor, Object, Point, Rect, Shape, shoto::Scene};
+use shotoshot_core::{Editor, Label, Object, Point, Rect, Shape, shoto::Scene};
 
 /// Whether two rectangles share more than an edge.
 fn overlap(a: Rect, b: Rect) -> bool {
@@ -129,17 +129,21 @@ impl Capture {
         mut scene: Scene,
         frame: Image,
         monitors: Vec<Monitor>,
-        mut measure: impl FnMut(&str, f64) -> Option<Point>,
+        mut measure: impl FnMut(&str, f64, Option<Label>) -> Option<Point>,
     ) -> Option<Self> {
         if frame.check().is_err() || (frame.width, frame.height) != (scene.width, scene.height) {
             return None;
         }
         for object in &mut scene.objects {
             if let Shape::Text {
-                text, size, extent, ..
+                text,
+                size,
+                extent,
+                label,
+                ..
             } = &mut object.shape
             {
-                *extent = measure(text, *size)?;
+                *extent = measure(text, *size, *label)?;
             }
         }
         let mut capture = Self::new(frame);
@@ -407,7 +411,7 @@ mod tests {
         c.editor.fill_at(point(75., 18.), false);
         let (scene, frame) = c.document(&c.image).unwrap();
         let screens = vec![rect(0., 0., 40., 20.).into()];
-        let measure = |text: &str, size: f64| Some(point(text.len() as f64, size));
+        let measure = |text: &str, size: f64, _| Some(point(text.len() as f64, size));
         let reopened =
             Capture::reopen(scene.clone(), frame.clone(), screens.clone(), measure).unwrap();
         assert!(reopened.reopened && !reopened.selecting && !reopened.live);
@@ -432,7 +436,7 @@ mod tests {
         assert_eq!(again.background, scene.background);
         let wrong = Image::solid(41, 20, [0, 0, 0, 255]);
         assert!(Capture::reopen(scene.clone(), wrong, screens.clone(), measure).is_none());
-        assert!(Capture::reopen(scene, frame, screens, |_, _| None).is_none());
+        assert!(Capture::reopen(scene, frame, screens, |_, _, _| None).is_none());
     }
     #[test]
     fn live_capture_is_not_offered_on_a_reopened_document() {
