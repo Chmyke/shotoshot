@@ -228,6 +228,7 @@ installer.shoto_file = Immagine Shotoshot modificabile
 # Pointer effects
 pointer.title = Effetti del puntatore
 pointer.section_halo = Alone
+pointer.show_halo = Mostra l'alone
 pointer.section_trail = Scia
 pointer.section_clicks = Clic
 pointer.section_spotlight = Riflettore

@@ -487,6 +487,15 @@ impl LiveSurface {
     pub fn bits(&self) -> &[u8] {
         unsafe { std::slice::from_raw_parts(self.bits, (self.width * self.height * 4) as usize) }
     }
+    /// Pixels to write directly, for a surface no GDI or Direct2D drawing touches.
+    pub fn bits_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            std::slice::from_raw_parts_mut(
+                self.bits.cast_mut(),
+                (self.width * self.height * 4) as usize,
+            )
+        }
+    }
     /// Copies the whole surface to an opaque window's paint DC.
     pub fn copy_to(&self, window: HDC) -> Result<()> {
         unsafe {

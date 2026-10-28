@@ -228,6 +228,7 @@ installer.shoto_file = Upravitelný obrázek Shotoshot
 # Pointer effects
 pointer.title = Efekty ukazatele
 pointer.section_halo = Zvýraznění
+pointer.show_halo = Zobrazit zvýraznění
 pointer.section_trail = Stopa
 pointer.section_clicks = Kliknutí
 pointer.section_spotlight = Reflektor

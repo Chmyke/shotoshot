@@ -228,6 +228,7 @@ installer.shoto_file = 可編輯的 Shotoshot 影像
 # Pointer effects
 pointer.title = 指標效果
 pointer.section_halo = 光暈
+pointer.show_halo = 顯示光暈
 pointer.section_trail = 軌跡
 pointer.section_clicks = 點擊
 pointer.section_spotlight = 聚光燈

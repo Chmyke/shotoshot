@@ -171,6 +171,7 @@ impl App {
         let mut panel = Panel::new(
             self.settings.presentation.pointer.clone(),
             self.settings.presentation.halo_color,
+            self.halo_on(),
             language,
         );
         panel.shortcuts = self.pointer_shortcut_labels();
@@ -236,8 +237,54 @@ impl App {
             // Dropping the window destroys it; the painter goes with it.
         }
     }
+    /// Whether the halo is on screen now.
+    fn halo_on(&self) -> bool {
+        self.presentation
+            .as_ref()
+            .is_some_and(|presentation| presentation.borrow().enabled.halo)
+    }
+    /// Turns the halo on or off as the open window shows it, and the menu with it.
+    fn apply_halo(&mut self) -> Result<()> {
+        let Some(wanted) = self
+            .pointer_window
+            .as_ref()
+            .map(|window| window.panel.halo_on)
+        else {
+            return Ok(());
+        };
+        if wanted != self.halo_on() {
+            if self.worker_busy() {
+                // The menu refuses the same switch now; the window shows what stays.
+                if let Some(window) = &mut self.pointer_window {
+                    window.panel.halo_on = !wanted;
+                }
+                return Ok(());
+            }
+            if let Some(presentation) = &self.presentation {
+                let mut presentation = presentation.borrow_mut();
+                let mut next = presentation.enabled;
+                next.halo = wanted;
+                presentation.set_enabled(next)?;
+            }
+        }
+        if let Some(menu) = &self.menu {
+            menu.update(self.menu_values()?)?;
+        }
+        Ok(())
+    }
+    /// Shows in the open window whether the halo is on, after the menu switched it.
+    pub(super) fn refresh_pointer_halo(&mut self) {
+        let on = self.halo_on();
+        if let Some(window) = &mut self.pointer_window
+            && window.panel.halo_on != on
+        {
+            window.panel.halo_on = on;
+            invalidate(window.hwnd());
+        }
+    }
     /// Applies the panel's settings to the live pointer, and saves them when `save`.
     fn apply_pointer(&mut self, save: bool) -> Result<()> {
+        self.apply_halo()?;
         let Some(window) = &self.pointer_window else {
             return Ok(());
         };
@@ -309,6 +356,11 @@ impl App {
             self.setup_ui.error = self.setup_ui.text(Key::SetupUsedByShotoshot);
             return Ok(());
         }
+        // A shortcut is a change made in the window too: what it sets is meant to be seen.
+        if let Some(window) = &mut self.pointer_window {
+            window.panel.halo_on = true;
+        }
+        self.apply_halo()?;
         let mut next = self.settings.clone();
         if index == 0 {
             next.presentation.pointer.click_shortcut = Some(shortcut);
@@ -333,6 +385,7 @@ impl App {
             Action::None => {}
             Action::Repaint => {}
             Action::Changed { save: false, .. } => {
+                self.apply_halo()?;
                 if let Some(window) = &mut self.pointer_window {
                     window.pending = true;
                 }
@@ -523,6 +576,7 @@ pub(super) fn preview() -> Result<()> {
             ..Default::default()
         },
         [255, 211, 64],
+        true,
         shotoshot_text::Language::En,
     );
     let renderer = Renderer::software()?;
@@ -568,7 +622,7 @@ mod tests {
         let _com = crate::ComApartment::new().unwrap();
         let renderer = Renderer::software().unwrap();
         for language in Language::ALL {
-            let mut panel = Panel::new(PointerSettings::default(), [255, 211, 64], language);
+            let mut panel = Panel::new(PointerSettings::default(), [255, 211, 64], true, language);
             // The longest shortcut the field may show.
             panel.shortcuts = [shortcut_text(15, 0x7b), shortcut_text(15, 0x2e)];
             let measure = |text: &str, size: f64| {

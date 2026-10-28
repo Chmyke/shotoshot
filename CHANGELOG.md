@@ -2,6 +2,11 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.18 · 2026-10-28
+
+- The spotlight's shadow now fades in gently around the light instead of starting at a hard edge, for circles and bands alike. Less flashlight, more stage lighting.
+- The Pointer effects window gets a switch to show or hide the halo, and tweaking any effect turns the halo on by itself: no more adjusting settings for a pointer you can't see.
+
 ## 0.3.17 · 2026-10-28
 
 - The pointer's ribbon trail now flows in one smooth curve, even when you whip the mouse around: no more little corners giving away how it was drawn.

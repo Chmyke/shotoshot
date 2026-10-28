@@ -228,6 +228,7 @@ installer.shoto_file = 편집 가능한 Shotoshot 이미지
 # Pointer effects
 pointer.title = 포인터 효과
 pointer.section_halo = 강조
+pointer.show_halo = 강조 표시
 pointer.section_trail = 자취
 pointer.section_clicks = 클릭
 pointer.section_spotlight = 스포트라이트

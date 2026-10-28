@@ -394,6 +394,10 @@ mod tests {
         fn drop(&mut self) {
             let _ = self.session.Close();
             let _ = self.pool.Close();
+            // PITFALL: Closing finishes on a capture thread, and nothing reports when. Destroyed
+            // at once, the captured window crashed that thread a moment later, in the next test
+            // (2026-10-28: STATUS_ACCESS_VIOLATION during a plain sleep of the spotlight test).
+            std::thread::sleep(Duration::from_millis(250));
         }
     }
     struct Frame {

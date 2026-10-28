@@ -228,6 +228,7 @@ installer.shoto_file = Edytowalny obraz Shotoshot
 # Pointer effects
 pointer.title = Efekty wskaźnika
 pointer.section_halo = Podświetlenie
+pointer.show_halo = Pokaż podświetlenie
 pointer.section_trail = Ślad
 pointer.section_clicks = Kliknięcia
 pointer.section_spotlight = Reflektor

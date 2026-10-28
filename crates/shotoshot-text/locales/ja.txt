@@ -228,6 +228,7 @@ installer.shoto_file = 編集可能な Shotoshot 画像
 # Pointer effects
 pointer.title = ポインター効果
 pointer.section_halo = 強調
+pointer.show_halo = 強調を表示
 pointer.section_trail = 軌跡
 pointer.section_clicks = クリック
 pointer.section_spotlight = スポットライト

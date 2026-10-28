@@ -228,6 +228,7 @@ installer.shoto_file = Düzenlenebilir Shotoshot görüntüsü
 # Pointer effects
 pointer.title = İşaretçi efektleri
 pointer.section_halo = Hale
+pointer.show_halo = Haleyi göster
 pointer.section_trail = İz
 pointer.section_clicks = Tıklamalar
 pointer.section_spotlight = Spot ışığı

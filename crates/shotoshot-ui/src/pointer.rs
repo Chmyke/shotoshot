@@ -9,8 +9,8 @@ use shotoshot_core::{
     Point, Rect,
     pointer::{
         Button, CLICK_MS, ClickStyle, Effects, HaloShape, NEON_GLOW, NEON_SOFT_GROWTH,
-        PULSE_GROWTH, PointerSettings, SOFT_REACH, TrailPoint, TrailStyle, WAVE_GAP_MS,
-        spotlight_hole,
+        PULSE_GROWTH, PointerSettings, SOFT_REACH, SPOTLIGHT_FEATHER, SpotlightShape, TrailPoint,
+        TrailStyle, WAVE_GAP_MS, spotlight_fade, spotlight_hole,
     },
 };
 
@@ -380,15 +380,22 @@ pub fn spotlight<C: Canvas>(
     settings: &PointerSettings,
     scale: f64,
 ) -> Result<(), C::Error> {
-    let hole = spotlight_hole(settings, at, scale, area);
-    if hole.is_empty() {
+    const RINGS: u32 = 10;
+    if settings.spotlight == SpotlightShape::Off {
         return Ok(());
     }
-    canvas.fill_rect_except(
-        area,
-        &[hole],
-        Ink::with_alpha([0; 3], settings.spotlight_dim as f32 / 100.),
-    )
+    let dim = settings.spotlight_dim as f64 / 100.;
+    let feather = SPOTLIGHT_FEATHER * scale;
+    let mut laid = 0.;
+    for ring in 0..=RINGS {
+        let darkness = dim * spotlight_fade((ring as f64 + 0.5) / RINGS as f64);
+        let alpha = 1. - (1. - darkness) / (1. - laid);
+        let margin = feather * ring as f64 / RINGS as f64;
+        let hole = spotlight_hole(settings, at, scale, area, margin);
+        canvas.fill_rect_except(area, &[hole], Ink::with_alpha([0; 3], alpha as f32))?;
+        laid = darkness;
+    }
+    Ok(())
 }
 
 fn ease_out(t: f64) -> f64 {
@@ -554,8 +561,9 @@ mod tests {
         };
         let mut canvas = recorder();
         spotlight(&mut canvas, area, at(200., 150.), &settings, 1.).unwrap();
-        assert_eq!(canvas.ops.len(), 1);
-        assert_eq!(canvas.ops[0].name, "fill_rect_except");
+        // Stacked rings lay the soft edge, each one wider than the last.
+        assert!(canvas.ops.len() > 1);
+        assert!(canvas.ops.iter().all(|op| op.name == "fill_rect_except"));
         let mut off = recorder();
         spotlight(
             &mut off,

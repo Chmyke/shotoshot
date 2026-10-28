@@ -267,6 +267,7 @@ installer.shoto_file = Shotoshot editable image
 # grows with the longest text of the language (`pointer_panel_fits_every_language`).
 pointer.title = Pointer effects
 pointer.section_halo = Halo
+pointer.show_halo = Show the halo
 pointer.section_trail = Trail
 pointer.section_clicks = Clicks
 pointer.section_spotlight = Spotlight

@@ -228,6 +228,7 @@ installer.shoto_file = Редактируемое изображение Shotosh
 # Pointer effects
 pointer.title = Эффекты указателя
 pointer.section_halo = Подсветка
+pointer.show_halo = Показывать подсветку
 pointer.section_trail = След
 pointer.section_clicks = Щелчки
 pointer.section_spotlight = Прожектор

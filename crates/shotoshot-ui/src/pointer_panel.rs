@@ -70,6 +70,7 @@ pub const COLORS: [[u8; 3]; 8] = [
 /// One setting of the window.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Field {
+    HaloOn,
     HaloShape,
     HaloColor,
     HaloSize,
@@ -106,6 +107,7 @@ const COLUMNS: [&[(Key, &[Field])]; 2] = [
         (
             Key::PointerSectionHalo,
             &[
+                Field::HaloOn,
                 Field::HaloShape,
                 Field::HaloColor,
                 Field::HaloSize,
@@ -145,7 +147,8 @@ const COLUMNS: [&[(Key, &[Field])]; 2] = [
     ],
 ];
 /// Every field in focus order: down the first column, then the second.
-pub const FIELDS: [Field; 20] = [
+pub const FIELDS: [Field; 21] = [
+    Field::HaloOn,
     Field::HaloShape,
     Field::HaloColor,
     Field::HaloSize,
@@ -185,12 +188,13 @@ impl Field {
             | Self::SpotlightSize
             | Self::SpotlightDim => Control::Slider,
             Self::HaloColor | Self::LeftColor | Self::RightColor => Control::Colors,
-            Self::SpotlightMoving => Control::Switch,
+            Self::HaloOn | Self::SpotlightMoving => Control::Switch,
             Self::ClickShortcut | Self::SpotlightShortcut => Control::Shortcut,
         }
     }
     fn label(self) -> Key {
         match self {
+            Self::HaloOn => Key::PointerShowHalo,
             Self::HaloShape | Self::Spotlight => Key::PointerShape,
             Self::HaloColor => Key::PointerColor,
             Self::HaloSize | Self::SpotlightSize => Key::PointerSize,
@@ -344,6 +348,9 @@ impl PanelLayout {
 pub struct Panel {
     pub settings: PointerSettings,
     pub halo_color: [u8; 3],
+    /// Whether the halo is on screen. Any other change made here turns it on: what is set
+    /// here is meant to be seen. Only its own switch turns it off.
+    pub halo_on: bool,
     /// What the window started from, for "Undo changes".
     opened: (PointerSettings, [u8; 3]),
     pub focus: Focus,
@@ -360,12 +367,18 @@ pub struct Panel {
 }
 
 impl Panel {
-    pub fn new(settings: PointerSettings, halo_color: [u8; 3], language: Language) -> Self {
+    pub fn new(
+        settings: PointerSettings,
+        halo_color: [u8; 3],
+        halo_on: bool,
+        language: Language,
+    ) -> Self {
         Self {
             opened: (settings.clone(), halo_color),
             settings,
             halo_color,
-            focus: Focus::Field(Field::HaloShape),
+            halo_on,
+            focus: Focus::Field(Field::HaloOn),
             drag: None,
             shortcuts: Default::default(),
             language,
@@ -1028,12 +1041,24 @@ impl Panel {
             _ => self.settings.right_click_color = rgb,
         }
     }
-    /// The one switch: the spotlight steps aside while the pointer moves.
-    fn switch(&self, _field: Field) -> bool {
-        self.settings.spotlight_hidden_moving
+    fn switch(&self, field: Field) -> bool {
+        match field {
+            Field::HaloOn => self.halo_on,
+            _ => self.settings.spotlight_hidden_moving,
+        }
     }
-    fn toggle(&mut self, _field: Field) {
-        self.settings.spotlight_hidden_moving ^= true;
+    fn toggle(&mut self, field: Field) {
+        match field {
+            Field::HaloOn => self.halo_on ^= true,
+            _ => self.settings.spotlight_hidden_moving ^= true,
+        }
+    }
+    /// A change made anywhere but on the halo's own switch turns the halo on.
+    fn shown(&mut self, action: Action) -> Action {
+        if matches!(action, Action::Changed { .. }) && self.focus != Focus::Field(Field::HaloOn) {
+            self.halo_on = true;
+        }
+        action
     }
     fn changed(field: Field) -> Action {
         Action::Changed {
@@ -1097,8 +1122,7 @@ impl Panel {
             .map(|(button, _)| Focus::Button(*button))
     }
 
-    /// A press at `p`, in logical pixels.
-    pub fn press(&mut self, p: Point) -> Action {
+    fn press_unseen(&mut self, p: Point) -> Action {
         let Some(focus) = self.at(p) else {
             return Action::None;
         };
@@ -1175,22 +1199,19 @@ impl Panel {
             Action::Repaint
         }
     }
-    /// The pointer moved to `p` with the button held.
-    pub fn drag(&mut self, p: Point) -> Action {
+    fn drag_unseen(&mut self, p: Point) -> Action {
         match self.drag {
             Some((field, _)) => self.slide(field, p.x, false),
             None => Action::None,
         }
     }
-    /// The button was released at `p`: a dragged slider saves its value.
-    pub fn release(&mut self, p: Point) -> Action {
+    fn release_unseen(&mut self, p: Point) -> Action {
         match self.drag.take() {
             Some((field, _)) => self.slide(field, p.x, true),
             None => Action::None,
         }
     }
-    /// The wheel turned `notches` (positive: away from the user) over `p`.
-    pub fn wheel(&mut self, p: Point, notches: i32) -> Action {
+    fn wheel_unseen(&mut self, p: Point, notches: i32) -> Action {
         match self.at(p) {
             Some(Focus::Field(field)) if notches != 0 => {
                 self.focus = Focus::Field(field);
@@ -1199,7 +1220,7 @@ impl Panel {
             _ => Action::None,
         }
     }
-    pub fn key(&mut self, key: KeyInput) -> Action {
+    fn key_unseen(&mut self, key: KeyInput) -> Action {
         let order: Vec<Focus> = FIELDS
             .iter()
             .map(|field| Focus::Field(*field))
@@ -1238,6 +1259,30 @@ impl Panel {
             (KeyInput::Activate, Focus::Button(button)) => self.button(button),
             _ => Action::None,
         }
+    }
+    /// A press at `p`, in logical pixels.
+    pub fn press(&mut self, p: Point) -> Action {
+        let action = self.press_unseen(p);
+        self.shown(action)
+    }
+    /// The pointer moved to `p` with the button held.
+    pub fn drag(&mut self, p: Point) -> Action {
+        let action = self.drag_unseen(p);
+        self.shown(action)
+    }
+    /// The button was released at `p`: a dragged slider saves its value.
+    pub fn release(&mut self, p: Point) -> Action {
+        let action = self.release_unseen(p);
+        self.shown(action)
+    }
+    /// The wheel turned `notches` (positive: away from the user) over `p`.
+    pub fn wheel(&mut self, p: Point, notches: i32) -> Action {
+        let action = self.wheel_unseen(p, notches);
+        self.shown(action)
+    }
+    pub fn key(&mut self, key: KeyInput) -> Action {
+        let action = self.key_unseen(key);
+        self.shown(action)
     }
     fn clear_shortcut(&mut self, index: usize) -> Action {
         if index == 0 {
@@ -1345,7 +1390,12 @@ mod tests {
         Ok(text.chars().count() as f64 * size * 0.56)
     }
     fn panel() -> Panel {
-        let mut panel = Panel::new(PointerSettings::default(), [255, 211, 64], Language::En);
+        let mut panel = Panel::new(
+            PointerSettings::default(),
+            [255, 211, 64],
+            false,
+            Language::En,
+        );
         panel.fit(measure).unwrap();
         panel
     }
@@ -1356,7 +1406,7 @@ mod tests {
     #[test]
     fn every_text_has_room_and_nothing_overlaps() {
         for language in Language::ALL {
-            let mut panel = Panel::new(PointerSettings::default(), [255, 211, 64], language);
+            let mut panel = Panel::new(PointerSettings::default(), [255, 211, 64], true, language);
             panel.shortcuts = ["Ctrl+Alt+Shift+F12".into(), String::new()];
             panel.fit(measure).unwrap();
             let zones = &panel.layout;
@@ -1499,11 +1549,13 @@ mod tests {
             seen.push(panel.focus);
             panel.key(KeyInput::Next);
         }
-        assert_eq!(panel.focus, Focus::Field(Field::HaloShape), "a full lap");
-        assert_eq!(seen.len(), 23);
+        assert_eq!(panel.focus, Focus::Field(Field::HaloOn), "a full lap");
+        assert_eq!(seen.len(), 24);
         assert!(seen.contains(&Focus::Button(Button::Close)));
+        panel.key(KeyInput::Next);
         panel.key(KeyInput::Right);
         assert_eq!(panel.settings.halo_shape, HaloShape::Ring);
+        panel.key(KeyInput::Previous);
         panel.key(KeyInput::Previous);
         assert_eq!(panel.focus, Focus::Button(Button::Close));
         assert_eq!(panel.key(KeyInput::Activate), Action::Close);
@@ -1520,6 +1572,61 @@ mod tests {
     }
 
     #[test]
+    fn any_change_shows_the_halo_and_only_its_switch_hides_it() {
+        let mut panel = panel();
+        assert_eq!(
+            panel.focus,
+            Focus::Field(Field::HaloOn),
+            "the switch comes first"
+        );
+        // A change from each kind of control turns the halo on.
+        let size = control_of(&panel, Field::HaloSize);
+        let colors = control_of(&panel, Field::LeftColor);
+        let switch = control_of(&panel, Field::SpotlightMoving);
+        let changes: [&dyn Fn(&mut Panel) -> Action; 6] = [
+            &|p| p.key(KeyInput::Right),
+            &|p| {
+                p.press(Point {
+                    x: size.min.x + 8.,
+                    y: size.center().y,
+                })
+            },
+            &|p| p.press(swatch_center(colors, 2, 1.)),
+            &|p| p.press(switch.center()),
+            &|p| p.wheel(size.center(), 1),
+            &|p| {
+                p.focus = Focus::Button(Button::Reset);
+                p.key(KeyInput::Activate)
+            },
+        ];
+        for (index, change) in changes.iter().enumerate() {
+            panel.halo_on = false;
+            panel.focus = Focus::Field(Field::HaloShape);
+            assert!(
+                matches!(change(&mut panel), Action::Changed { .. }),
+                "{index}"
+            );
+            assert!(panel.halo_on, "change {index} shows the halo");
+        }
+        // Moving between rows changes nothing and leaves the halo as it is.
+        panel.halo_on = false;
+        panel.key(KeyInput::Next);
+        assert!(!panel.halo_on);
+        // The switch turns it off, and on again.
+        let r = control_of(&panel, Field::HaloOn);
+        panel.halo_on = true;
+        assert!(matches!(
+            panel.press(r.center()),
+            Action::Changed { save: true, .. }
+        ));
+        assert!(!panel.halo_on, "off by its switch");
+        panel.press(r.center());
+        assert!(panel.halo_on);
+        panel.key(KeyInput::Left);
+        assert!(!panel.halo_on, "off from the keyboard");
+    }
+
+    #[test]
     fn undo_returns_to_the_opening_and_reset_keeps_the_shortcuts() {
         let shortcut = Some(Shortcut {
             modifiers: 3,
@@ -1530,7 +1637,7 @@ mod tests {
             spotlight_shortcut: shortcut,
             ..Default::default()
         };
-        let mut panel = Panel::new(opened.clone(), [64, 156, 255], Language::En);
+        let mut panel = Panel::new(opened.clone(), [64, 156, 255], true, Language::En);
         panel.fit(measure).unwrap();
         panel.settings.trail = TrailStyle::Dots;
         panel.halo_color = COLORS[0];
@@ -1554,6 +1661,7 @@ mod tests {
                 ..Default::default()
             },
             [255, 211, 64],
+            true,
             Language::En,
         );
         panel.fit(measure).unwrap();

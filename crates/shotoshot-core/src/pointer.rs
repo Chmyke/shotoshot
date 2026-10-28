@@ -677,16 +677,19 @@ fn catmull_rom(p0: Point, p1: Point, p2: Point, p3: Point, t: f64) -> Point {
     lerp(b1, b2, t1, t2)
 }
 
-/// The spotlight's light as a polygon, in the coordinates of `screen` (device pixels), around
-/// `at`. A circle is a 48-gon: the live window cuts it from a region, the preview from a fill.
+/// Width of the soft edge where the spotlight's darkness fades into its light, in logical pixels.
+pub const SPOTLIGHT_FEATHER: f64 = 30.;
+
+/// The spotlight's light grown by `margin` device pixels, as a polygon in the coordinates of
+/// `screen` (device pixels), around `at`. A circle is a 48-gon; the preview fills around it.
 pub fn spotlight_hole(
     settings: &PointerSettings,
     at: Point,
     scale: f64,
     screen: crate::Rect,
+    margin: f64,
 ) -> Vec<Point> {
-    let size = settings.spotlight_size as f64 * scale;
-    let half = size * 0.5;
+    let half = settings.spotlight_size as f64 * scale * 0.5 + margin;
     match settings.spotlight {
         SpotlightShape::Off => Vec::new(),
         SpotlightShape::Circle => (0..48)
@@ -735,6 +738,46 @@ pub fn spotlight_hole(
             },
         ],
     }
+}
+
+/// The spotlight's light and its soft edge, in device pixels: outside it the screen is evenly
+/// dark, inside it `spotlight_shade` says how dark each pixel is. Bands span `screen`.
+pub fn spotlight_box(
+    settings: &PointerSettings,
+    at: Point,
+    scale: f64,
+    screen: crate::Rect,
+) -> crate::Rect {
+    let reach = settings.spotlight_size as f64 * scale * 0.5 + SPOTLIGHT_FEATHER * scale;
+    let (x, y) = match settings.spotlight {
+        SpotlightShape::Horizontal => ((screen.min.x, screen.max.x), (at.y - reach, at.y + reach)),
+        SpotlightShape::Vertical => ((at.x - reach, at.x + reach), (screen.min.y, screen.max.y)),
+        SpotlightShape::Off | SpotlightShape::Circle => {
+            ((at.x - reach, at.x + reach), (at.y - reach, at.y + reach))
+        }
+    };
+    crate::Rect {
+        min: Point { x: x.0, y: y.0 },
+        max: Point { x: x.1, y: y.1 },
+    }
+}
+
+/// How dark the spotlight is `offset` device pixels from its center, 0 in the light to 1 past
+/// the soft edge.
+pub fn spotlight_shade(settings: &PointerSettings, offset: Point, scale: f64) -> f64 {
+    let half = settings.spotlight_size as f64 * scale * 0.5;
+    let distance = match settings.spotlight {
+        SpotlightShape::Off => return 0.,
+        SpotlightShape::Circle => offset.length(),
+        SpotlightShape::Horizontal => offset.y.abs(),
+        SpotlightShape::Vertical => offset.x.abs(),
+    } - half;
+    spotlight_fade(distance / (SPOTLIGHT_FEATHER * scale))
+}
+/// The darkness `t` of the way through the soft edge: smooth at both ends, so no line shows.
+pub fn spotlight_fade(t: f64) -> f64 {
+    let t = t.clamp(0., 1.);
+    t * t * (3. - 2. * t)
 }
 
 #[cfg(test)]
@@ -1086,7 +1129,7 @@ mod tests {
             spotlight_size: 200,
             ..Default::default()
         };
-        let circle = spotlight_hole(&settings, at(500., 400.), 2., screen);
+        let circle = spotlight_hole(&settings, at(500., 400.), 2., screen, 0.);
         assert_eq!(circle.len(), 48);
         assert!(
             circle
@@ -1095,13 +1138,52 @@ mod tests {
             "diameter 200 logical at scale 2"
         );
         settings.spotlight = SpotlightShape::Horizontal;
-        let band = spotlight_hole(&settings, at(500., 400.), 1., screen);
+        let band = spotlight_hole(&settings, at(500., 400.), 1., screen, 0.);
         assert_eq!(band[0], at(0., 300.));
         assert_eq!(band[2], at(1000., 500.));
         settings.spotlight = SpotlightShape::Vertical;
-        let band = spotlight_hole(&settings, at(500., 400.), 1., screen);
+        let band = spotlight_hole(&settings, at(500., 400.), 1., screen, 0.);
         assert_eq!(band[0], at(400., 0.));
         assert_eq!(band[2], at(600., 800.));
+    }
+
+    #[test]
+    fn the_spotlight_fades_over_its_soft_edge() {
+        let screen = crate::Rect {
+            min: at(0., 0.),
+            max: at(1000., 800.),
+        };
+        let mut settings = PointerSettings {
+            spotlight: SpotlightShape::Circle,
+            spotlight_size: 200,
+            ..Default::default()
+        };
+        // Diameter 200 logical at scale 2: light to 200 device pixels, edge 60 more.
+        let edge = spotlight_box(&settings, at(500., 400.), 2., screen);
+        assert_eq!((edge.min, edge.max), (at(240., 140.), at(760., 660.)));
+        let shade = |x: f64| spotlight_shade(&settings, at(x, 0.), 2.);
+        assert_eq!(shade(0.), 0.);
+        assert_eq!(shade(200.), 0.);
+        assert!((shade(230.) - 0.5).abs() < 1e-9, "halfway through the edge");
+        assert!(shade(215.) < shade(230.) && shade(230.) < shade(245.));
+        assert_eq!(shade(260.), 1.);
+        assert_eq!(
+            spotlight_shade(&settings, at(300., 300.), 2.),
+            1.,
+            "box corner"
+        );
+        settings.spotlight = SpotlightShape::Horizontal;
+        let band = spotlight_box(&settings, at(500., 400.), 1., screen);
+        assert_eq!((band.min, band.max), (at(0., 270.), at(1000., 530.)));
+        assert_eq!(
+            spotlight_shade(&settings, at(900., 50.), 1.),
+            0.,
+            "inside the band"
+        );
+        settings.spotlight = SpotlightShape::Vertical;
+        let band = spotlight_box(&settings, at(500., 400.), 1., screen);
+        assert_eq!((band.min, band.max), (at(370., 0.), at(630., 800.)));
+        assert_eq!(spotlight_shade(&settings, at(130., 0.), 1.), 1.);
     }
 
     #[test]

@@ -228,6 +228,7 @@ installer.shoto_file = 可编辑的 Shotoshot 图像
 # Pointer effects
 pointer.title = 指针效果
 pointer.section_halo = 光圈
+pointer.show_halo = 显示光圈
 pointer.section_trail = 拖尾
 pointer.section_clicks = 点击
 pointer.section_spotlight = 聚光灯

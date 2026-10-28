@@ -228,6 +228,7 @@ installer.shoto_file = Bearbeitbares Shotoshot-Bild
 # Pointer effects
 pointer.title = Zeigereffekte
 pointer.section_halo == Halo
+pointer.show_halo = Halo anzeigen
 pointer.section_trail = Spur
 pointer.section_clicks = Klicks
 pointer.section_spotlight == Spotlight

@@ -228,6 +228,7 @@ installer.shoto_file = Зображення Shotoshot для редагуван�
 # Pointer effects
 pointer.title = Ефекти вказівника
 pointer.section_halo = Підсвічування
+pointer.show_halo = Показувати підсвічування
 pointer.section_trail = Слід
 pointer.section_clicks = Кліки
 pointer.section_spotlight = Прожектор

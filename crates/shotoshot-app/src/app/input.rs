@@ -237,6 +237,7 @@ impl App {
                         }
                     } else if let Some(presentation) = &self.presentation {
                         presentation.borrow_mut().command(chosen)?;
+                        self.refresh_pointer_halo();
                     }
                 }
                 1 => {
