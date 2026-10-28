@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.21 · 2026-10-28
+
+- The faint frame that showed around the on-screen keyboard while you typed is gone: now it's just the keys you press, floating on their own.
+
 ## 0.3.20 · 2026-10-28
 
 - New Text box tool (B): click and type to get text on a rounded colour panel, or drag first to choose how wide it is and let the lines wrap by themselves. The text sits in the middle and turns black or white so it always reads.

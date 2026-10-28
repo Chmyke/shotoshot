@@ -1879,7 +1879,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "shotoshot-app"
-version = "0.3.20"
+version = "0.3.21"
 dependencies = [
  "shotoshot-core",
  "shotoshot-linux",
@@ -1893,14 +1893,14 @@ dependencies = [
 
 [[package]]
 name = "shotoshot-core"
-version = "0.3.20"
+version = "0.3.21"
 dependencies = [
  "shotoshot-text",
 ]
 
 [[package]]
 name = "shotoshot-linux"
-version = "0.3.20"
+version = "0.3.21"
 dependencies = [
  "arboard",
  "ksni",
@@ -1918,7 +1918,7 @@ dependencies = [
 
 [[package]]
 name = "shotoshot-raster"
-version = "0.3.20"
+version = "0.3.21"
 dependencies = [
  "cosmic-text",
  "shotoshot-core",
@@ -1929,11 +1929,11 @@ dependencies = [
 
 [[package]]
 name = "shotoshot-text"
-version = "0.3.20"
+version = "0.3.21"
 
 [[package]]
 name = "shotoshot-ui"
-version = "0.3.20"
+version = "0.3.21"
 dependencies = [
  "shotoshot-core",
  "shotoshot-text",

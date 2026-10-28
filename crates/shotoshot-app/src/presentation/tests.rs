@@ -888,22 +888,17 @@ fn a_still_diagram_is_a_ghost_showing_only_the_pressed_key_then_nothing() {
         right - left < diagram::HEIGHT as u32 / 6 && bottom - top < diagram::HEIGHT as u32 / 6,
         "only one keycap is solid: {left},{top} to {right},{bottom}"
     );
-    let outline = opaque_bounds(&layer, 1).unwrap();
+    let [left, top, right, bottom] = opaque_bounds(&layer, 1).unwrap();
     assert!(
-        outline[2] - outline[0] > layer.width as u32 / 2,
-        "a pale outline frames the keyboard while a key is held"
-    );
-    assert!(
-        (0..layer.height as u32).all(|y| layer.pixel(1, y)[3] < 80),
-        "the outline stays pale"
+        right - left < diagram::HEIGHT as u32 / 6 && bottom - top < diagram::HEIGHT as u32 / 6,
+        "no frame around the keyboard: {left},{top} to {right},{bottom}"
     );
 
     devices.keyboard(30, false, false, 100);
     paint(&devices, 400, false);
-    let fading = opaque_bounds(&layer, 1).unwrap();
     assert!(
-        fading[2] - fading[0] > layer.width as u32 / 2,
-        "key and outline fade together"
+        opaque_bounds(&layer, 1).is_some(),
+        "the released key fades out"
     );
     assert!(devices.needs_animation(400));
     paint(&devices, 700, false);

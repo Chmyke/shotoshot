@@ -1,5 +1,5 @@
 //! ROLE: Physical keyboard and mouse with transient pressed-character labels.
-//! A still diagram is a ghost: only pressed keys and buttons, inside a pale outline.
+//! A still diagram is a ghost: only pressed keys, and pressed buttons in a pale mouse outline.
 //! OWNER: Presentation layer supplies its reusable target and brush.
 //! INVARIANTS: Immutable geometry and reusable text format; no per-frame allocations.
 use super::devices::Devices;
@@ -389,7 +389,7 @@ impl Painter<'_> {
         }
     }
 }
-/// Opacity of a ghost's outline while a key or button inside it is fully shown.
+/// Opacity of the ghost mouse's outline while one of its buttons is pressed.
 const GHOST_OUTLINE: f32 = 0.22;
 /// Mouse parts: left, right, middle, back, forward buttons and the wheel.
 const MOUSE_PARTS: usize = 6;
@@ -418,15 +418,9 @@ pub(super) fn draw(
     };
     let iso = iso_enter(plan, devices.ansi);
     if plan.keyboard {
+        // A ghost keyboard has no frame: its pressed keys alone (Mickael, 2026-10-28).
         if whole {
             p.box_at(1., 1., plan.panel() as f32 - 1., 132., 7., false);
-        } else {
-            // The outline fades with the last key, and ignores held keys it does not draw.
-            let mut presence = if iso { p.presence(28, false) } else { 0. };
-            caps(plan, devices.ansi, |scan, extended, _, _, _, _| {
-                presence = presence.max(p.presence(scan, extended));
-            });
-            p.outline(1., 1., plan.panel() as f32 - 1., 132., 7., presence);
         }
         caps(plan, devices.ansi, |scan, extended, x, y, w, h| {
             p.key(scan, extended, x, y, w, h)
