@@ -8,7 +8,7 @@ impl Presentation {
         unsafe {
             if raw.header.dwType == RIM_TYPEMOUSE.0 {
                 let flags = raw.data.mouse.Anonymous.Anonymous.usButtonFlags;
-                if self.enabled.halo {
+                if self.enabled.pointer() {
                     self.pointer_event(flags)?;
                 }
                 // The diagram never activates: native SetCapture alone cannot guarantee
@@ -20,7 +20,7 @@ impl Presentation {
                     }
                 }
                 if flags != 0 {
-                    if self.enabled.halo {
+                    if self.enabled.pointer() {
                         self.halo_state.mouse(flags, self.now());
                     }
                     if let Some(halo) = &self.halo
@@ -153,6 +153,7 @@ impl Presentation {
             3 => self.arm(LiveTool::Ellipse),
             4 => self.pointer_hotkey(0),
             5 => self.pointer_hotkey(1),
+            6 => self.pointer_hotkey(2),
             _ => Ok(()),
         }
     }
@@ -271,11 +272,13 @@ impl Presentation {
 }
 
 pub(crate) fn resident_message(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> Option<LRESULT> {
-    let hotkey = msg == WM_HOTKEY && (HOTKEY_BASE..HOTKEY_BASE + 6).contains(&(w.0 as i32));
+    let hotkey = msg == WM_HOTKEY && (HOTKEY_BASE..HOTKEY_BASE + 7).contains(&(w.0 as i32));
     if !(msg == WM_INPUT
         || msg == OBSERVED_KEY
         || msg == WM_TIMER && w.0 == TIMER
         || hotkey
+        || msg == loupe::WINDOWS_CHANGED
+        || msg == loupe_capture::FRAMES
         || msg == FAILED)
     {
         return None;
@@ -302,6 +305,11 @@ pub(crate) fn resident_message(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> Op
                 p.hotkey(w.0 as i32)
             } else if msg == WM_TIMER {
                 p.tick()
+            } else if msg == loupe::WINDOWS_CHANGED {
+                p.loupe_windows_changed()
+            } else if msg == loupe_capture::FRAMES {
+                p.loupe_frames();
+                Ok(())
             } else {
                 Ok(())
             };

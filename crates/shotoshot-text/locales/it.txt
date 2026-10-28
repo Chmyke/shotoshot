@@ -86,6 +86,7 @@ menu.clear_board = Svuota il Board
 menu.presentation = Presentazione
 menu.pointer_halo = Alone del puntatore
 menu.pointer_effects = Effetti del puntatore
+menu.magnifier = Lente
 menu.keyboard = Tastiera
 menu.mouse == Mouse
 menu.move_input = Sposta tastiera e mouse
@@ -117,6 +118,7 @@ setup.title_ellipse = Scorciatoia dell’ellisse
 setup.title_board = Scorciatoia del Board
 setup.title_show_click = Scorciatoia per mostrare un clic
 setup.title_spotlight = Scorciatoia del riflettore
+setup.title_loupe = Scorciatoia della lente
 setup.press = Premi la scorciatoia…
 setup.waiting = …
 setup.choose = Scegli una scorciatoia
@@ -230,6 +232,7 @@ pointer.show_halo = Mostra l'alone
 pointer.section_trail = Scia
 pointer.section_clicks = Clic
 pointer.section_spotlight = Riflettore
+pointer.section_loupe = Lente
 pointer.shape = Forma
 pointer.color = Colore
 pointer.size = Dimensione
@@ -248,6 +251,9 @@ pointer.show_click = Mostra un clic
 pointer.darkness = Oscuramento
 pointer.hide_moving = Nascondi in movimento
 pointer.hold = Mostra tenendo premuto
+pointer.zoom = Ingrandimento
+pointer.show_loupe = Mostra la lente
+pointer.shortcut = Scorciatoia
 pointer.off = Disattivato
 pointer.hidden = Nascosto
 pointer.disc = Disco
@@ -273,6 +279,12 @@ pointer.high = Alto
 pointer.circle = Cerchio
 pointer.horizontal = Fascia orizzontale
 pointer.vertical = Fascia verticale
+pointer.zoom_2 == 2×
+pointer.zoom_3 == 3×
+pointer.zoom_4 == 4×
+pointer.small = Piccola
+pointer.medium_size = Media
+pointer.large = Grande
 pointer.no_shortcut = Nessuna
 pointer.reset = Ripristina predefiniti
 pointer.undo = Annulla modifiche

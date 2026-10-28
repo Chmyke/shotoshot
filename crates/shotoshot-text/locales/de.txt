@@ -86,6 +86,7 @@ menu.clear_board = Board leeren
 menu.presentation = Präsentation
 menu.pointer_halo = Zeiger-Halo
 menu.pointer_effects = Zeigereffekte
+menu.magnifier = Lupe
 menu.keyboard = Tastatur
 menu.mouse = Maus
 menu.move_input = Tastatur und Maus verschieben
@@ -117,6 +118,7 @@ setup.title_ellipse = Tastenkürzel für Ellipse
 setup.title_board = Tastenkürzel für Board
 setup.title_show_click = Tastenkürzel für Klick anzeigen
 setup.title_spotlight = Tastenkürzel für Spotlight
+setup.title_loupe = Tastenkürzel für die Lupe
 setup.press = Tastenkürzel drücken…
 setup.waiting = …
 setup.choose = Tastenkürzel wählen
@@ -230,6 +232,7 @@ pointer.show_halo = Halo anzeigen
 pointer.section_trail = Spur
 pointer.section_clicks = Klicks
 pointer.section_spotlight == Spotlight
+pointer.section_loupe = Lupe
 pointer.shape = Form
 pointer.color = Farbe
 pointer.size = Größe
@@ -248,6 +251,9 @@ pointer.show_click = Klick anzeigen
 pointer.darkness = Abdunklung
 pointer.hide_moving = Bei Bewegung ausblenden
 pointer.hold = Beim Halten anzeigen
+pointer.zoom = Vergrößerung
+pointer.show_loupe = Lupe anzeigen
+pointer.shortcut = Tastenkürzel
 pointer.off = Aus
 pointer.hidden = Ausgeblendet
 pointer.disc = Scheibe
@@ -273,6 +279,12 @@ pointer.high = Laut
 pointer.circle = Kreis
 pointer.horizontal = Horizontaler Streifen
 pointer.vertical = Vertikaler Streifen
+pointer.zoom_2 == 2×
+pointer.zoom_3 == 3×
+pointer.zoom_4 == 4×
+pointer.small = Klein
+pointer.medium_size = Mittel
+pointer.large = Groß
 pointer.no_shortcut = Keins
 pointer.reset = Standard wiederherstellen
 pointer.undo = Änderungen verwerfen

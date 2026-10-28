@@ -189,9 +189,11 @@ pub(super) enum ShortcutTarget {
     ShowClick,
     /// The pointer window's shortcut that holds the spotlight.
     Spotlight,
+    /// The pointer window's shortcut that shows or holds the loupe.
+    Loupe,
 }
 /// Every window the menu opens: the layout fits the title of each.
-const TARGETS: [ShortcutTarget; 8] = [
+const TARGETS: [ShortcutTarget; 9] = [
     ShortcutTarget::Capture,
     ShortcutTarget::Instant,
     ShortcutTarget::Arrow,
@@ -200,11 +202,17 @@ const TARGETS: [ShortcutTarget; 8] = [
     ShortcutTarget::Board,
     ShortcutTarget::ShowClick,
     ShortcutTarget::Spotlight,
+    ShortcutTarget::Loupe,
 ];
 impl ShortcutTarget {
     pub fn shape_index(self) -> Option<usize> {
         match self {
-            Self::Capture | Self::Instant | Self::Board | Self::ShowClick | Self::Spotlight => None,
+            Self::Capture
+            | Self::Instant
+            | Self::Board
+            | Self::ShowClick
+            | Self::Spotlight
+            | Self::Loupe => None,
             Self::Arrow => Some(0),
             Self::Rectangle => Some(1),
             Self::Ellipse => Some(2),
@@ -219,7 +227,7 @@ impl ShortcutTarget {
             Self::Rectangle => 111,
             Self::Ellipse => 112,
             Self::Board => 13,
-            Self::ShowClick | Self::Spotlight => 105,
+            Self::ShowClick | Self::Spotlight | Self::Loupe => 105,
         }
     }
     fn title(self) -> Key {
@@ -232,13 +240,16 @@ impl ShortcutTarget {
             Self::Board => Key::SetupTitleBoard,
             Self::ShowClick => Key::SetupTitleShowClick,
             Self::Spotlight => Key::SetupTitleSpotlight,
+            Self::Loupe => Key::SetupTitleLoupe,
         }
     }
-    /// The pointer shortcut this window records: 0 shows a click, 1 holds the spotlight.
+    /// The pointer shortcut this window records: 0 shows a click, 1 holds the spotlight, 2
+    /// shows the loupe.
     pub fn pointer_index(self) -> Option<usize> {
         match self {
             Self::ShowClick => Some(0),
             Self::Spotlight => Some(1),
+            Self::Loupe => Some(2),
             _ => None,
         }
     }
@@ -319,7 +330,10 @@ impl Setup {
                 Key::SetupAnyKeyHint
             } else if matches!(
                 self.target,
-                ShortcutTarget::Board | ShortcutTarget::ShowClick | ShortcutTarget::Spotlight
+                ShortcutTarget::Board
+                    | ShortcutTarget::ShowClick
+                    | ShortcutTarget::Spotlight
+                    | ShortcutTarget::Loupe
             ) {
                 Key::SetupBoardHint
             } else {

@@ -9,9 +9,9 @@ use shotoshot_core::{
     Point, Rect,
     pointer::{
         Button as MouseButton, ClickSound, ClickStyle, Effects, Follow, HALO_DIAMETER_RANGE,
-        HALO_OPACITY_RANGE, HALO_SOFTNESS_RANGE, HALO_THICKNESS_RANGE, HaloShape, PULSE_MS,
-        PointerSettings, SPOTLIGHT_DIM_RANGE, SPOTLIGHT_SIZE_RANGE, SpotlightShape, TrailLength,
-        TrailStyle, Volume,
+        HALO_OPACITY_RANGE, HALO_SOFTNESS_RANGE, HALO_THICKNESS_RANGE, HaloShape, LOUPE_SIZES,
+        LOUPE_ZOOMS, PULSE_MS, PointerSettings, SPOTLIGHT_DIM_RANGE, SPOTLIGHT_SIZE_RANGE,
+        SpotlightShape, TrailLength, TrailStyle, Volume,
     },
 };
 use shotoshot_text::{Key, Language, tr_in};
@@ -67,6 +67,11 @@ pub const COLORS: [[u8; 3]; 8] = [
     [255, 255, 255],
 ];
 
+/// Where `value` is in `all`, the first when it is not there.
+fn position(all: &[u32], value: u32) -> usize {
+    all.iter().position(|item| *item == value).unwrap_or(0)
+}
+
 /// One setting of the window.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Field {
@@ -91,6 +96,11 @@ pub enum Field {
     SpotlightDim,
     SpotlightMoving,
     SpotlightShortcut,
+    LoupeOn,
+    LoupeZoom,
+    LoupeSize,
+    LoupeShortcut,
+    LoupeHold,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Control {
@@ -118,11 +128,21 @@ const COLUMNS: [&[(Key, &[Field])]; 2] = [
             ],
         ),
         (
-            Key::PointerSectionTrail,
-            &[Field::Trail, Field::TrailLength],
+            Key::PointerSectionLoupe,
+            &[
+                Field::LoupeOn,
+                Field::LoupeZoom,
+                Field::LoupeSize,
+                Field::LoupeShortcut,
+                Field::LoupeHold,
+            ],
         ),
     ],
     &[
+        (
+            Key::PointerSectionTrail,
+            &[Field::Trail, Field::TrailLength],
+        ),
         (
             Key::PointerSectionClicks,
             &[
@@ -147,7 +167,7 @@ const COLUMNS: [&[(Key, &[Field])]; 2] = [
     ],
 ];
 /// Every field in focus order: down the first column, then the second.
-pub const FIELDS: [Field; 21] = [
+pub const FIELDS: [Field; 26] = [
     Field::HaloOn,
     Field::HaloShape,
     Field::HaloColor,
@@ -156,6 +176,11 @@ pub const FIELDS: [Field; 21] = [
     Field::HaloSoftness,
     Field::HaloThickness,
     Field::Movement,
+    Field::LoupeOn,
+    Field::LoupeZoom,
+    Field::LoupeSize,
+    Field::LoupeShortcut,
+    Field::LoupeHold,
     Field::Trail,
     Field::TrailLength,
     Field::Click,
@@ -180,7 +205,9 @@ impl Field {
             | Self::Click
             | Self::Sound
             | Self::Volume
-            | Self::Spotlight => Control::Choice,
+            | Self::Spotlight
+            | Self::LoupeZoom
+            | Self::LoupeSize => Control::Choice,
             Self::HaloSize
             | Self::HaloOpacity
             | Self::HaloSoftness
@@ -188,8 +215,12 @@ impl Field {
             | Self::SpotlightSize
             | Self::SpotlightDim => Control::Slider,
             Self::HaloColor | Self::LeftColor | Self::RightColor => Control::Colors,
-            Self::HaloOn | Self::SpotlightMoving => Control::Switch,
-            Self::ClickShortcut | Self::SpotlightShortcut => Control::Shortcut,
+            Self::HaloOn | Self::SpotlightMoving | Self::LoupeOn | Self::LoupeHold => {
+                Control::Switch
+            }
+            Self::ClickShortcut | Self::SpotlightShortcut | Self::LoupeShortcut => {
+                Control::Shortcut
+            }
         }
     }
     fn label(self) -> Key {
@@ -197,7 +228,7 @@ impl Field {
             Self::HaloOn => Key::PointerShowHalo,
             Self::HaloShape | Self::Spotlight => Key::PointerShape,
             Self::HaloColor => Key::PointerColor,
-            Self::HaloSize | Self::SpotlightSize => Key::PointerSize,
+            Self::HaloSize | Self::SpotlightSize | Self::LoupeSize => Key::PointerSize,
             Self::HaloOpacity => Key::PointerOpacity,
             Self::HaloSoftness => Key::PointerSoftness,
             Self::HaloThickness => Key::PointerThickness,
@@ -212,7 +243,10 @@ impl Field {
             Self::ClickShortcut => Key::PointerShowClick,
             Self::SpotlightDim => Key::PointerDarkness,
             Self::SpotlightMoving => Key::PointerHideMoving,
-            Self::SpotlightShortcut => Key::PointerHold,
+            Self::SpotlightShortcut | Self::LoupeHold => Key::PointerHold,
+            Self::LoupeOn => Key::PointerShowLoupe,
+            Self::LoupeZoom => Key::PointerZoom,
+            Self::LoupeShortcut => Key::PointerShortcut,
         }
     }
     /// The names of a choice's values, in the order of their enum.
@@ -251,6 +285,8 @@ impl Field {
                 Key::PointerHorizontal,
                 Key::PointerVertical,
             ],
+            Self::LoupeZoom => &[Key::PointerZoom2, Key::PointerZoom3, Key::PointerZoom4],
+            Self::LoupeSize => &[Key::PointerSmall, Key::PointerMediumSize, Key::PointerLarge],
             _ => &[],
         }
     }
@@ -266,11 +302,12 @@ impl Field {
             _ => ((0, 0), 1),
         }
     }
-    /// Which of the two shortcuts a shortcut row edits.
+    /// Which of the three shortcuts a shortcut row edits.
     pub fn shortcut_index(self) -> Option<usize> {
         match self {
             Self::ClickShortcut => Some(0),
             Self::SpotlightShortcut => Some(1),
+            Self::LoupeShortcut => Some(2),
             _ => None,
         }
     }
@@ -305,7 +342,7 @@ pub enum Action {
         save: bool,
         sound: bool,
     },
-    /// Record a shortcut for row 0 (show a click) or 1 (spotlight).
+    /// Record a shortcut for row 0 (show a click), 1 (spotlight) or 2 (loupe).
     EditShortcut(usize),
     Close,
 }
@@ -351,14 +388,17 @@ pub struct Panel {
     /// Whether the halo is on screen. Any other change made here turns it on: what is set
     /// here is meant to be seen. Only its own switch turns it off.
     pub halo_on: bool,
+    /// Whether the loupe is on screen: a change of the loupe's rows turns it on, and only its
+    /// own switch turns it off. It goes on or off apart from the halo.
+    pub loupe_on: bool,
     /// What the window started from, for "Undo changes".
     opened: (PointerSettings, [u8; 3]),
     pub focus: Focus,
     /// The slider being dragged, and where its knob is, from 0 to 1: the knob follows the
     /// pointer exactly even where the value moves by whole steps.
     drag: Option<(Field, f64)>,
-    /// The two shortcuts as the interface writes them, empty when not set.
-    pub shortcuts: [String; 2],
+    /// The three shortcuts as the interface writes them, empty when not set.
+    pub shortcuts: [String; 3],
     pub language: Language,
     pub layout: PanelLayout,
     preview: Effects,
@@ -378,6 +418,7 @@ impl Panel {
             settings,
             halo_color,
             halo_on,
+            loupe_on: false,
             focus: Focus::Field(Field::HaloOn),
             drag: None,
             shortcuts: Default::default(),
@@ -694,6 +735,7 @@ impl Panel {
             | Field::SpotlightDim
             | Field::SpotlightMoving
             | Field::SpotlightShortcut => s.spotlight != SpotlightShape::Off,
+            Field::LoupeHold => s.loupe_shortcut.is_some(),
             _ => true,
         }
     }
@@ -974,6 +1016,8 @@ impl Panel {
             Field::Sound => s.sound.index(),
             Field::Volume => s.volume.index(),
             Field::Spotlight => s.spotlight.index(),
+            Field::LoupeZoom => position(&LOUPE_ZOOMS, s.loupe_zoom),
+            Field::LoupeSize => position(&LOUPE_SIZES, s.loupe_size),
             _ => 0,
         }
     }
@@ -991,6 +1035,8 @@ impl Panel {
             Field::Sound => s.sound = pick(ClickSound::ALL, index),
             Field::Volume => s.volume = pick(Volume::ALL, index),
             Field::Spotlight => s.spotlight = pick(SpotlightShape::ALL, index),
+            Field::LoupeZoom => s.loupe_zoom = pick(&LOUPE_ZOOMS, index),
+            Field::LoupeSize => s.loupe_size = pick(&LOUPE_SIZES, index),
             _ => {}
         }
     }
@@ -1044,19 +1090,30 @@ impl Panel {
     fn switch(&self, field: Field) -> bool {
         match field {
             Field::HaloOn => self.halo_on,
+            Field::LoupeOn => self.loupe_on,
+            Field::LoupeHold => self.settings.loupe_hold,
             _ => self.settings.spotlight_hidden_moving,
         }
     }
     fn toggle(&mut self, field: Field) {
         match field {
             Field::HaloOn => self.halo_on ^= true,
+            Field::LoupeOn => self.loupe_on ^= true,
+            Field::LoupeHold => self.settings.loupe_hold ^= true,
             _ => self.settings.spotlight_hidden_moving ^= true,
         }
     }
-    /// A change made anywhere but on the halo's own switch turns the halo on.
+    /// A change of the loupe's rows turns the loupe on, any other but on the two switches
+    /// turns the halo on: what is set here is meant to be seen.
     fn shown(&mut self, action: Action) -> Action {
-        if matches!(action, Action::Changed { .. }) && self.focus != Focus::Field(Field::HaloOn) {
-            self.halo_on = true;
+        if matches!(action, Action::Changed { .. }) {
+            match self.focus {
+                Focus::Field(Field::HaloOn | Field::LoupeOn) => {}
+                Focus::Field(Field::LoupeZoom | Field::LoupeSize | Field::LoupeHold) => {
+                    self.loupe_on = true;
+                }
+                _ => self.halo_on = true,
+            }
         }
         action
     }
@@ -1285,10 +1342,10 @@ impl Panel {
         self.shown(action)
     }
     fn clear_shortcut(&mut self, index: usize) -> Action {
-        if index == 0 {
-            self.settings.click_shortcut = None;
-        } else {
-            self.settings.spotlight_shortcut = None;
+        match index {
+            0 => self.settings.click_shortcut = None,
+            1 => self.settings.spotlight_shortcut = None,
+            _ => self.settings.loupe_shortcut = None,
         }
         self.shortcuts[index].clear();
         Action::Changed {
@@ -1407,7 +1464,7 @@ mod tests {
     fn every_text_has_room_and_nothing_overlaps() {
         for language in Language::ALL {
             let mut panel = Panel::new(PointerSettings::default(), [255, 211, 64], true, language);
-            panel.shortcuts = ["Ctrl+Alt+Shift+F12".into(), String::new()];
+            panel.shortcuts = ["Ctrl+Alt+Shift+F12".into(), String::new(), String::new()];
             panel.fit(measure).unwrap();
             let zones = &panel.layout;
             let window = area(0., 0., zones.size.x, zones.size.y);
@@ -1550,7 +1607,7 @@ mod tests {
             panel.key(KeyInput::Next);
         }
         assert_eq!(panel.focus, Focus::Field(Field::HaloOn), "a full lap");
-        assert_eq!(seen.len(), 24);
+        assert_eq!(seen.len(), 29);
         assert!(seen.contains(&Focus::Button(Button::Close)));
         panel.key(KeyInput::Next);
         panel.key(KeyInput::Right);

@@ -114,12 +114,13 @@ try {
         }
         $busy = & $waitForCalm
         $before = (& $userState) -join "`n"
-        foreach ($argument in @('--render-demo', '--diagnostic', '--warm-diagnostic', '--presentation-diagnostic', '--document-diagnostic', '--board-diagnostic')) {
-            # Only --diagnostic holds a time budget. Its verdict counts on a run the machine stayed
-            # calm through: other programs often start within its few seconds (2026-10-21: a test
-            # of another project at 80 % of the CPU took the first frame from 113 to 194 ms), so a
-            # disturbed failure is run again once they settle, within the same 15 minutes.
-            $timed = $argument -eq '--diagnostic'
+        foreach ($argument in @('--render-demo', '--diagnostic', '--warm-diagnostic', '--presentation-diagnostic', '--loupe-diagnostic', '--document-diagnostic', '--board-diagnostic')) {
+            # --diagnostic and --loupe-diagnostic hold a time budget. Their verdict counts on a run
+            # the machine stayed calm through: other programs often start within their few seconds
+            # (2026-10-21: a test of another project at 80 % of the CPU took the first frame from
+            # 113 to 194 ms), so a disturbed failure is run again once they settle, within the same
+            # 15 minutes. The loupe's figures land in target/loupe-diagnostics.txt.
+            $timed = $argument -in @('--diagnostic', '--loupe-diagnostic')
             do {
                 $disturbed = $null
                 $probe = Start-Process -FilePath (Join-Path $PSScriptRoot 'target/release/shotoshot.exe') -ArgumentList $argument -WindowStyle Hidden -PassThru

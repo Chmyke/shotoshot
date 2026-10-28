@@ -4,12 +4,14 @@
 //! each event and repaints only on clicks. Effects that change every frame (trail, click
 //! waves, smooth follow, spotlight) paint from the timer, which runs only while they move.
 use super::*;
-use shotoshot_core::pointer::{Button, ClickStyle, Follow, SpotlightShape, layer_radius};
+use shotoshot_core::pointer::{
+    Button, ClickStyle, Follow, PointerSettings, SpotlightShape, layer_radius,
+};
 
 /// Shortest time between two frames painted from pointer events.
 const FRAME_MS: u64 = 12;
-/// Hotkey ids after the four of `Bindings`: show a click, hold the spotlight.
-pub(super) const POINTER_HOTKEYS: [i32; 2] = [HOTKEY_BASE + 4, HOTKEY_BASE + 5];
+/// Hotkey ids after the four of `Bindings`: show a click, hold the spotlight, the loupe.
+pub(super) const POINTER_HOTKEYS: [i32; 3] = [HOTKEY_BASE + 4, HOTKEY_BASE + 5, HOTKEY_BASE + 6];
 
 /// The screen holding `at`, in device pixels.
 fn monitor_rect(at: POINT) -> Result<RECT> {
@@ -41,9 +43,62 @@ fn point(p: POINT) -> Point {
 }
 
 impl Presentation {
+    /// Whether the loupe is on screen: switched on, or its shortcut held in its hold mode.
+    pub(super) fn loupe_shown(&self) -> bool {
+        self.enabled.loupe || self.loupe_held
+    }
+    /// The settings the pointer layer is drawn with now.
+    pub(super) fn pointer_settings(&self) -> PointerSettings {
+        self.preferences
+            .pointer
+            .drawn(self.enabled.halo, self.loupe_shown())
+    }
+    /// Opens, moves or closes the loupe window to match the settings, just under the halo layer
+    /// (which draws no halo shape meanwhile: the loupe stands alone, with no ring).
+    pub(super) fn sync_loupe(&mut self) -> Result<()> {
+        if !self.loupe_shown() {
+            self.loupe = None;
+            return Ok(());
+        }
+        if self.loupe.is_none() {
+            self.loupe = Some(loupe::Loupe::new(self.owner)?);
+        }
+        let at = cursor()?;
+        let settings = &self.preferences.pointer;
+        let scale = monitor_scale(at);
+        let diameter = (settings.loupe_size as f64 * scale).round() as i32;
+        let zoom = settings.loupe_zoom as i32;
+        let halo = self.halo.as_ref().map(Layer::hwnd);
+        // The halo's trail and the input diagram stay as they are: only the screen under them
+        // grows.
+        // The OBS mirror is parked off the desktop, never under the loupe.
+        let excluded: Vec<HWND> = [&self.halo, &self.keys, &self.lock]
+            .into_iter()
+            .flatten()
+            .map(Layer::hwnd)
+            .collect();
+        if let Some(loupe) = &mut self.loupe {
+            loupe.update(at, diameter, zoom, halo, &excluded)?;
+        }
+        Ok(())
+    }
+    /// A window moved, opened or closed while the loupe is on screen.
+    pub(super) fn loupe_windows_changed(&mut self) -> Result<()> {
+        loupe::changes_seen();
+        if self.loupe.is_some() {
+            self.sync_loupe()?;
+        }
+        Ok(())
+    }
+    /// A window the loupe shows by capture has new frames.
+    pub(super) fn loupe_frames(&mut self) {
+        if let Some(loupe) = &mut self.loupe {
+            loupe.frames();
+        }
+    }
     /// Whether the halo layer is painted from frames rather than from clicks.
     pub(super) fn frame_driven(&self) -> bool {
-        let settings = &self.preferences.pointer;
+        let settings = &self.pointer_settings();
         settings.draws_around()
             || settings.follow == Follow::Smooth
             || settings.spotlight != SpotlightShape::Off
@@ -51,7 +106,7 @@ impl Presentation {
     /// Side of the square halo layer at `at`, in device pixels. Rounded up to 32 pixels: a
     /// size slider dragged in the pointer window rebuilds the layer only now and then.
     pub(super) fn halo_size(&self, at: POINT) -> i32 {
-        let side = 2. * layer_radius(&self.preferences.pointer) * monitor_scale(at);
+        let side = 2. * layer_radius(&self.pointer_settings()) * monitor_scale(at);
         (side / 32.).ceil() as i32 * 32
     }
     /// A mouse event while the halo is on: `flags` are the raw button flags.
@@ -59,7 +114,7 @@ impl Presentation {
         let now = self.now();
         let at = cursor()?;
         let scale = monitor_scale(at);
-        let settings = self.preferences.pointer.clone();
+        let settings = self.pointer_settings();
         self.effects.moved(point(at), now, scale, &settings);
         for (index, button) in [Button::Left, Button::Right, Button::Middle]
             .into_iter()
@@ -86,12 +141,12 @@ impl Presentation {
     }
     /// One frame of the frame-driven effects: place the layer, paint it, light the spotlight.
     pub(super) fn pointer_frame(&mut self) -> Result<()> {
-        if !self.enabled.halo {
+        if !self.enabled.pointer() {
             return Ok(());
         }
         let now = self.now();
         let at = cursor()?;
-        let settings = self.preferences.pointer.clone();
+        let settings = self.pointer_settings();
         self.effects.step(now, &settings);
         // One surface over the pointer's screen that never moves: only the area the effects
         // touch is redrawn and sent. A small window that followed the pointer would show, for a
@@ -145,6 +200,7 @@ impl Presentation {
             drawn.and(halo.end_region(dirty))?;
         }
         self.last_bounds = local;
+        self.sync_loupe()?;
         if settings.spotlight == SpotlightShape::Off {
             self.spotlight = None;
         } else {
@@ -164,25 +220,63 @@ impl Presentation {
     }
     /// Whether the pointer effects need the timer now.
     pub(super) fn pointer_animating(&self, now: u64) -> bool {
-        self.enabled.halo
+        self.enabled.pointer()
             && (self.pointer_dirty
                 || self.spotlight_held
-                || self.effects.animating(now, &self.preferences.pointer))
+                || self.loupe_held
+                || self.effects.animating(now, &self.pointer_settings()))
     }
-    /// A pointer shortcut: 0 shows a click at the pointer, 1 holds the spotlight.
+    /// A pointer shortcut: 0 shows a click at the pointer, 1 holds the spotlight, 2 switches
+    /// the loupe on or off (or shows it while held).
     pub(super) fn pointer_hotkey(&mut self, index: usize) -> Result<()> {
-        if !self.enabled.halo {
+        if !self.enabled.pointer() {
             return Ok(());
         }
         let now = self.now();
         let at = cursor()?;
-        if index == 0 {
-            self.effects.clicked(point(at), Button::Left, now);
-        } else {
-            self.spotlight_held = true;
+        match index {
+            0 if self.enabled.halo => self.effects.clicked(point(at), Button::Left, now),
+            1 if self.enabled.halo => self.spotlight_held = true,
+            2 if self.preferences.pointer.loupe_hold => {
+                self.loupe_held = true;
+                return self.loupe_switched();
+            }
+            2 => {
+                let mut next = self.enabled;
+                next.loupe ^= true;
+                return self.set_enabled(next);
+            }
+            _ => return Ok(()),
         }
         self.pointer_dirty = true;
         self.sync_timer()
+    }
+    /// The loupe appeared or left: the halo layer takes its size and the loupe its window.
+    fn loupe_switched(&mut self) -> Result<()> {
+        self.move_halo()?;
+        if self.frame_driven() {
+            self.pointer_frame()?;
+        } else if let Some(halo) = &self.halo {
+            self.paint(halo.hwnd())?;
+        }
+        self.sync_loupe()?;
+        self.sync_timer()
+    }
+    /// Ends a held loupe once its key is up.
+    pub(super) fn check_loupe_key(&mut self) -> Result<()> {
+        if !self.loupe_held {
+            return Ok(());
+        }
+        let held = self
+            .preferences
+            .pointer
+            .loupe_shortcut
+            .is_some_and(|shortcut| unsafe { GetAsyncKeyState(shortcut.key as i32) } < 0);
+        if held {
+            return Ok(());
+        }
+        self.loupe_held = false;
+        self.loupe_switched()
     }
     /// Ends a held spotlight once its key is up: a registered shortcut reports only presses.
     pub(super) fn check_spotlight_key(&mut self) {
@@ -199,17 +293,13 @@ impl Presentation {
             self.pointer_dirty = true;
         }
     }
-    /// Registers the pointer shortcuts the settings name, while the halo is on.
+    /// Registers the pointer shortcuts the settings name, while the halo or the loupe is on.
     pub(super) fn sync_pointer_keys(&mut self) {
         self.release_pointer_keys();
-        if !self.enabled.halo {
+        if !self.enabled.pointer() {
             return;
         }
-        let shortcuts = [
-            self.preferences.pointer.click_shortcut,
-            self.preferences.pointer.spotlight_shortcut,
-        ];
-        for (index, shortcut) in shortcuts.into_iter().enumerate() {
+        for (index, shortcut) in self.preferences.pointer.shortcuts().into_iter().enumerate() {
             let Some(shortcut) = shortcut else {
                 continue;
             };
@@ -234,7 +324,8 @@ impl Presentation {
                 *registered = false;
             }
         }
-        self.pointer_conflicts = [false; 2];
+        self.pointer_conflicts = [false; 3];
         self.spotlight_held = false;
+        self.loupe_held = false;
     }
 }

@@ -239,7 +239,7 @@ impl Broadcast {
     }
 }
 
-fn device() -> Result<(ID3D11Device, ID3D11DeviceContext)> {
+pub(super) fn device() -> Result<(ID3D11Device, ID3D11DeviceContext)> {
     // WARP keeps the mirror alive on machines without a usable GPU driver.
     let mut failure = Error::from_hresult(E_FAIL);
     for driver in [D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP] {

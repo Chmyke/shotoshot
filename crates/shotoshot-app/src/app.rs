@@ -347,8 +347,7 @@ impl App {
                         ))
                     } else if let Some(index) = target.pointer_index() {
                         let pointer = &self.settings.presentation.pointer;
-                        [pointer.click_shortcut, pointer.spotlight_shortcut][index]
-                            .map(|s| (s.modifiers, s.key))
+                        pointer.shortcuts()[index].map(|s| (s.modifiers, s.key))
                     } else {
                         (self.settings.key != 0)
                             .then_some((self.settings.modifiers, self.settings.key))

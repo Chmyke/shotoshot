@@ -96,9 +96,10 @@ impl Resident {
 #[test]
 fn display_change_preserves_each_feature_choice_and_preferences() {
     let resident = Resident::new();
-    for mask in 0..16 {
+    for mask in 0..32 {
         let enabled = Enabled {
             halo: mask & 1 != 0,
+            loupe: mask & 16 != 0,
             keys: mask & 2 != 0,
             shapes: mask & 4 != 0,
             mouse: mask & 8 != 0,
@@ -126,6 +127,7 @@ fn display_change_during_capture_preserves_resume_but_explicit_stop_cancels_it()
     let resident = Resident::new();
     let enabled = Enabled {
         halo: true,
+        loupe: true,
         keys: true,
         shapes: false,
         mouse: true,

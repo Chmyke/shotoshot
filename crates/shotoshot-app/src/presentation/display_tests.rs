@@ -83,6 +83,7 @@ fn display_change_rebuilds_layers_and_returns_keyboard_to_a_work_area() {
     let mut p = state.borrow_mut();
     let enabled = Enabled {
         halo: true,
+        loupe: false,
         keys: true,
         shapes: true,
         mouse: false,

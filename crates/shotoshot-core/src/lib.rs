@@ -5,6 +5,7 @@ mod document;
 mod editor;
 mod geometry;
 mod label;
+pub mod loupe;
 mod paint;
 mod paths;
 pub mod pointer;

@@ -128,6 +128,7 @@ impl App {
             duration_ms: self.settings.presentation.duration_ms,
             size: self.settings.presentation.input_scale,
             halo: enabled.halo,
+            loupe: enabled.loupe,
             temporary_shapes: enabled.shapes,
             keys: enabled.keys,
             mouse: enabled.mouse,

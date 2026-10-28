@@ -659,7 +659,7 @@ mod tests {
         for row in ROOT {
             let expected = match row.id {
                 // Switches: the menu stays open to set several in a row.
-                101..=104 | 4 | 5 | 7 | 9 => Effect::Apply(row.id),
+                101..=104 | 107 | 4 | 5 | 7 | 9 => Effect::Apply(row.id),
                 // They open a submenu, which stays open on its choices too.
                 120 | 140 | 150 => Effect::Open,
                 // Each opens or runs something else.
@@ -815,8 +815,8 @@ mod tests {
         assert_eq!(popup.model.borrow().selected[0], Some(index(101)));
         key(VK_SPACE);
         assert_eq!(posted(owner.0), [(COMMAND, 101, 1)]);
-        // Past the pointer effects and the move, into the size submenu and its middle choice.
-        for _ in 0..5 {
+        // Past the magnifier, the pointer effects and the move, into the size submenu.
+        for _ in 0..6 {
             key(VK_DOWN);
         }
         assert_eq!(popup.model.borrow().selected[0], Some(index(140)));

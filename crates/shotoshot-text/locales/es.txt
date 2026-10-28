@@ -86,6 +86,7 @@ menu.clear_board = Vaciar el Board
 menu.presentation = Presentación
 menu.pointer_halo = Halo del puntero
 menu.pointer_effects = Efectos del puntero
+menu.magnifier = Lupa
 menu.keyboard = Teclado
 menu.mouse = Ratón
 menu.move_input = Mover teclado y ratón
@@ -117,6 +118,7 @@ setup.title_ellipse = Atajo de la elipse
 setup.title_board = Atajo del Board
 setup.title_show_click = Atajo de mostrar clic
 setup.title_spotlight = Atajo del foco
+setup.title_loupe = Atajo de la lupa
 setup.press = Pulsa tu atajo…
 setup.waiting = …
 setup.choose = Elige un atajo
@@ -230,6 +232,7 @@ pointer.show_halo = Mostrar el halo
 pointer.section_trail = Estela
 pointer.section_clicks = Clics
 pointer.section_spotlight = Foco
+pointer.section_loupe = Lupa
 pointer.shape = Forma
 pointer.color == Color
 pointer.size = Tamaño
@@ -248,6 +251,9 @@ pointer.show_click = Mostrar clic
 pointer.darkness = Oscurecimiento
 pointer.hide_moving = Ocultar al mover
 pointer.hold = Mostrar al mantener
+pointer.zoom = Aumento
+pointer.show_loupe = Mostrar la lupa
+pointer.shortcut = Atajo
 pointer.off = Desactivado
 pointer.hidden = Oculto
 pointer.disc = Disco
@@ -273,6 +279,12 @@ pointer.high = Alto
 pointer.circle = Círculo
 pointer.horizontal = Banda horizontal
 pointer.vertical = Banda vertical
+pointer.zoom_2 == 2×
+pointer.zoom_3 == 3×
+pointer.zoom_4 == 4×
+pointer.small = Pequeña
+pointer.medium_size = Mediana
+pointer.large = Grande
 pointer.no_shortcut = Ninguno
 pointer.reset = Restaurar predeterminados
 pointer.undo = Deshacer cambios

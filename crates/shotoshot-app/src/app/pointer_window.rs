@@ -129,16 +129,17 @@ impl PointerWindow {
 }
 
 impl App {
-    /// The two pointer shortcuts as the window writes them, "(in use)" when another program
+    /// The three pointer shortcuts as the window writes them, "(in use)" when another program
     /// holds one.
-    fn pointer_shortcut_labels(&self) -> [String; 2] {
+    fn pointer_shortcut_labels(&self) -> [String; 3] {
         let pointer = &self.settings.presentation.pointer;
         let conflicts = self
             .presentation
             .as_ref()
-            .map_or([false; 2], |p| p.borrow().pointer_conflicts);
+            .map_or([false; 3], |p| p.borrow().pointer_conflicts);
         let language = shotoshot_text::language();
-        [pointer.click_shortcut, pointer.spotlight_shortcut]
+        pointer
+            .shortcuts()
             .into_iter()
             .zip(conflicts)
             .map(|(shortcut, conflict)| {
@@ -174,6 +175,7 @@ impl App {
             self.halo_on(),
             language,
         );
+        panel.loupe_on = self.enabled().loupe;
         panel.shortcuts = self.pointer_shortcut_labels();
         let title = format!("{} - Shotoshot", tr_in(language, Key::PointerTitle));
         unsafe {
@@ -237,33 +239,42 @@ impl App {
             // Dropping the window destroys it; the painter goes with it.
         }
     }
-    /// Whether the halo is on screen now.
-    fn halo_on(&self) -> bool {
+    /// What the presentation shows now.
+    fn enabled(&self) -> crate::presentation::Enabled {
         self.presentation
             .as_ref()
-            .is_some_and(|presentation| presentation.borrow().enabled.halo)
+            .map(|presentation| presentation.borrow().enabled)
+            .unwrap_or_default()
     }
-    /// Turns the halo on or off as the open window shows it, and the menu with it.
+    /// Whether the halo is on screen now.
+    fn halo_on(&self) -> bool {
+        self.enabled().halo
+    }
+    /// Turns the halo and the loupe on or off as the open window shows them, and the menu with
+    /// them.
     fn apply_halo(&mut self) -> Result<()> {
-        let Some(wanted) = self
+        let Some((halo, loupe)) = self
             .pointer_window
             .as_ref()
-            .map(|window| window.panel.halo_on)
+            .map(|window| (window.panel.halo_on, window.panel.loupe_on))
         else {
             return Ok(());
         };
-        if wanted != self.halo_on() {
+        let now = self.enabled();
+        if (halo, loupe) != (now.halo, now.loupe) {
             if self.worker_busy() {
-                // The menu refuses the same switch now; the window shows what stays.
+                // The menu refuses the same switches now; the window shows what stays.
                 if let Some(window) = &mut self.pointer_window {
-                    window.panel.halo_on = !wanted;
+                    window.panel.halo_on = now.halo;
+                    window.panel.loupe_on = now.loupe;
                 }
                 return Ok(());
             }
             if let Some(presentation) = &self.presentation {
                 let mut presentation = presentation.borrow_mut();
                 let mut next = presentation.enabled;
-                next.halo = wanted;
+                next.halo = halo;
+                next.loupe = loupe;
                 presentation.set_enabled(next)?;
             }
         }
@@ -272,13 +283,15 @@ impl App {
         }
         Ok(())
     }
-    /// Shows in the open window whether the halo is on, after the menu switched it.
+    /// Shows in the open window whether the halo and the loupe are on, after the menu or a
+    /// shortcut switched them.
     pub(super) fn refresh_pointer_halo(&mut self) {
-        let on = self.halo_on();
+        let now = self.enabled();
         if let Some(window) = &mut self.pointer_window
-            && window.panel.halo_on != on
+            && (window.panel.halo_on, window.panel.loupe_on) != (now.halo, now.loupe)
         {
-            window.panel.halo_on = on;
+            window.panel.halo_on = now.halo;
+            window.panel.loupe_on = now.loupe;
             invalidate(window.hwnd());
         }
     }
@@ -311,6 +324,8 @@ impl App {
                 self.settings.presentation.pointer.click_shortcut;
             window.panel.settings.spotlight_shortcut =
                 self.settings.presentation.pointer.spotlight_shortcut;
+            window.panel.settings.loupe_shortcut =
+                self.settings.presentation.pointer.loupe_shortcut;
             if window.panel.shortcuts != labels {
                 window.panel.shortcuts = labels;
                 // A longer shortcut may need a wider field.
@@ -320,7 +335,8 @@ impl App {
         }
     }
     /// Saves the shortcut recorded for pointer row `index` (0 shows a click, 1 holds the
-    /// spotlight). It needs Ctrl or Alt and must not be another Shotoshot shortcut.
+    /// spotlight, 2 shows the loupe). It needs Ctrl or Alt and must not be another Shotoshot
+    /// shortcut.
     pub(super) fn save_pointer_shortcut(
         &mut self,
         hwnd: HWND,
@@ -337,11 +353,9 @@ impl App {
             return Ok(());
         }
         let pointer = &self.settings.presentation.pointer;
-        let other = if index == 0 {
-            pointer.spotlight_shortcut
-        } else {
-            pointer.click_shortcut
-        };
+        let others = pointer.shortcuts();
+        let taken =
+            (0..others.len()).any(|other| other != index && others[other] == Some(shortcut));
         if (self.settings.modifiers == mods && self.settings.key == key)
             || self.settings.instant_shortcut == shortcut
             || self.settings.board_shortcut == shortcut
@@ -350,7 +364,7 @@ impl App {
                 .presentation
                 .shape_shortcuts
                 .contains(&shortcut)
-            || other == Some(shortcut)
+            || taken
             || (mods == 3 && key == 27)
         {
             self.setup_ui.error = self.setup_ui.text(Key::SetupUsedByShotoshot);
@@ -362,11 +376,7 @@ impl App {
         }
         self.apply_halo()?;
         let mut next = self.settings.clone();
-        if index == 0 {
-            next.presentation.pointer.click_shortcut = Some(shortcut);
-        } else {
-            next.presentation.pointer.spotlight_shortcut = Some(shortcut);
-        }
+        *next.presentation.pointer.shortcut_mut(index) = Some(shortcut);
         if self.persist_preferences {
             next.save().map_err(crate::settings::unsaved)?;
         }
@@ -401,10 +411,10 @@ impl App {
                 }
             }
             Action::EditShortcut(index) => {
-                let target = if index == 0 {
-                    setup::ShortcutTarget::ShowClick
-                } else {
-                    setup::ShortcutTarget::Spotlight
+                let target = match index {
+                    0 => setup::ShortcutTarget::ShowClick,
+                    1 => setup::ShortcutTarget::Spotlight,
+                    _ => setup::ShortcutTarget::Loupe,
                 };
                 self.show_shortcut_setup(owner, target)?;
             }
@@ -451,6 +461,8 @@ impl App {
                 if std::mem::take(&mut window.pending) {
                     self.apply_pointer(false)?;
                 }
+                // The loupe's shortcut switches it from anywhere: the window follows.
+                self.refresh_pointer_halo();
                 return Ok(Some(LRESULT(0)));
             }
             WM_LBUTTONDOWN => {
@@ -624,7 +636,11 @@ mod tests {
         for language in Language::ALL {
             let mut panel = Panel::new(PointerSettings::default(), [255, 211, 64], true, language);
             // The longest shortcut the field may show.
-            panel.shortcuts = [shortcut_text(15, 0x7b), shortcut_text(15, 0x2e)];
+            panel.shortcuts = [
+                shortcut_text(15, 0x7b),
+                shortcut_text(15, 0x2e),
+                shortcut_text(15, 0x7b),
+            ];
             let measure = |text: &str, size: f64| {
                 renderer
                     .measure_text_in(text, size as f32, language)

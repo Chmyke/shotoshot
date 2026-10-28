@@ -31,6 +31,8 @@ pub(super) enum Icon {
     Capture,
     Instant,
     Halo,
+    /// The live loupe: a lens and its handle.
+    Loupe,
     Keyboard,
     Mouse,
     Size,
@@ -97,6 +99,7 @@ const ROOT: &[Row] = &[
     ),
     title(90, Key::MenuPresentation),
     row(101, Key::MenuPointerHalo, Icon::Halo, Kind::Toggle),
+    row(107, Key::MenuMagnifier, Icon::Loupe, Kind::Toggle),
     row(105, Key::MenuPointerEffects, Icon::Halo, Kind::Command),
     row(103, Key::MenuKeyboard, Icon::Keyboard, Kind::Toggle),
     row(104, Key::MenuMouse, Icon::Mouse, Kind::Toggle),
@@ -238,6 +241,7 @@ pub(super) struct Values {
     /// Size of the input diagram, in percent.
     pub size: u32,
     pub halo: bool,
+    pub loupe: bool,
     pub temporary_shapes: bool,
     pub keys: bool,
     pub mouse: bool,
@@ -256,6 +260,7 @@ impl Values {
         }
         match id {
             101 => self.halo,
+            107 => self.loupe,
             102 => self.temporary_shapes,
             103 => self.keys,
             104 => self.mouse,
@@ -477,6 +482,10 @@ pub(super) fn draw_icon<C: Canvas>(
         Icon::Halo => {
             canvas.stroke_ellipse(at(10., 10.), radius(8.), ink, 1.6 * scale)?;
             canvas.fill_ellipse(at(10., 10.), radius(2.8), ink)?;
+        }
+        Icon::Loupe => {
+            canvas.stroke_ellipse(at(8.5, 8.5), radius(6.), ink, 1.6 * scale)?;
+            segments(canvas, origin, scale, rgb, &[(13., 13.), (18., 18.)])?;
         }
         Icon::Keyboard => {
             canvas.stroke_round_rect(
@@ -838,6 +847,7 @@ fn sample() -> Values {
         duration_ms: defaults.presentation.duration_ms,
         size: defaults.presentation.input_scale,
         halo: true,
+        loupe: false,
         temporary_shapes: true,
         keys: false,
         mouse: false,
@@ -1105,6 +1115,7 @@ mod tests {
                 "Clear board",
                 "Presentation",
                 "Pointer halo",
+                "Magnifier",
                 "Pointer effects",
                 "Keyboard",
                 "Mouse",

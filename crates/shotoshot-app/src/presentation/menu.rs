@@ -35,6 +35,7 @@ impl Presentation {
         let mut next = self.enabled;
         match command {
             101 => next.halo = !next.halo,
+            107 => next.loupe = !next.loupe,
             102 => next.shapes = !next.shapes,
             103 => next.keys = !next.keys,
             104 => next.mouse = !next.mouse,
@@ -67,7 +68,7 @@ mod tests {
             expected(|next| next.input_scale = 150)
         );
         // Switches, shortcut rows, submenu rows and ids past each list are not choices.
-        for command in [101, 103, 104, 106, 110, 120, 124, 131, 133, 140, 144] {
+        for command in [101, 103, 104, 106, 107, 110, 120, 124, 131, 133, 140, 144] {
             assert_eq!(preference(command, &current), None, "{command}");
         }
     }

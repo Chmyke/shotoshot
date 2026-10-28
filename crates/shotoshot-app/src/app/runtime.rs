@@ -35,6 +35,7 @@ pub fn reports_errors_on_stderr(mut args: impl Iterator<Item = String>) -> bool 
                     | "--prepared-editor"
                     | "--warm-diagnostic"
                     | "--presentation-diagnostic"
+                    | "--loupe-diagnostic"
                     | "--google-diagnostic"
                     | "--document-diagnostic"
                     | "--board-diagnostic"
@@ -147,6 +148,9 @@ pub fn run() -> Result<()> {
     }
     if std::env::args().any(|a| a == "--presentation-diagnostic") {
         return crate::presentation::probe::run();
+    }
+    if std::env::args().any(|a| a == "--loupe-diagnostic") {
+        return crate::presentation::loupe_probe::run();
     }
     if std::env::args().any(|a| a == "--editor-diagnostic") {
         return crate::diagnostics::editor_probe();

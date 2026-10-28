@@ -1426,7 +1426,7 @@ mod tests {
             assert_eq!(
                 settings.encode(),
                 format!(
-                    "shotoshot-settings-17\n3\n65\n1\n43,3a,2f,e9\n{live_capture}\n3000\nffd340\ned4f5c\n4\n1,65\n1,82\n1,67\n5\n28\n-\n1\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n1,48,100,2,0,0,1,0,ed4f5c,409cff,0,1,-,0,240,60,0,-,0,0\n"
+                    "shotoshot-settings-17\n3\n65\n1\n43,3a,2f,e9\n{live_capture}\n3000\nffd340\ned4f5c\n4\n1,65\n1,82\n1,67\n5\n28\n-\n1\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n1,48,100,2,0,0,1,0,ed4f5c,409cff,0,1,-,0,240,60,0,-,0,0,240,2,-,0\n"
                 )
             );
         }
@@ -1441,7 +1441,7 @@ mod tests {
             assert_eq!(
                 settings.encode(),
                 format!(
-                    "shotoshot-settings-17\n3\n65\n0\n43,3a,2f,e9\n1\n{duration}\n00aaff\nff0001\n4\n1,65\n1,82\n1,67\n5\n28\n-\n1\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n1,48,100,2,0,0,1,0,ed4f5c,409cff,0,1,-,0,240,60,0,-,0,0\n"
+                    "shotoshot-settings-17\n3\n65\n0\n43,3a,2f,e9\n1\n{duration}\n00aaff\nff0001\n4\n1,65\n1,82\n1,67\n5\n28\n-\n1\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n1,48,100,2,0,0,1,0,ed4f5c,409cff,0,1,-,0,240,60,0,-,0,0,240,2,-,0\n"
                 )
             );
         }

@@ -171,19 +171,20 @@ impl Bindings {
     }
     fn raw(&self, enabled: Enabled) -> Result<()> {
         // The diagram needs the mouse even without showing it: Raw Input ends its drag.
-        let devices =
-            [(2, enabled.halo || enabled.devices()), (6, enabled.keys)].map(|(usage, active)| {
-                RAWINPUTDEVICE {
-                    usUsagePage: 1,
-                    usUsage: usage,
-                    dwFlags: if active {
-                        RIDEV_INPUTSINK
-                    } else {
-                        RIDEV_REMOVE
-                    },
-                    hwndTarget: if active { self.owner } else { HWND::default() },
-                }
-            });
+        let devices = [
+            (2, enabled.pointer() || enabled.devices()),
+            (6, enabled.keys),
+        ]
+        .map(|(usage, active)| RAWINPUTDEVICE {
+            usUsagePage: 1,
+            usUsage: usage,
+            dwFlags: if active {
+                RIDEV_INPUTSINK
+            } else {
+                RIDEV_REMOVE
+            },
+            hwndTarget: if active { self.owner } else { HWND::default() },
+        });
         unsafe { RegisterRawInputDevices(&devices, std::mem::size_of::<RAWINPUTDEVICE>() as u32) }
     }
 }

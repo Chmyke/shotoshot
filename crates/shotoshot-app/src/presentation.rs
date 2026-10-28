@@ -13,6 +13,9 @@ mod display_tests;
 mod input;
 mod layer;
 mod layout;
+mod loupe;
+mod loupe_capture;
+pub(crate) mod loupe_probe;
 mod manipulation;
 pub(crate) mod menu;
 pub(crate) mod model;
@@ -56,6 +59,8 @@ const STATE_PROPERTY: PCWSTR = w!("Shotoshot.PresentationState");
 #[derive(Clone, Copy, Default, PartialEq)]
 pub(crate) struct Enabled {
     pub halo: bool,
+    /// The live loupe, apart from the halo: either may be on alone.
+    pub loupe: bool,
     pub shapes: bool,
     /// The keyboard of the input diagram.
     pub keys: bool,
@@ -64,7 +69,11 @@ pub(crate) struct Enabled {
 }
 impl Enabled {
     pub fn any(self) -> bool {
-        self.halo || self.shapes || self.devices()
+        self.pointer() || self.shapes || self.devices()
+    }
+    /// Whether the pointer layer follows the pointer: for the halo, the loupe, or both.
+    pub fn pointer(self) -> bool {
+        self.halo || self.loupe
     }
     /// Whether the input diagram shows anything.
     pub fn devices(self) -> bool {
@@ -107,10 +116,14 @@ pub(crate) struct Presentation {
     spotlight: Option<spotlight::Spotlight>,
     /// The spotlight's shortcut is held down.
     spotlight_held: bool,
-    /// Which pointer shortcuts are registered (show a click, hold the spotlight).
-    pointer_keys: [bool; 2],
+    /// Which pointer shortcuts are registered (show a click, hold the spotlight, the loupe).
+    pointer_keys: [bool; 3],
     /// Pointer shortcuts another program holds.
-    pub pointer_conflicts: [bool; 2],
+    pub pointer_conflicts: [bool; 3],
+    /// The loupe's shortcut, in its hold mode, is held down.
+    loupe_held: bool,
+    /// The magnifier window, while the loupe is on screen.
+    loupe: Option<loupe::Loupe>,
     /// Period of the running timer, in milliseconds.
     timer_ms: u32,
     /// When the last frame-driven frame was painted.
@@ -150,8 +163,10 @@ impl Presentation {
             pointer_dirty: false,
             spotlight: None,
             spotlight_held: false,
-            pointer_keys: [false; 2],
-            pointer_conflicts: [false; 2],
+            pointer_keys: [false; 3],
+            pointer_conflicts: [false; 3],
+            loupe_held: false,
+            loupe: None,
             timer_ms: 0,
             last_frame: 0,
             halo_screen: RECT::default(),
@@ -216,7 +231,7 @@ impl Presentation {
         if !enabled.any() {
             return self.stop();
         }
-        let new_halo = if enabled.halo && self.halo.is_none() {
+        let new_halo = if enabled.pointer() && self.halo.is_none() {
             let point = cursor()?;
             self.effects.place(
                 Point {
@@ -262,10 +277,12 @@ impl Presentation {
         if let Some(halo) = new_halo {
             self.halo = Some(halo);
         }
-        if !enabled.halo {
+        if !enabled.pointer() {
             self.halo = None;
             self.halo_state.clear();
             self.effects.clear();
+        }
+        if !enabled.halo {
             self.spotlight = None;
         }
         self.sync_pointer_keys();
@@ -288,9 +305,10 @@ impl Presentation {
             if let Some(halo) = &self.halo {
                 self.paint(halo.hwnd())?;
             }
-            if self.enabled.halo && self.frame_driven() {
+            if self.enabled.pointer() && self.frame_driven() {
                 self.pointer_frame()?;
             }
+            self.sync_loupe()?;
             self.sync_timer()
         })();
         if result.is_err() {
@@ -319,6 +337,8 @@ impl Presentation {
         self.halo_state.clear();
         self.effects.clear();
         self.spotlight = None;
+        self.loupe = None;
+        self.loupe_held = false;
         self.pointer_dirty = false;
         self.last_bounds = None;
         self.release_pointer_keys();
@@ -332,8 +352,7 @@ impl Presentation {
     }
     pub fn update_preferences(&mut self, preferences: PresentationSettings) -> Result<()> {
         self.bindings.shortcuts = preferences.shape_shortcuts;
-        let shortcuts =
-            |p: &PresentationSettings| (p.pointer.click_shortcut, p.pointer.spotlight_shortcut);
+        let shortcuts = |p: &PresentationSettings| p.pointer.shortcuts();
         let keys_changed = shortcuts(&self.preferences) != shortcuts(&preferences);
         self.preferences = preferences;
         if self.enabled.devices() {
@@ -343,7 +362,7 @@ impl Presentation {
             }
             result?;
         }
-        if self.enabled.halo {
+        if self.enabled.pointer() {
             if keys_changed {
                 self.sync_pointer_keys();
             }
@@ -359,6 +378,7 @@ impl Presentation {
                 } else if let Some(halo) = &self.halo {
                     self.paint(halo.hwnd())?;
                 }
+                self.sync_loupe()?;
                 self.sync_timer()
             })();
             if result.is_err() {
@@ -479,7 +499,7 @@ impl Presentation {
         let needed = pointer
             || !self.scene.shapes.is_empty()
             || self.devices.needs_animation(now)
-            || self.enabled.halo && self.halo_state.needs_animation(now);
+            || self.enabled.pointer() && self.halo_state.needs_animation(now);
         // Effects that follow the pointer get every display frame; fades get 30 per second.
         let period = if pointer { 16 } else { 33 };
         if needed && (!self.timer || self.timer_ms != period) {
@@ -518,7 +538,8 @@ impl Presentation {
             keys.invalidate();
         }
         self.check_spotlight_key();
-        if self.enabled.halo && (self.pointer_dirty || self.frame_driven()) {
+        self.check_loupe_key()?;
+        if self.enabled.pointer() && (self.pointer_dirty || self.frame_driven()) {
             self.pointer_frame()?;
         } else if let Some(halo) = &self.halo {
             halo.invalidate();
@@ -527,7 +548,7 @@ impl Presentation {
     }
     fn move_halo(&mut self) -> Result<()> {
         // Frame-driven effects keep a surface that stays put (`pointer_frame`).
-        if !self.enabled.halo || self.frame_driven() {
+        if !self.enabled.pointer() || self.frame_driven() {
             return Ok(());
         }
         let point = cursor()?;
@@ -554,7 +575,7 @@ impl Presentation {
             halo.position(self.halo_origin.x, self.halo_origin.y)?;
             halo.show(true);
         }
-        Ok(())
+        self.sync_loupe()
     }
     /// What the input diagram shows now.
     fn plan(&self) -> diagram::Plan {
@@ -637,7 +658,7 @@ impl Presentation {
                     y: self.halo_origin.y as f64,
                 },
                 &self.effects,
-                &self.preferences.pointer,
+                &self.pointer_settings(),
                 self.halo_look(now),
                 self.halo_scale,
                 now,

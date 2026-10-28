@@ -2,6 +2,13 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.22 · 2026-10-28
+
+- New Magnifier, switched on from the notification menu or Pointer effects: a round lens follows your pointer and enlarges whatever sits under it, at 2x, 3x or 4x, in three sizes.
+- Give it a shortcut if you like: one press switches it on or off, or it shows only while you hold the key, for a quick peek.
+- Its edge melts softly into the screen, the taskbar gets enlarged too, it never magnifies itself, and it works with or without the halo.
+- Screen recorders and screen sharing see it too, so your audience finally squints less than you do.
+
 ## 0.3.21 · 2026-10-28
 
 - The faint frame that showed around the on-screen keyboard while you typed is gone: now it's just the keys you press, floating on their own.

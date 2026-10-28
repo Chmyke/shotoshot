@@ -130,7 +130,18 @@ pub struct PointerSettings {
     pub spotlight_hidden_moving: bool,
     /// With a shortcut, the spotlight shows only while it is held.
     pub spotlight_shortcut: Option<Shortcut>,
+    /// Logical pixels, one of `LOUPE_SIZES`.
+    pub loupe_size: u32,
+    /// How many times the loupe enlarges, one of `LOUPE_ZOOMS`.
+    pub loupe_zoom: u32,
+    /// Switches the loupe on or off. None: no shortcut.
+    pub loupe_shortcut: Option<Shortcut>,
+    /// With its shortcut, the loupe shows only while it is held instead of switching.
+    pub loupe_hold: bool,
 }
+/// The loupe's diameters, in logical pixels.
+pub const LOUPE_SIZES: [u32; 3] = [160, 240, 320];
+pub const LOUPE_ZOOMS: [u32; 3] = [2, 3, 4];
 pub const HALO_DIAMETER_RANGE: (u32, u32) = (24, 160);
 pub const HALO_OPACITY_RANGE: (u32, u32) = (10, 100);
 pub const HALO_THICKNESS_RANGE: (u32, u32) = (1, 12);
@@ -160,6 +171,10 @@ impl Default for PointerSettings {
             spotlight_dim: 60,
             spotlight_hidden_moving: false,
             spotlight_shortcut: None,
+            loupe_size: 240,
+            loupe_zoom: 2,
+            loupe_shortcut: None,
+            loupe_hold: false,
         }
     }
 }
@@ -200,7 +215,48 @@ impl PointerSettings {
         self.halo_softness = clamp(self.halo_softness, HALO_SOFTNESS_RANGE);
         self.spotlight_size = clamp(self.spotlight_size, SPOTLIGHT_SIZE_RANGE);
         self.spotlight_dim = clamp(self.spotlight_dim, SPOTLIGHT_DIM_RANGE);
+        if !LOUPE_SIZES.contains(&self.loupe_size) {
+            self.loupe_size = PointerSettings::default().loupe_size;
+        }
+        if !LOUPE_ZOOMS.contains(&self.loupe_zoom) {
+            self.loupe_zoom = PointerSettings::default().loupe_zoom;
+        }
         self
+    }
+    /// The pointer window's shortcuts: show a click, hold the spotlight, show the loupe.
+    pub fn shortcuts(&self) -> [Option<Shortcut>; 3] {
+        [
+            self.click_shortcut,
+            self.spotlight_shortcut,
+            self.loupe_shortcut,
+        ]
+    }
+    pub fn shortcut_mut(&mut self, index: usize) -> &mut Option<Shortcut> {
+        match index {
+            0 => &mut self.click_shortcut,
+            1 => &mut self.spotlight_shortcut,
+            _ => &mut self.loupe_shortcut,
+        }
+    }
+    /// The settings the pointer layer is drawn with: `halo` when the halo is on, `loupe` while
+    /// the loupe is on screen. The loupe takes the halo shape's place and draws nothing around
+    /// itself (Mickaël, 2026-10-28: a pure round magnifier); trail and clicks stay with the halo.
+    pub fn drawn(&self, halo: bool, loupe: bool) -> Self {
+        let mut settings = self.clone();
+        if loupe || !halo {
+            settings.halo_shape = HaloShape::Hidden;
+        }
+        if loupe {
+            // Nothing eases towards the pointer: no timer runs for a hidden shape.
+            settings.follow = Follow::Instant;
+        }
+        if !halo {
+            settings.trail = TrailStyle::Off;
+            settings.click = ClickStyle::Off;
+            settings.sound = ClickSound::Off;
+            settings.spotlight = SpotlightShape::Off;
+        }
+        settings
     }
     /// One line of the settings file: comma-separated fields, shortcuts as `mods:key` or `-`.
     pub fn encode(&self) -> String {
@@ -233,14 +289,19 @@ impl PointerSettings {
             // Shake to find, removed on 2026-10-28: always off, so an older version reads it so.
             "0".to_string(),
             self.halo_softness.to_string(),
+            self.loupe_size.to_string(),
+            self.loupe_zoom.to_string(),
+            shortcut(self.loupe_shortcut),
+            u8::from(self.loupe_hold).to_string(),
         ]
         .join(",")
     }
     pub fn decode(line: &str) -> std::result::Result<Self, String> {
         let invalid = || "Invalid pointer settings".to_string();
         let fields: Vec<_> = line.split(',').collect();
-        // The first pointer line had 19 fields; the soft edge came after it, sharp by default.
-        if !matches!(fields.len(), 19 | 20) {
+        // The first pointer line had 19 fields; the soft edge came after it, sharp by default,
+        // then the loupe's four.
+        if !matches!(fields.len(), 19 | 20 | 24) {
             return Err(invalid());
         }
         let number = |text: &str, (low, high): (u32, u32)| {
@@ -277,7 +338,11 @@ impl PointerSettings {
         // The retired shake to find flag is still checked, so a damaged line stays refused.
         flag(fields[18])?;
         Ok(Self {
-            halo_shape: HaloShape::decode(fields[0]).ok_or_else(invalid)?,
+            // A trial build of 2026-10-28 stored the loupe as a shape (4): read as the disc.
+            halo_shape: match fields[0] {
+                "4" => HaloShape::Disc,
+                text => HaloShape::decode(text).ok_or_else(invalid)?,
+            },
             halo_diameter: number(fields[1], HALO_DIAMETER_RANGE)?,
             halo_opacity: number(fields[2], HALO_OPACITY_RANGE)?,
             halo_thickness: number(fields[3], HALO_THICKNESS_RANGE)?,
@@ -298,6 +363,26 @@ impl PointerSettings {
             halo_softness: match fields.get(19) {
                 Some(value) => number(value, HALO_SOFTNESS_RANGE)?,
                 None => 0,
+            },
+            loupe_size: match fields.get(20) {
+                Some(value) => Some(number(value, (0, u32::MAX))?)
+                    .filter(|size| LOUPE_SIZES.contains(size))
+                    .ok_or_else(invalid)?,
+                None => Self::default().loupe_size,
+            },
+            loupe_zoom: match fields.get(21) {
+                Some(value) => Some(number(value, (0, u32::MAX))?)
+                    .filter(|zoom| LOUPE_ZOOMS.contains(zoom))
+                    .ok_or_else(invalid)?,
+                None => Self::default().loupe_zoom,
+            },
+            loupe_shortcut: match fields.get(22) {
+                Some(value) => shortcut(value)?,
+                None => None,
+            },
+            loupe_hold: match fields.get(23) {
+                Some(value) => flag(value)?,
+                None => false,
             },
         })
     }
@@ -833,6 +918,89 @@ mod tests {
             "padded"
         );
         assert!(PointerSettings::decode("1,2,3").is_err(), "short");
+    }
+
+    #[test]
+    fn the_loupe_is_stored_with_its_own_choices_and_never_as_a_shape() {
+        let settings = PointerSettings {
+            loupe_size: 320,
+            loupe_zoom: 4,
+            loupe_shortcut: Some(Shortcut {
+                modifiers: 2,
+                key: 0x4c,
+            }),
+            loupe_hold: true,
+            ..Default::default()
+        };
+        let line = settings.encode();
+        assert_eq!(line.split(',').count(), 24);
+        assert_eq!(PointerSettings::decode(&line), Ok(settings.clone()));
+        // A line of 0.3.21 has no loupe: the default one.
+        let old: Vec<_> = PointerSettings::default()
+            .encode()
+            .split(',')
+            .take(20)
+            .map(String::from)
+            .collect();
+        assert_eq!(
+            PointerSettings::decode(&old.join(",")),
+            Ok(PointerSettings::default())
+        );
+        let mut fields: Vec<String> = line.split(',').map(String::from).collect();
+        fields[20] = "200".into();
+        assert!(PointerSettings::decode(&fields.join(",")).is_err(), "size");
+        fields[20] = "160".into();
+        fields[21] = "5".into();
+        assert!(PointerSettings::decode(&fields.join(",")).is_err(), "zoom");
+        fields[21] = "3".into();
+        fields[23] = "2".into();
+        assert!(PointerSettings::decode(&fields.join(",")).is_err(), "hold");
+        assert!(
+            PointerSettings::decode(&fields[..22].join(",")).is_err(),
+            "cut"
+        );
+        // The trial build's loupe shape comes back as the disc, and is never written.
+        fields[23] = "0".into();
+        fields[0] = "4".into();
+        let read = PointerSettings::decode(&fields.join(",")).unwrap();
+        assert_eq!(read.halo_shape, HaloShape::Disc);
+        assert!(read.encode().starts_with("1,"));
+        fields[0] = "5".into();
+        assert!(PointerSettings::decode(&fields.join(",")).is_err(), "shape");
+    }
+
+    #[test]
+    fn the_loupe_hides_the_halo_shape_and_alone_shows_nothing_else() {
+        let busy = PointerSettings {
+            trail: TrailStyle::Line,
+            click: ClickStyle::Ring,
+            spotlight: SpotlightShape::Circle,
+            follow: Follow::Smooth,
+            ..Default::default()
+        };
+        // No ring, no ticks: with the halo on, the loupe replaces its shape only.
+        let both = busy.drawn(true, true);
+        assert_eq!(both.halo_shape, HaloShape::Hidden);
+        assert_eq!(
+            (both.trail, both.click, both.follow),
+            (TrailStyle::Line, ClickStyle::Ring, Follow::Instant)
+        );
+        assert_eq!(busy.drawn(true, false), busy);
+        let alone = busy.drawn(false, true);
+        assert_eq!(alone.halo_shape, HaloShape::Hidden);
+        assert_eq!(
+            (alone.trail, alone.click, alone.spotlight),
+            (TrailStyle::Off, ClickStyle::Off, SpotlightShape::Off)
+        );
+        assert!(!alone.draws_around());
+        assert_eq!(busy.drawn(false, false).halo_shape, HaloShape::Hidden);
+        let wild = PointerSettings {
+            loupe_size: 7,
+            loupe_zoom: 9,
+            ..Default::default()
+        }
+        .clamped();
+        assert_eq!((wild.loupe_size, wild.loupe_zoom), (240, 2));
     }
 
     #[test]
