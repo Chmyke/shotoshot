@@ -16,9 +16,12 @@ mod layout;
 mod manipulation;
 pub(crate) mod menu;
 pub(crate) mod model;
+mod pointer_effects;
 mod priority;
 mod priority_match;
 pub(crate) mod probe;
+mod sound;
+mod spotlight;
 #[cfg(test)]
 mod tests;
 
@@ -91,6 +94,27 @@ pub(crate) struct Presentation {
     input_monitor: POINT,
     halo_state: halo::HaloState,
     capture_resume: Option<(Enabled, POINT)>,
+    /// Trail, click waves, shake to find and smooth follow of the halo.
+    effects: shotoshot_core::pointer::Effects,
+    /// The halo layer's screen position and the monitor scale it was painted for.
+    halo_origin: POINT,
+    halo_scale: f64,
+    /// A pointer event waits for the next frame.
+    pointer_dirty: bool,
+    spotlight: Option<spotlight::Spotlight>,
+    /// The spotlight's shortcut is held down.
+    spotlight_held: bool,
+    /// Which pointer shortcuts are registered (show a click, hold the spotlight).
+    pointer_keys: [bool; 2],
+    /// Pointer shortcuts another program holds.
+    pub pointer_conflicts: [bool; 2],
+    /// Period of the running timer, in milliseconds.
+    timer_ms: u32,
+    /// When the last frame-driven frame was painted.
+    last_frame: u64,
+    /// The screen the frame-driven halo surface covers, and the area its last frame drew.
+    halo_screen: RECT,
+    last_bounds: Option<RECT>,
 }
 impl Presentation {
     pub fn new(owner: HWND, preferences: PresentationSettings) -> Result<Box<RefCell<Self>>> {
@@ -116,6 +140,18 @@ impl Presentation {
             input_monitor: POINT::default(),
             halo_state: halo::HaloState::default(),
             capture_resume: None,
+            effects: Default::default(),
+            halo_origin: POINT::default(),
+            halo_scale: 1.,
+            pointer_dirty: false,
+            spotlight: None,
+            spotlight_held: false,
+            pointer_keys: [false; 2],
+            pointer_conflicts: [false; 2],
+            timer_ms: 0,
+            last_frame: 0,
+            halo_screen: RECT::default(),
+            last_bounds: None,
         }));
         state.borrow_mut().address = &*state;
         {
@@ -178,7 +214,14 @@ impl Presentation {
         }
         let new_halo = if enabled.halo && self.halo.is_none() {
             let point = cursor()?;
-            let size = (72. * monitor_scale(point)) as i32;
+            self.effects.place(
+                Point {
+                    x: point.x as f64,
+                    y: point.y as f64,
+                },
+                self.now(),
+            );
+            let size = self.halo_size(point, self.now());
             Some(self.mirrored(
                 Layer::new(
                     self.address,
@@ -218,7 +261,10 @@ impl Presentation {
         if !enabled.halo {
             self.halo = None;
             self.halo_state.clear();
+            self.effects.clear();
+            self.spotlight = None;
         }
+        self.sync_pointer_keys();
         if !enabled.devices() {
             self.end_input_drag(false)?;
             self.keys = None;
@@ -236,6 +282,9 @@ impl Presentation {
             self.move_halo()?;
             if let Some(halo) = &self.halo {
                 self.paint(halo.hwnd())?;
+            }
+            if self.enabled.halo && self.frame_driven(self.now()) {
+                self.pointer_frame()?;
             }
             self.sync_timer()
         })();
@@ -262,6 +311,11 @@ impl Presentation {
         self.input_drag = None;
         self.devices.clear();
         self.halo_state.clear();
+        self.effects.clear();
+        self.spotlight = None;
+        self.pointer_dirty = false;
+        self.last_bounds = None;
+        self.release_pointer_keys();
         if self.timer {
             unsafe {
                 let _ = KillTimer(Some(self.owner), TIMER);
@@ -272,6 +326,9 @@ impl Presentation {
     }
     pub fn update_preferences(&mut self, preferences: PresentationSettings) -> Result<()> {
         self.bindings.shortcuts = preferences.shape_shortcuts;
+        let shortcuts =
+            |p: &PresentationSettings| (p.pointer.click_shortcut, p.pointer.spotlight_shortcut);
+        let keys_changed = shortcuts(&self.preferences) != shortcuts(&preferences);
         self.preferences = preferences;
         if self.enabled.devices() {
             let result = self.show_devices();
@@ -280,8 +337,24 @@ impl Presentation {
             }
             result?;
         }
-        if let Some(halo) = &self.halo {
-            let result = self.paint(halo.hwnd());
+        if self.enabled.halo {
+            if keys_changed {
+                self.sync_pointer_keys();
+            }
+            let result = (|| {
+                if self.preferences.pointer.spotlight
+                    == shotoshot_core::pointer::SpotlightShape::Off
+                {
+                    self.spotlight = None;
+                }
+                self.move_halo()?;
+                if self.frame_driven(self.now()) {
+                    self.pointer_frame()?;
+                } else if let Some(halo) = &self.halo {
+                    self.paint(halo.hwnd())?;
+                }
+                self.sync_timer()
+            })();
             if result.is_err() {
                 let _ = self.stop();
             }
@@ -290,6 +363,8 @@ impl Presentation {
         Ok(())
     }
     pub fn suspend_shortcuts(&mut self) -> Result<()> {
+        // The shortcut window records keys: the pointer shortcuts must not answer meanwhile.
+        self.release_pointer_keys();
         self.release_gesture()?;
         self.bindings.set(Enabled {
             shapes: false,
@@ -297,6 +372,7 @@ impl Presentation {
         })
     }
     pub fn resume_shortcuts(&mut self) -> Result<Vec<shotoshot_text::Key>> {
+        self.sync_pointer_keys();
         let result = self.bindings.available(self.enabled);
         if result.is_err() {
             let _ = self.stop();
@@ -392,16 +468,22 @@ impl Presentation {
         Ok(())
     }
     fn sync_timer(&mut self) -> Result<()> {
-        let needed = !self.scene.shapes.is_empty()
-            || self.devices.needs_animation(self.now())
-            || self.enabled.halo && self.halo_state.needs_animation(self.now());
-        if needed && !self.timer {
+        let now = self.now();
+        let pointer = self.pointer_animating(now);
+        let needed = pointer
+            || !self.scene.shapes.is_empty()
+            || self.devices.needs_animation(now)
+            || self.enabled.halo && self.halo_state.needs_animation(now);
+        // Effects that follow the pointer get every display frame; fades get 30 per second.
+        let period = if pointer { 16 } else { 33 };
+        if needed && (!self.timer || self.timer_ms != period) {
             unsafe {
-                if SetTimer(Some(self.owner), TIMER, 33, None) == 0 {
+                if SetTimer(Some(self.owner), TIMER, period, None) == 0 {
                     return Err(Error::from_thread());
                 }
             }
             self.timer = true;
+            self.timer_ms = period;
         } else if !needed && self.timer {
             unsafe {
                 let _ = KillTimer(Some(self.owner), TIMER);
@@ -429,17 +511,21 @@ impl Presentation {
         if let Some(keys) = &self.keys {
             keys.invalidate();
         }
-        if let Some(halo) = &self.halo {
+        self.check_spotlight_key();
+        if self.enabled.halo && (self.pointer_dirty || self.frame_driven(now)) {
+            self.pointer_frame()?;
+        } else if let Some(halo) = &self.halo {
             halo.invalidate();
         }
         self.sync_timer()
     }
     fn move_halo(&mut self) -> Result<()> {
-        if !self.enabled.halo {
+        // Frame-driven effects keep a surface that stays put (`pointer_frame`).
+        if !self.enabled.halo || self.frame_driven(self.now()) {
             return Ok(());
         }
         let point = cursor()?;
-        let size = (72. * monitor_scale(point)) as i32;
+        let size = self.halo_size(point, self.now());
         if self.halo.as_ref().is_none_or(|halo| halo.width != size) {
             let halo = Layer::new(
                 self.address,
@@ -453,8 +539,13 @@ impl Presentation {
                 self.paint(halo.hwnd())?;
             }
         }
+        self.halo_origin = POINT {
+            x: point.x - size / 2,
+            y: point.y - size / 2,
+        };
+        self.halo_scale = monitor_scale(point);
         if let Some(halo) = &self.halo {
-            halo.position(point.x - size / 2, point.y - size / 2)?;
+            halo.position(self.halo_origin.x, self.halo_origin.y)?;
             halo.show(true);
         }
         Ok(())
@@ -534,14 +625,19 @@ impl Presentation {
             && halo.hwnd() == hwnd
         {
             halo.begin(false)?;
-            halo.halo(
-                self.preferences.halo_color,
-                self.halo_state.pressed(),
-                self.halo_state
-                    .needs_animation(now)
-                    .then(|| self.halo_state.pulse(now)),
+            halo.mark_all();
+            let drawn = halo.pointer(
+                Point {
+                    x: self.halo_origin.x as f64,
+                    y: self.halo_origin.y as f64,
+                },
+                &self.effects,
+                &self.preferences.pointer,
+                self.halo_look(now),
+                self.halo_scale,
+                now,
             );
-            return halo.end();
+            return drawn.and(halo.end());
         }
         if let Some(keys) = &self.keys
             && keys.hwnd() == hwnd
@@ -587,10 +683,31 @@ impl Drop for Presentation {
         }
         let _ = self.release_gesture();
         let _ = self.end_input_drag(false);
+        self.release_pointer_keys();
         if self.timer {
             unsafe {
                 let _ = KillTimer(Some(self.owner), TIMER);
             }
+        }
+    }
+}
+/// Plays the click sound `sound` at `volume`, as a click on the desktop would.
+pub(crate) fn play_click_sound(
+    sound: shotoshot_core::pointer::ClickSound,
+    volume: shotoshot_core::pointer::Volume,
+) {
+    sound::play(sound, volume);
+}
+impl Presentation {
+    /// The halo's colour, held button and click pulse at `now`.
+    fn halo_look(&self, now: u64) -> shotoshot_ui::pointer::HaloState {
+        shotoshot_ui::pointer::HaloState {
+            color: self.preferences.halo_color,
+            pressed: self.halo_state.pressed(),
+            pulse: self
+                .halo_state
+                .needs_animation(now)
+                .then(|| self.halo_state.pulse(now) as f64),
         }
     }
 }

@@ -19,6 +19,8 @@ pub use magnifier::{
     hint_in as magnifier_hint_in,
 };
 mod overlay;
+pub mod pointer;
+pub mod pointer_panel;
 #[cfg(test)]
 mod scale_tests;
 mod shortcut_label;

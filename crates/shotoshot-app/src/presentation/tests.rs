@@ -779,3 +779,96 @@ fn gaming_draws_the_left_hand_block_with_the_mouse_right_beside_it() {
     assert!(layer.pixel(22, 50)[0] > 200, "a lone mouse shows its click");
     assert_eq!(layer.pixel(3, 130)[3], 0, "and no keyboard panel");
 }
+
+#[test]
+fn the_pointer_layer_draws_the_halo_and_its_trail_where_they_are() {
+    use shotoshot_core::pointer::{Effects, HaloShape, PointerSettings, TrailStyle};
+    let _com = crate::ComApartment::new().unwrap();
+    let layer = Layer::new(std::ptr::null(), -32000, -32000, 200, 200).unwrap();
+    let settings = PointerSettings {
+        halo_shape: HaloShape::Ring,
+        halo_thickness: 4,
+        trail: TrailStyle::Line,
+        ..Default::default()
+    };
+    // The layer sits at (1000, 500) on screen; the pointer went from (1020, 600) to (1100, 600).
+    let origin = Point { x: 1000., y: 500. };
+    let mut effects = Effects::default();
+    for step in 0..=8u64 {
+        let at = Point {
+            x: 1020. + step as f64 * 10.,
+            y: 600.,
+        };
+        effects.moved(at, step * 10, 1., &settings);
+    }
+    let halo = shotoshot_ui::pointer::HaloState {
+        color: [255, 211, 64],
+        pressed: false,
+        pulse: None,
+    };
+    layer.begin(false).unwrap();
+    layer
+        .pointer(origin, &effects, &settings, halo, 1., 80)
+        .unwrap();
+    layer.end().unwrap();
+    let alpha = |x, y| layer.pixel(x, y)[3];
+    assert!(
+        alpha(100 + 24, 100) > 150,
+        "the ring, 24 px right of the pointer"
+    );
+    assert_eq!(alpha(100, 88), 0, "a ring is empty inside");
+    assert!(alpha(50, 100) > 50, "the trail behind the pointer");
+    assert_eq!(alpha(100, 40), 0, "nothing above");
+}
+
+#[test]
+fn a_region_frame_redraws_and_sends_only_its_area() {
+    let _com = crate::ComApartment::new().unwrap();
+    let layer = Layer::new(std::ptr::null(), -32000, -32000, 300, 200).unwrap();
+    let paint = |dirty: RECT, x: f64| {
+        layer.begin_region(dirty).unwrap();
+        let mut effects = shotoshot_core::pointer::Effects::default();
+        effects.place(Point { x, y: 100. }, 0);
+        layer
+            .pointer(
+                Point { x: 0., y: 0. },
+                &effects,
+                &shotoshot_core::pointer::PointerSettings::default(),
+                shotoshot_ui::pointer::HaloState {
+                    color: [255, 211, 64],
+                    pressed: false,
+                    pulse: None,
+                },
+                1.,
+                0,
+            )
+            .unwrap();
+        layer.end_region(dirty).unwrap();
+    };
+    let left = RECT {
+        left: 0,
+        top: 0,
+        right: 150,
+        bottom: 200,
+    };
+    paint(left, 75.);
+    assert!(layer.pixel(75 + 24, 100)[3] > 0, "the halo's edge, drawn");
+    // A frame over the right half only: the left halo stays, the new one appears.
+    let right = RECT {
+        left: 150,
+        top: 0,
+        right: 300,
+        bottom: 200,
+    };
+    paint(right, 225.);
+    assert!(
+        layer.pixel(75 + 24, 100)[3] > 0,
+        "outside the region, untouched"
+    );
+    assert!(layer.pixel(225 + 24, 100)[3] > 0, "inside, redrawn");
+    // Clearing the left half alone erases the old halo there.
+    layer.begin_region(left).unwrap();
+    layer.end_region(left).unwrap();
+    assert_eq!(layer.pixel(75 + 24, 100)[3], 0, "erased");
+    assert!(layer.pixel(225 + 24, 100)[3] > 0, "the other half kept");
+}

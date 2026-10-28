@@ -185,20 +185,26 @@ pub(super) enum ShortcutTarget {
     Rectangle,
     Ellipse,
     Board,
+    /// The pointer window's shortcut that shows a click.
+    ShowClick,
+    /// The pointer window's shortcut that holds the spotlight.
+    Spotlight,
 }
 /// Every window the menu opens: the layout fits the title of each.
-const TARGETS: [ShortcutTarget; 6] = [
+const TARGETS: [ShortcutTarget; 8] = [
     ShortcutTarget::Capture,
     ShortcutTarget::Instant,
     ShortcutTarget::Arrow,
     ShortcutTarget::Rectangle,
     ShortcutTarget::Ellipse,
     ShortcutTarget::Board,
+    ShortcutTarget::ShowClick,
+    ShortcutTarget::Spotlight,
 ];
 impl ShortcutTarget {
     pub fn shape_index(self) -> Option<usize> {
         match self {
-            Self::Capture | Self::Instant | Self::Board => None,
+            Self::Capture | Self::Instant | Self::Board | Self::ShowClick | Self::Spotlight => None,
             Self::Arrow => Some(0),
             Self::Rectangle => Some(1),
             Self::Ellipse => Some(2),
@@ -213,6 +219,7 @@ impl ShortcutTarget {
             Self::Rectangle => 111,
             Self::Ellipse => 112,
             Self::Board => 13,
+            Self::ShowClick | Self::Spotlight => 105,
         }
     }
     fn title(self) -> Key {
@@ -223,6 +230,16 @@ impl ShortcutTarget {
             Self::Rectangle => Key::SetupTitleRectangle,
             Self::Ellipse => Key::SetupTitleEllipse,
             Self::Board => Key::SetupTitleBoard,
+            Self::ShowClick => Key::SetupTitleShowClick,
+            Self::Spotlight => Key::SetupTitleSpotlight,
+        }
+    }
+    /// The pointer shortcut this window records: 0 shows a click, 1 holds the spotlight.
+    pub fn pointer_index(self) -> Option<usize> {
+        match self {
+            Self::ShowClick => Some(0),
+            Self::Spotlight => Some(1),
+            _ => None,
         }
     }
 }
@@ -300,7 +317,10 @@ impl Setup {
         if self.recording {
             if any_key {
                 Key::SetupAnyKeyHint
-            } else if self.target == ShortcutTarget::Board {
+            } else if matches!(
+                self.target,
+                ShortcutTarget::Board | ShortcutTarget::ShowClick | ShortcutTarget::Spotlight
+            ) {
                 Key::SetupBoardHint
             } else {
                 Key::SetupShapeHint
@@ -487,6 +507,11 @@ impl App {
                         self.close_setup(hwnd)?;
                         self.notify(Notice::Preferences);
                     }
+                    invalidate(hwnd);
+                    return Ok(());
+                }
+                if let Some(index) = self.setup_ui.target.pointer_index() {
+                    self.save_pointer_shortcut(hwnd, index, mods, key)?;
                     invalidate(hwnd);
                     return Ok(());
                 }
@@ -907,6 +932,7 @@ pub(super) fn preview() -> Result<()> {
             &std::path::Path::new("target").join(name),
         )?;
     }
+    pointer_window::preview()?;
     tray_menu::preview()
 }
 

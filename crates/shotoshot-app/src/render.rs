@@ -729,6 +729,19 @@ impl<'a> D2dCanvas<'a> {
             underlay: Some(Vec::new()),
         })
     }
+    /// A direct canvas recolouring `brush`: a surface painted every frame keeps one brush.
+    pub fn with_brush(
+        renderer: &'a Renderer,
+        target: &'a ID2D1RenderTarget,
+        brush: ID2D1SolidColorBrush,
+    ) -> Self {
+        Self {
+            renderer,
+            target,
+            brush,
+            underlay: None,
+        }
+    }
     /// A canvas that never records a checkpoint: for drawing under a transform, where the
     /// scene cache does not apply.
     pub fn direct(renderer: &'a Renderer, target: &'a ID2D1RenderTarget) -> Result<Self> {
@@ -748,6 +761,9 @@ impl<'a> D2dCanvas<'a> {
         unsafe {
             let geometry = self.renderer.factory.CreatePathGeometry()?;
             let sink = geometry.Open()?;
+            // Winding, as the portable renderer fills: a ribbon that crosses itself on a sharp
+            // turn stays filled instead of leaving a hole.
+            sink.SetFillMode(D2D1_FILL_MODE_WINDING);
             sink.BeginFigure(vector(*first), D2D1_FIGURE_BEGIN_FILLED);
             for p in rest {
                 sink.AddLine(vector(*p));

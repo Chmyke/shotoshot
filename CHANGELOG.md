@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.16 · 2026-10-28
+
+- New Pointer effects window, right under the halo in the menu: pick a disc, a ring or a neon glow, add a trail of sparks or stars, ripples and sounds on clicks, a spotlight that dims everything else, and shake the mouse to find it. The window shows each change live, before your audience sees it.
+
 ## 0.3.15 · 2026-10-24
 
 - Saved captures are now simply named 001, 002, 003 and so on. Less clutter, same order, and the count picks up where the old names left off.

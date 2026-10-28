@@ -213,6 +213,7 @@ impl App {
                 return Ok(());
             }
             match chosen {
+                105 => self.open_pointer_window(hwnd)?,
                 110..=112 => {
                     let target = [
                         setup::ShortcutTarget::Arrow,

@@ -191,6 +191,8 @@ pub struct PresentationSettings {
     pub shape_color: [u8; 3],
     pub stroke_width: u32,
     pub arrow_size: u32,
+    /// The pointer window's choices: halo shape, trail, clicks, spotlight.
+    pub pointer: crate::pointer::PointerSettings,
 }
 impl Default for PresentationSettings {
     fn default() -> Self {
@@ -206,6 +208,7 @@ impl Default for PresentationSettings {
             duration_ms: 3000,
             halo_color: [255, 211, 64],
             shape_color: [237, 79, 92],
+            pointer: crate::pointer::PointerSettings::default(),
         }
     }
 }
@@ -257,6 +260,7 @@ impl PresentationSettings {
             duration_ms,
             halo_color: color(halo)?,
             shape_color: color(shape)?,
+            pointer: crate::pointer::PointerSettings::default(),
         })
     }
 }
@@ -361,6 +365,7 @@ impl Settings {
             Some("14") => 27,
             Some("15") => 28,
             Some("16") => 29,
+            Some("17") => 30,
             _ => 0,
         };
         if fields.len() != expected_len {
@@ -390,8 +395,10 @@ impl Settings {
             let arrow = DEFAULT_SHAPE_SHORTCUTS[0];
             // PITFALL: every format from 11 on is listed; the next version goes here too, or
             // its users' Alt+F arrow would be migrated away on every load.
-            if !matches!(version, Some("11" | "12" | "13" | "14" | "15" | "16"))
-                && presentation.shape_shortcuts[0] == OLD_ARROW_SHORTCUT
+            if !matches!(
+                version,
+                Some("11" | "12" | "13" | "14" | "15" | "16" | "17")
+            ) && presentation.shape_shortcuts[0] == OLD_ARROW_SHORTCUT
                 && !presentation.shape_shortcuts.contains(&arrow)
             {
                 presentation.shape_shortcuts[0] = arrow;
@@ -436,6 +443,9 @@ impl Settings {
                 "1" => true,
                 _ => return Err("Invalid input display lock".into()),
             };
+        }
+        if fields.len() >= 30 {
+            presentation.pointer = crate::pointer::PointerSettings::decode(fields[29])?;
         }
         if fields.len() >= 24 {
             presentation.input_layout = InputLayout::decode(fields[22])?;
@@ -559,7 +569,7 @@ impl Settings {
             .join(",");
         let color = |[red, green, blue]: [u8; 3]| format!("{red:02x}{green:02x}{blue:02x}");
         format!(
-            "{HEADER}16\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{},{}\n{},{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n",
+            "{HEADER}17\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{},{}\n{},{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n{}\n",
             self.modifiers,
             self.key,
             u8::from(self.legacy_style),
@@ -594,7 +604,8 @@ impl Settings {
             self.board_shortcut.key,
             u8::from(self.board_visible),
             self.capture_eraser_size,
-            self.language.encode()
+            self.language.encode(),
+            self.presentation.pointer.encode()
         )
     }
     /// Changes only the editor's custom color, preserving the other stored preferences.
@@ -712,13 +723,13 @@ mod tests {
             ..Default::default()
         };
         let encoded = settings.encode();
-        assert!(encoded.starts_with("shotoshot-settings-16\n"));
+        assert!(encoded.starts_with("shotoshot-settings-17\n"));
         let legacy = encoded.replacen("shotoshot-settings-", "shotshot-settings-", 1);
         assert_eq!(Settings::decode(&legacy).unwrap(), settings);
         let oldest = Settings::decode("shotshot-settings-1\n3\n65\n1\n43,3a,2f,e9\n").unwrap();
         assert_eq!((oldest.modifiers, oldest.key), (3, 65));
         assert!(Settings::decode(&encoded.replacen("shotoshot-", "other-", 1)).is_err());
-        assert!(Settings::decode(&encoded.replacen("-16\n", "-17\n", 1)).is_err());
+        assert!(Settings::decode(&encoded.replacen("-17\n", "-18\n", 1)).is_err());
     }
     #[test]
     fn board_fields_roundtrip_and_older_files_get_defaults() {
@@ -727,8 +738,8 @@ mod tests {
             .lines()
             .map(str::to_owned)
             .collect();
-        assert_eq!(fields.len(), 29);
-        assert_eq!(&fields[25..], &["1,66", "0", "14", "auto"]);
+        assert_eq!(fields.len(), 30);
+        assert_eq!(&fields[25..29], &["1,66", "0", "14", "auto"]);
         let mut old = fields[..25].to_vec();
         old[0] = "shotoshot-settings-13".into();
         let migrated = Settings::decode(&old.join("\n")).unwrap();
@@ -772,7 +783,7 @@ mod tests {
             ..Default::default()
         };
         let encoded = settings.encode();
-        assert!(encoded.starts_with("shotoshot-settings-16\n"));
+        assert!(encoded.starts_with("shotoshot-settings-17\n"));
         assert_eq!(encoded.lines().nth(28), Some("ja"));
         assert_eq!(
             Settings::decode(&encoded).unwrap().language,
@@ -799,7 +810,7 @@ mod tests {
         .lines()
         .map(str::to_owned)
         .collect();
-        assert_eq!(fields.len(), 29);
+        assert_eq!(fields.len(), 30);
         // Format 14 ends before the eraser size, 15 before the language.
         for (version, len, eraser) in [("14", 27, crate::ERASER_SIZE as u32), ("15", 28, 32)] {
             let mut old = fields[..len].to_vec();
@@ -813,8 +824,8 @@ mod tests {
             let mut too_long = fields[..=len].to_vec();
             too_long[0] = format!("shotoshot-settings-{version}");
             assert!(Settings::decode(&too_long.join("\n")).is_err(), "{version}");
-            // The migrated file is written as version 16.
-            assert!(migrated.encode().starts_with("shotoshot-settings-16\n"));
+            // The migrated file is written as version 17.
+            assert!(migrated.encode().starts_with("shotoshot-settings-17\n"));
         }
     }
     #[test]
@@ -990,7 +1001,7 @@ mod tests {
         old[0] = "shotoshot-settings-9".into();
         let migrated = Settings::decode(&old.join("\n")).unwrap().encode();
         let fields: Vec<_> = migrated.lines().collect();
-        assert_eq!(fields[0], "shotoshot-settings-16");
+        assert_eq!(fields[0], "shotoshot-settings-17");
         assert_eq!(&fields[20..22], &["0,145", "1"]);
         let mut custom: Vec<_> = fields.iter().map(|v| v.to_string()).collect();
         custom[20] = "6,122".into();
@@ -1077,7 +1088,7 @@ mod tests {
             .take(18)
             .collect::<Vec<_>>()
             .join("\n")
-            .replacen("settings-16", "settings-8", 1);
+            .replacen("settings-17", "settings-8", 1);
         assert!(Settings::decode(&old).unwrap().start_with_windows);
     }
     #[test]
@@ -1122,7 +1133,7 @@ mod tests {
         // Older formats have no size: the default.
         let older = Settings::default()
             .encode()
-            .replacen("settings-16", "settings-14", 1);
+            .replacen("settings-17", "settings-14", 1);
         let older = older.lines().take(27).collect::<Vec<_>>().join("\n") + "\n";
         assert_eq!(
             Settings::decode(&older).unwrap().capture_eraser_size,
@@ -1338,6 +1349,7 @@ mod tests {
                 "13" => fields.truncate(25),
                 "14" => fields.truncate(27),
                 "15" => fields.truncate(28),
+                "16" => fields.truncate(29),
                 _ => {}
             }
             let settings = Settings::decode(&(fields.join("\n") + "\n")).unwrap();
@@ -1444,7 +1456,7 @@ mod tests {
             assert_eq!(
                 settings.encode(),
                 format!(
-                    "shotoshot-settings-16\n3\n65\n1\n43,3a,2f,e9\n{live_capture}\n3000\nffd340\ned4f5c\n4\n1,65\n1,82\n1,67\n5\n28\n-\n0\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n"
+                    "shotoshot-settings-17\n3\n65\n1\n43,3a,2f,e9\n{live_capture}\n3000\nffd340\ned4f5c\n4\n1,65\n1,82\n1,67\n5\n28\n-\n0\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n1,48,100,2,0,0,1,0,ed4f5c,409cff,0,1,-,0,240,60,0,-,1,0\n"
                 )
             );
         }
@@ -1459,7 +1471,7 @@ mod tests {
             assert_eq!(
                 settings.encode(),
                 format!(
-                    "shotoshot-settings-16\n3\n65\n0\n43,3a,2f,e9\n1\n{duration}\n00aaff\nff0001\n4\n1,65\n1,82\n1,67\n5\n28\n-\n0\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n"
+                    "shotoshot-settings-17\n3\n65\n0\n43,3a,2f,e9\n1\n{duration}\n00aaff\nff0001\n4\n1,65\n1,82\n1,67\n5\n28\n-\n0\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n1,48,100,2,0,0,1,0,ed4f5c,409cff,0,1,-,0,240,60,0,-,1,0\n"
                 )
             );
         }
@@ -1525,6 +1537,15 @@ mod tests {
                 duration_ms: 1000,
                 halo_color: [0, 128, 255],
                 shape_color: [4, 17, 92],
+                pointer: crate::pointer::PointerSettings {
+                    halo_shape: crate::pointer::HaloShape::Ring,
+                    trail: crate::pointer::TrailStyle::Stars,
+                    spotlight_shortcut: Some(Shortcut {
+                        modifiers: 6,
+                        key: 0x20,
+                    }),
+                    ..Default::default()
+                },
             },
             board_shortcut: Shortcut {
                 modifiers: 2,

@@ -171,7 +171,7 @@ impl Layer {
             self.drawn.get().map_or(extent, |drawn| drawn.union(extent)),
         ));
     }
-    fn mark_all(&self) {
+    pub(super) fn mark_all(&self) {
         self.mark(Rect {
             min: Point { x: 0., y: 0. },
             max: Point {
@@ -360,6 +360,42 @@ impl Layer {
         }
         Ok(())
     }
+    /// Starts a frame that redraws only `dirty`: the rest of the surface keeps its pixels.
+    pub fn begin_region(&self, dirty: RECT) -> Result<()> {
+        unsafe {
+            self.renderer.dc.BindDC(
+                self.surface.dc(),
+                &RECT {
+                    right: self.width,
+                    bottom: self.height,
+                    ..Default::default()
+                },
+            )?;
+            self.renderer.dc.BeginDraw();
+            self.renderer.dc.PushAxisAlignedClip(
+                &windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F {
+                    left: dirty.left as f32,
+                    top: dirty.top as f32,
+                    right: dirty.right as f32,
+                    bottom: dirty.bottom as f32,
+                },
+                D2D1_ANTIALIAS_MODE_ALIASED,
+            );
+            // Clear respects the clip: only the dirty area becomes transparent.
+            self.renderer.dc.Clear(Some(&color([0; 3], 0.)));
+        }
+        Ok(())
+    }
+    /// Ends a `begin_region` frame and sends that area alone, to the screen and the mirror.
+    pub fn end_region(&self, dirty: RECT) -> Result<()> {
+        unsafe {
+            self.renderer.dc.PopAxisAlignedClip();
+            self.renderer.dc.EndDraw(None, None)?;
+        }
+        self.surface.present_region(self.hwnd(), dirty)?;
+        self.sync(Some((self.surface.bits(), dirty)));
+        Ok(())
+    }
     pub fn object(&self, object: &Object, opacity: f32, arrow_size: f64) {
         // Round caps, joins and the arrowhead stay within the stroke width plus the head size.
         self.mark(
@@ -494,6 +530,20 @@ impl Layer {
                 );
             }
         }
+    }
+    /// The pointer effects of one frame; `origin` is this layer's screen position.
+    pub fn pointer(
+        &self,
+        origin: Point,
+        effects: &shotoshot_core::pointer::Effects,
+        settings: &shotoshot_core::pointer::PointerSettings,
+        halo: shotoshot_ui::pointer::HaloState,
+        scale: f64,
+        now: u64,
+    ) -> Result<()> {
+        let mut canvas =
+            crate::D2dCanvas::with_brush(&self.renderer, &self.renderer.dc, self.brush.clone());
+        shotoshot_ui::pointer::paint(&mut canvas, origin, effects, settings, halo, scale, now)
     }
     pub fn devices(&self, devices: &Devices, now: u64) {
         self.mark_all();

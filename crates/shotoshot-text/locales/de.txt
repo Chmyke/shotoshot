@@ -84,6 +84,7 @@ menu.show_board = Board anzeigen
 menu.clear_board = Board leeren
 menu.presentation = Präsentation
 menu.pointer_halo = Zeiger-Halo
+menu.pointer_effects = Zeigereffekte
 menu.keyboard = Tastatur
 menu.mouse = Maus
 menu.keyboard_layout = Tastaturlayout
@@ -116,6 +117,8 @@ setup.title_arrow = Tastenkürzel für Pfeil
 setup.title_rectangle = Tastenkürzel für Rechteck
 setup.title_ellipse = Tastenkürzel für Ellipse
 setup.title_board = Tastenkürzel für Board
+setup.title_show_click = Tastenkürzel für Klick anzeigen
+setup.title_spotlight = Tastenkürzel für Spotlight
 setup.press = Tastenkürzel drücken…
 setup.waiting = …
 setup.choose = Tastenkürzel wählen
@@ -142,6 +145,7 @@ setup.invalid_shape = Ungültiges Tastenkürzel für Form
 setup.invalid_board = Ungültiges Board-Tastenkürzel
 setup.shape_needs_modifier = Wählen Sie ein Tastenkürzel mit Strg oder Alt, damit beim Tippen keine Formen ausgelöst werden.
 setup.board_needs_modifier = Wählen Sie ein Tastenkürzel mit Strg oder Alt, damit sich das Board beim Tippen nicht öffnet.
+setup.pointer_needs_modifier = Wählen Sie ein Tastenkürzel mit Strg oder Alt, damit es beim Tippen nie ausgelöst wird.
 setup.reserved = Strg+Alt+Esc ist reserviert
 setup.duplicate_shape = Doppeltes Tastenkürzel für Form
 
@@ -220,3 +224,58 @@ installer.language.title = Sprache von Shotoshot
 installer.language.description = Sie können sie später über das Shotoshot-Symbol im Infobereich ändern.
 installer.language.auto = Windows-Sprache
 installer.shoto_file = Bearbeitbares Shotoshot-Bild
+
+# Pointer effects
+pointer.title = Zeigereffekte
+pointer.section_halo == Halo
+pointer.section_trail = Spur
+pointer.section_find = Zeiger finden
+pointer.section_clicks = Klicks
+pointer.section_spotlight == Spotlight
+pointer.shape = Form
+pointer.color = Farbe
+pointer.size = Größe
+pointer.opacity = Deckkraft
+pointer.softness = Weicher Rand
+pointer.thickness = Stärke
+pointer.movement = Bewegung
+pointer.style = Stil
+pointer.length = Länge
+pointer.shake = Maus schütteln
+pointer.animation == Animation
+pointer.left_click = Linksklick
+pointer.right_click = Rechtsklick
+pointer.sound = Ton
+pointer.volume = Lautstärke
+pointer.show_click = Klick anzeigen
+pointer.darkness = Abdunklung
+pointer.hide_moving = Bei Bewegung ausblenden
+pointer.hold = Beim Halten anzeigen
+pointer.off = Aus
+pointer.hidden = Ausgeblendet
+pointer.disc = Scheibe
+pointer.ring == Ring
+pointer.neon == Neon
+pointer.instant = Sofort
+pointer.smooth = Weich
+pointer.line = Linie
+pointer.dots = Punkte
+pointer.sparks = Funken
+pointer.stars = Sterne
+pointer.short = Kurz
+pointer.medium_length = Mittel
+pointer.long = Lang
+pointer.ripple = Welle
+pointer.click_ring == Ring
+pointer.waves = Wellen
+pointer.soft = Sanft
+pointer.click_sound = Klick
+pointer.low = Leise
+pointer.medium_volume = Mittel
+pointer.high = Laut
+pointer.circle = Kreis
+pointer.horizontal = Horizontaler Streifen
+pointer.vertical = Vertikaler Streifen
+pointer.no_shortcut = Keins
+pointer.reset = Standard wiederherstellen
+pointer.undo = Änderungen verwerfen

@@ -43,6 +43,7 @@ impl Resident {
                 board_rebake_forced: false,
                 menu: None,
                 menu_closed_on_icon: None,
+                pointer_window: None,
                 setup_ui: setup::Setup::default(),
             }));
             let window = crate::resources::OwnedWindow(

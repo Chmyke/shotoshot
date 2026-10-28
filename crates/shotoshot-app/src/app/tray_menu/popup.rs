@@ -663,7 +663,7 @@ mod tests {
                 // They open a submenu, which stays open on its choices too.
                 120 | 130 | 140 | 150 => Effect::Open,
                 // Each opens or runs something else.
-                1 | 2 | 3 | 6 | 8 | 10 | 13 | 110..=112 => Effect::Run(row.id),
+                1 | 2 | 3 | 6 | 8 | 10 | 13 | 105 | 110..=112 => Effect::Run(row.id),
                 _ => Effect::None,
             };
             assert_eq!(effect(row), expected, "{}", label_in(row, Language::En));
@@ -820,8 +820,8 @@ mod tests {
         assert_eq!(popup.model.borrow().selected[0], Some(index(101)));
         key(VK_SPACE);
         assert_eq!(posted(owner.0), [(COMMAND, 101, 1)]);
-        // Into the size submenu and its middle choice.
-        for _ in 0..4 {
+        // Past the pointer effects, into the size submenu and its middle choice.
+        for _ in 0..5 {
             key(VK_DOWN);
         }
         assert_eq!(popup.model.borrow().selected[0], Some(index(140)));

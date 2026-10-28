@@ -504,6 +504,47 @@ impl LiveSurface {
             )
         }
     }
+    /// Sends only `dirty` of the surface to its layered window, which keeps its place: the
+    /// window never moves, so its position and its pixels can never disagree for a frame.
+    pub fn present_region(
+        &self,
+        hwnd: windows::Win32::Foundation::HWND,
+        dirty: windows::Win32::Foundation::RECT,
+    ) -> Result<()> {
+        if dirty.right <= dirty.left || dirty.bottom <= dirty.top {
+            return Ok(());
+        }
+        unsafe {
+            GdiFlush().ok()?;
+            let size = windows::Win32::Foundation::SIZE {
+                cx: self.width as i32,
+                cy: self.height as i32,
+            };
+            let source = windows::Win32::Foundation::POINT { x: 0, y: 0 };
+            let blend = BLENDFUNCTION {
+                BlendOp: AC_SRC_OVER as u8,
+                BlendFlags: 0,
+                SourceConstantAlpha: 255,
+                AlphaFormat: AC_SRC_ALPHA as u8,
+            };
+            UpdateLayeredWindowIndirect(
+                hwnd,
+                &UPDATELAYEREDWINDOWINFO {
+                    cbSize: std::mem::size_of::<UPDATELAYEREDWINDOWINFO>() as u32,
+                    hdcDst: self.surface.screen,
+                    pptDst: std::ptr::null(),
+                    psize: &size,
+                    hdcSrc: self.surface.memory,
+                    pptSrc: &source,
+                    crKey: windows::Win32::Foundation::COLORREF(0),
+                    pblend: &blend,
+                    dwFlags: ULW_ALPHA,
+                    prcDirty: &dirty,
+                },
+            )
+            .ok()
+        }
+    }
     pub fn present(&self, hwnd: windows::Win32::Foundation::HWND) -> Result<()> {
         unsafe {
             GdiFlush().ok()?;

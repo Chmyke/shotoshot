@@ -7,8 +7,10 @@ impl Presentation {
         // PITFALL: Read only the union member identified by the native header.
         unsafe {
             if raw.header.dwType == RIM_TYPEMOUSE.0 {
-                self.move_halo()?;
                 let flags = raw.data.mouse.Anonymous.Anonymous.usButtonFlags;
+                if self.enabled.halo {
+                    self.pointer_event(flags)?;
+                }
                 // The diagram never activates: native SetCapture alone cannot guarantee
                 // background drag events outside its window. Raw Input supplies the release.
                 if self.input_drag.is_some() {
@@ -21,7 +23,9 @@ impl Presentation {
                     if self.enabled.halo {
                         self.halo_state.mouse(flags, self.now());
                     }
-                    if let Some(halo) = &self.halo {
+                    if let Some(halo) = &self.halo
+                        && !self.frame_driven(self.now())
+                    {
                         self.paint(halo.hwnd())?;
                     }
                     if self.enabled.mouse {
@@ -141,6 +145,8 @@ impl Presentation {
             1 => self.arm(LiveTool::Arrow),
             2 => self.arm(LiveTool::Rectangle),
             3 => self.arm(LiveTool::Ellipse),
+            4 => self.pointer_hotkey(0),
+            5 => self.pointer_hotkey(1),
             _ => Ok(()),
         }
     }
@@ -259,7 +265,7 @@ impl Presentation {
 }
 
 pub(crate) fn resident_message(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> Option<LRESULT> {
-    let hotkey = msg == WM_HOTKEY && (HOTKEY_BASE..HOTKEY_BASE + 4).contains(&(w.0 as i32));
+    let hotkey = msg == WM_HOTKEY && (HOTKEY_BASE..HOTKEY_BASE + 6).contains(&(w.0 as i32));
     if !(msg == WM_INPUT
         || msg == OBSERVED_KEY
         || msg == WM_TIMER && w.0 == TIMER

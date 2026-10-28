@@ -9,6 +9,7 @@ mod events;
 mod input;
 mod instant;
 mod notice;
+mod pointer_window;
 mod pulse;
 mod recall;
 mod warm_probe;
@@ -113,6 +114,8 @@ struct App {
     menu: Option<tray_menu::Popup>,
     /// When a press on the notification icon last closed the menu.
     menu_closed_on_icon: Option<std::time::Instant>,
+    /// The pointer effects window, while it is open.
+    pointer_window: Option<pointer_window::PointerWindow>,
     /// The next `BOARD_TIMER` bakes even while every screen shows our pictures: the displays
     /// changed, and the pictures must be baked again for them.
     board_rebake_forced: bool,
@@ -342,6 +345,10 @@ impl App {
                             self.settings.board_shortcut.modifiers,
                             self.settings.board_shortcut.key,
                         ))
+                    } else if let Some(index) = target.pointer_index() {
+                        let pointer = &self.settings.presentation.pointer;
+                        [pointer.click_shortcut, pointer.spotlight_shortcut][index]
+                            .map(|s| (s.modifiers, s.key))
                     } else {
                         (self.settings.key != 0)
                             .then_some((self.settings.modifiers, self.settings.key))

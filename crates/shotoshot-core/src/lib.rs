@@ -6,6 +6,7 @@ mod editor;
 mod geometry;
 mod paint;
 mod paths;
+pub mod pointer;
 pub mod rename_migration;
 pub mod settings;
 pub mod shoto;
