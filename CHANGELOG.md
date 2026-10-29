@@ -2,6 +2,11 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.24 · 2026-10-29
+
+- On Linux with labwc (Raspberry Pi OS), the Magnifier joins the tray menu: tick it and the screen under your pointer grows, drawn by labwc itself, so recordings see it too.
+- It is square for now, as labwc only knows squares; it turns round, with the soft edge of Windows, as soon as labwc learns circles.
+
 ## 0.3.23 · 2026-10-29
 
 - With two screens, the settings submenus no longer wander off to the neighbouring screen: when the menu sits at the right edge, they open on its left instead.

@@ -12,6 +12,7 @@ enum Request {
     Capture,
     Instant,
     Language(LanguageChoice),
+    Magnifier,
     Quit,
 }
 
@@ -20,6 +21,8 @@ struct Tray {
     icons: Vec<ksni::Icon>,
     /// The stored choice, marked in the language submenu.
     language: LanguageChoice,
+    /// Whether labwc's magnifier is on; None outside labwc, where the menu has no such line.
+    magnifier: Option<bool>,
 }
 impl Tray {
     fn send(&self, request: Request) {
@@ -40,7 +43,7 @@ impl ksni::Tray for Tray {
         self.send(Request::Capture);
     }
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
-        menu_in(language(), self.language)
+        menu_in(language(), self.language, self.magnifier)
     }
 }
 
@@ -58,8 +61,13 @@ fn choice_label_in(choice: LanguageChoice, language: Language) -> String {
     }
 }
 
-/// The menu in `language`, with `chosen` marked in the language submenu.
-fn menu_in(language: Language, chosen: LanguageChoice) -> Vec<ksni::MenuItem<Tray>> {
+/// The menu in `language`, with `chosen` marked in the language submenu and the magnifier's
+/// line when `magnifier` says whether it is on.
+fn menu_in(
+    language: Language,
+    chosen: LanguageChoice,
+    magnifier: Option<bool>,
+) -> Vec<ksni::MenuItem<Tray>> {
     let item = |key: Key, request: fn() -> Request| {
         ksni::menu::StandardItem {
             label: label(tr_in(language, key)),
@@ -84,9 +92,22 @@ fn menu_in(language: Language, chosen: LanguageChoice) -> Vec<ksni::MenuItem<Tra
             })
             .collect(),
     };
-    vec![
+    let mut menu = vec![
         item(Key::MenuCapture, || Request::Capture),
         item(Key::MenuInstantScreenshot, || Request::Instant),
+    ];
+    if let Some(checked) = magnifier {
+        menu.push(
+            ksni::menu::CheckmarkItem {
+                label: label(tr_in(language, Key::MenuMagnifier)),
+                checked,
+                activate: Box::new(|tray: &mut Tray| tray.send(Request::Magnifier)),
+                ..Default::default()
+            }
+            .into(),
+        );
+    }
+    menu.extend([
         ksni::MenuItem::Separator,
         ksni::menu::SubMenu {
             label: label(&shotoshot_text::language_menu_label_in(language)),
@@ -98,7 +119,29 @@ fn menu_in(language: Language, chosen: LanguageChoice) -> Vec<ksni::MenuItem<Tra
         .into(),
         ksni::MenuItem::Separator,
         item(Key::MenuQuit, || Request::Quit),
-    ]
+    ]);
+    menu
+}
+
+/// Switches labwc's magnifier, at the size and zoom of the pointer settings shared with
+/// Windows. A failure is reported and leaves the line as the magnifier really is: off when
+/// switching on failed (its blocks taken out again), off too when switching off failed, since
+/// its blocks are gone either way.
+fn switch_magnifier(handle: &ksni::blocking::Handle<Tray>, on: bool) {
+    let result = if on {
+        let settings = crate::settings::load().unwrap_or_default();
+        crate::magnifier::switch_on(crate::magnifier::chosen(&settings)).inspect_err(|_| {
+            let _ = crate::magnifier::forget();
+        })
+    } else {
+        crate::magnifier::switch_off()
+    };
+    if let Err(error) = &result {
+        let message = Text::with(Key::ErrorUnexpected, &[("detail", &error.to_string())]);
+        crate::notice::report(&format!("Shotoshot: {message}"));
+    }
+    let now = on && result.is_ok();
+    handle.update(|tray| tray.magnifier = Some(now));
 }
 
 /// Stores the language chosen in the menu, speaks it in this menu at once and in every capture
@@ -147,10 +190,16 @@ pub fn run() -> Result<bool, Box<dyn Error>> {
     let settings = crate::settings::load().unwrap_or_default();
     crate::language::apply(&settings);
     let (requests, received) = channel();
+    // Blocks left by a resident that did not quit (a crash, a logout): the magnifier starts off.
+    let labwc = crate::magnifier::available();
+    if labwc {
+        let _ = crate::magnifier::forget();
+    }
     let tray = Tray {
         requests,
         icons: icons(),
         language: settings.language,
+        magnifier: labwc.then_some(false),
     };
     use ksni::blocking::TrayMethods;
     let handle = tray.spawn()?;
@@ -163,11 +212,19 @@ pub fn run() -> Result<bool, Box<dyn Error>> {
                 choose_language(&handle, choice);
                 continue;
             }
+            Request::Magnifier => {
+                let on = handle.update(|tray| tray.magnifier) == Some(Some(true));
+                switch_magnifier(&handle, !on);
+                continue;
+            }
             Request::Quit => break,
         };
         // Reap finished captures without blocking the menu.
         let mut child = Command::new(&exe).arg(argument).spawn()?;
         std::thread::spawn(move || child.wait());
+    }
+    if handle.update(|tray| tray.magnifier) == Some(Some(true)) {
+        let _ = crate::magnifier::switch_off();
     }
     drop(lock);
     Ok(true)
@@ -203,7 +260,7 @@ mod tests {
 
     #[test]
     fn tray_labels_follow_the_language() {
-        let english = labels(&menu_in(Language::En, LanguageChoice::Auto));
+        let english = labels(&menu_in(Language::En, LanguageChoice::Auto, None));
         assert_eq!(
             english,
             [
@@ -213,29 +270,49 @@ mod tests {
                 "Quit Shotoshot"
             ]
         );
-        let french = labels(&menu_in(Language::Fr, LanguageChoice::Auto));
+        let french = labels(&menu_in(Language::Fr, LanguageChoice::Auto, None));
         assert_eq!(french[3], "Quitter Shotoshot");
         assert_eq!(french[2], "Langue · Language");
         for language in Language::ALL.into_iter().skip(1) {
-            let translated = labels(&menu_in(language, LanguageChoice::Auto));
+            let translated = labels(&menu_in(language, LanguageChoice::Auto, None));
             assert_ne!(translated[3], english[3], "{}", language.tag());
             assert!(translated[2].ends_with(" · Language"), "{}", language.tag());
         }
     }
 
     #[test]
+    fn the_magnifier_line_shows_only_under_labwc() {
+        let checked = |menu: &[ksni::MenuItem<Tray>]| {
+            menu.iter().find_map(|item| match item {
+                ksni::MenuItem::Checkmark(item) => Some((item.label.clone(), item.checked)),
+                _ => None,
+            })
+        };
+        assert_eq!(
+            checked(&menu_in(Language::En, LanguageChoice::Auto, None)),
+            None
+        );
+        let on = menu_in(Language::En, LanguageChoice::Auto, Some(true));
+        assert_eq!(checked(&on), Some(("Magnifier".into(), true)));
+        let off = menu_in(Language::Fr, LanguageChoice::Auto, Some(false));
+        assert_eq!(checked(&off).map(|(_, c)| c), Some(false));
+        // Right under the captures, as the switch of the Windows menu sits among its effects.
+        assert!(matches!(off[2], ksni::MenuItem::Checkmark(_)));
+    }
+
+    #[test]
     fn language_radio_marks_the_setting() {
-        let (selected, names) = radio(&menu_in(Language::En, LanguageChoice::Auto));
+        let (selected, names) = radio(&menu_in(Language::En, LanguageChoice::Auto, None));
         assert_eq!(selected, 0);
         assert_eq!(names.len(), 1 + Language::ALL.len());
         assert_eq!(names[0], "System language");
         let natives: Vec<&str> = Language::ALL.iter().map(|l| l.native_name()).collect();
         assert_eq!(names[1..], natives[..]);
-        let (_, french) = radio(&menu_in(Language::Fr, LanguageChoice::Auto));
+        let (_, french) = radio(&menu_in(Language::Fr, LanguageChoice::Auto, None));
         assert_eq!(french[0], "Langue du système");
         assert_eq!(french[1..], natives[..], "native names never change");
         for choice in LanguageChoice::ALL {
-            let (selected, _) = radio(&menu_in(Language::De, choice));
+            let (selected, _) = radio(&menu_in(Language::De, choice, None));
             assert_eq!(LanguageChoice::ALL[selected], choice);
         }
     }

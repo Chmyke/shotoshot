@@ -199,20 +199,6 @@ fn composed() {
         let _ = DwmFlush();
     }
 }
-fn virtual_screen() -> RECT {
-    unsafe {
-        let (left, top) = (
-            GetSystemMetrics(SM_XVIRTUALSCREEN),
-            GetSystemMetrics(SM_YVIRTUALSCREEN),
-        );
-        RECT {
-            left,
-            top,
-            right: left + GetSystemMetrics(SM_CXVIRTUALSCREEN),
-            bottom: top + GetSystemMetrics(SM_CYVIRTUALSCREEN),
-        }
-    }
-}
 fn bgr(image: &crate::Image, x: i32, y: i32) -> Option<[u8; 3]> {
     let (dx, dy) = (x - image.left, y - image.top);
     if dx < 0 || dy < 0 || dx >= image.width as i32 || dy >= image.height as i32 {
@@ -468,56 +454,35 @@ fn fail(message: String) -> Error {
 /// windows it must leave out. `timed` adds the latency and the idle cost. `renderer` is the
 /// one asked for: the banded one, or the composed one where this Windows offers it.
 pub(crate) fn probe(timed: bool, renderer: Renderer) -> Result<Report> {
-    let desktop = virtual_screen();
-    let pattern = Sheet::new(desktop, pattern_bgra)?;
+    // One screen only, away from the one Mickaël uses (`probe_screen`).
+    let m = crate::image::probe_screen();
+    let pattern = Sheet::new(m, pattern_bgra)?;
     composed();
     let before = capture_desktop()?;
     // The pattern must be what the screen shows: another window over it voids the run.
     let probe_at = |x: i32, y: i32| bgr(&before, x, y) == bgr_of(pattern_bgra(x, y));
-    let mut points = Vec::new();
-    let mut monitors: Vec<RECT> = Vec::new();
-    unsafe extern "system" fn each(monitor: HMONITOR, _: HDC, _: *mut RECT, list: LPARAM) -> BOOL {
-        let mut info = MONITORINFO {
-            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
-            ..Default::default()
-        };
-        unsafe {
-            if GetMonitorInfoW(monitor, &mut info).as_bool() {
-                (*(list.0 as *mut Vec<RECT>)).push(info.rcMonitor);
-            }
-        }
-        TRUE
-    }
-    unsafe {
-        let _ = EnumDisplayMonitors(
-            None,
-            None,
-            Some(each),
-            LPARAM(&mut monitors as *mut _ as isize),
-        );
-    }
-    for m in &monitors {
-        let middle = POINT {
-            x: (m.left + m.right) / 2,
-            y: (m.top + m.bottom) / 2,
-        };
-        points.push((middle, EXACT));
-        for corner in [
-            POINT {
-                x: m.left,
-                y: m.top,
-            },
-            POINT {
-                x: m.right - 1,
-                y: m.bottom - 1,
-            },
-            POINT {
-                x: m.left,
-                y: middle.y,
-            },
-        ] {
-            points.push((corner, EXACT_AT_EDGES));
-        }
+    let middle = POINT {
+        x: (m.left + m.right) / 2,
+        y: (m.top + m.bottom) / 2,
+    };
+    let mut points = vec![(middle, EXACT)];
+    // Its right edge, where no screen lies beyond on this desk: a loupe on the left one would
+    // spill onto the screen in use and read what changes there.
+    for corner in [
+        POINT {
+            x: m.right - 1,
+            y: m.top,
+        },
+        POINT {
+            x: m.right - 1,
+            y: m.bottom - 1,
+        },
+        POINT {
+            x: m.right - 1,
+            y: middle.y,
+        },
+    ] {
+        points.push((corner, EXACT_AT_EDGES));
     }
     for (at, _) in &points {
         if !probe_at(at.x, at.y) {
@@ -548,11 +513,7 @@ pub(crate) fn probe(timed: bool, renderer: Renderer) -> Result<Report> {
         }
     }
     // A window to leave out and one that refuses capture, both under the loupe.
-    let main = monitors.first().copied().unwrap_or(desktop);
-    let at = POINT {
-        x: (main.left + main.right) / 2,
-        y: (main.top + main.bottom) / 2,
-    };
+    let at = middle;
     let square = |dx: i32| RECT {
         left: at.x + dx,
         top: at.y - 20,
@@ -631,8 +592,8 @@ pub(crate) fn probe(timed: bool, renderer: Renderer) -> Result<Report> {
     }
     drop(framed);
     if timed {
-        (report.latencies_ms, report.update_ms) = latencies(&mut loupe, &before, &monitors)?;
-        report.floor_ms = floor(&monitors)?;
+        (report.latencies_ms, report.update_ms) = latencies(&mut loupe, &before, m)?;
+        report.floor_ms = floor(m)?;
         report.idle_cpu_percent = idle_cpu(&mut loupe, at)?;
     }
     report.renderer = Some(loupe.renderer());
@@ -651,7 +612,8 @@ pub(crate) fn probe(timed: bool, renderer: Renderer) -> Result<Report> {
 /// own dark or light tint, so its blur stays one colour and a missing taskbar shows.
 const BACKDROP: [u8; 4] = [160, 110, 70, 255];
 
-/// What the loupe showed over the primary screen's taskbar, which DWM thumbnails get wrong.
+/// What the loupe showed over the taskbar of the probe's screen, which DWM thumbnails get
+/// wrong.
 pub(crate) struct Taskbar {
     /// Pixels inside the fading edge whose source lies in the taskbar.
     pub look: Look,
@@ -660,19 +622,26 @@ pub(crate) struct Taskbar {
     pub latencies_ms: Vec<f64>,
     pub update_ms: Vec<f64>,
 }
-/// Places the loupe over the primary screen's taskbar, on the real screen (no pattern: it
-/// would cover the taskbar), and compares what it shows of the taskbar with the screen before.
-/// `timed` adds the latency of moves along it. None when the taskbar is not at the bottom of
-/// the primary screen, or hides itself.
+/// Places the loupe over the taskbar of the probe's screen (`probe_screen`), on the real screen
+/// (no pattern: it would cover the taskbar), and compares what it shows of the taskbar with the
+/// screen before. `timed` adds the latency of moves along it. None when that screen has no
+/// taskbar at its bottom, or it hides itself.
 pub(crate) fn taskbar(timed: bool) -> Result<Option<Taskbar>> {
     let _com = crate::ComApartment::new()?;
     let mut info = MONITORINFO {
         cbSize: std::mem::size_of::<MONITORINFO>() as u32,
         ..Default::default()
     };
+    let probed = crate::image::probe_screen();
     unsafe {
         GetMonitorInfoW(
-            MonitorFromPoint(POINT::default(), MONITOR_DEFAULTTOPRIMARY),
+            MonitorFromPoint(
+                POINT {
+                    x: (probed.left + probed.right) / 2,
+                    y: (probed.top + probed.bottom) / 2,
+                },
+                MONITOR_DEFAULTTONEAREST,
+            ),
             &mut info,
         )
         .ok()?;
@@ -843,9 +812,8 @@ fn bgr_of(bgra: [u8; 4]) -> Option<[u8; 3]> {
     Some([bgra[0], bgra[1], bgra[2]])
 }
 
-/// Two places on the main screen the probe jumps between.
-fn places(monitors: &[RECT]) -> [POINT; 2] {
-    let m = monitors.first().copied().unwrap_or(virtual_screen());
+/// Two places on the probe's screen it jumps between.
+fn places(m: RECT) -> [POINT; 2] {
     [
         POINT {
             x: m.left + (m.right - m.left) / 3,
@@ -916,11 +884,11 @@ fn timed_jumps(
 fn latencies(
     loupe: &mut Loupe,
     before: &crate::Image,
-    monitors: &[RECT],
+    screen: RECT,
 ) -> Result<(Vec<f64>, Vec<f64>)> {
     let mut updates = Vec::new();
     let times = timed_jumps(
-        places(monitors),
+        places(screen),
         0,
         |at| {
             let start = std::time::Instant::now();
@@ -941,20 +909,20 @@ fn latencies(
 }
 /// The same jumps made by a plain window of one colour: the floor of the reading method, as
 /// GDI sees the composed screen a frame or two after it changed.
-fn floor(monitors: &[RECT]) -> Result<Vec<f64>> {
+fn floor(screen: RECT) -> Result<Vec<f64>> {
     const COLOR: [u8; 4] = [12, 34, 56, 255];
     let half = DIAMETER / 2;
     let sheet = Sheet::new(
         RECT {
-            left: 0,
-            top: 0,
-            right: DIAMETER,
-            bottom: DIAMETER,
+            left: screen.left,
+            top: screen.top,
+            right: screen.left + DIAMETER,
+            bottom: screen.top + DIAMETER,
         },
         |_, _| COLOR,
     )?;
     timed_jumps(
-        places(monitors),
+        places(screen),
         0,
         |at| unsafe {
             SetWindowPos(
@@ -1119,7 +1087,7 @@ pub(crate) fn run() -> Result<()> {
     let mut faults = verdict(&report, true);
     match &taskbar {
         Some(taskbar) => faults.extend(taskbar_verdict(taskbar, Some(&report.floor_ms))),
-        None => faults.push("no taskbar at the bottom of the primary screen: untested".into()),
+        None => faults.push("no taskbar at the bottom of the probe's screen: untested".into()),
     }
     if report.renderer != Some(Renderer::Composed) {
         faults.push(format!(
@@ -1232,7 +1200,13 @@ mod tests {
             halo_color: yellow,
             ..Default::default()
         };
-        let pattern = Sheet::new(virtual_screen(), pattern_bgra).unwrap();
+        let screen = crate::image::probe_screen();
+        let pattern = Sheet::new(screen, pattern_bgra).unwrap();
+        // The loupe opens where the pointer is said to be, on the probe's screen.
+        POINTER.set(Some(POINT {
+            x: (screen.left + screen.right) / 2,
+            y: (screen.top + screen.bottom) / 2,
+        }));
         composed();
         let before = capture_desktop().unwrap();
         // The loupe sits where the pointer was when it opened; nothing moves it afterwards, as

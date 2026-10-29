@@ -5,6 +5,7 @@ mod document;
 mod editor;
 mod geometry;
 mod label;
+pub mod labwc_loupe;
 pub mod loupe;
 mod paint;
 mod paths;

@@ -7,6 +7,7 @@ mod failure;
 mod files;
 mod keymap;
 mod language;
+mod magnifier;
 mod monitors;
 mod notice;
 mod png_io;
@@ -78,6 +79,15 @@ fn dispatch(args: &[String]) -> Result<(), Box<dyn Error>> {
         let image = x11::screenshot()?;
         println!("x11: {}x{}", image.width, image.height);
         return Ok(());
+    }
+    if args.iter().any(|a| a == "--linux-magnifier-probe") {
+        // Diagnostic in the labwc session: switched on as the menu does, held, then off; the
+        // script checks labwc's files byte for byte against its copy.
+        return magnifier::probe();
+    }
+    if args.iter().any(|a| a == "--linux-magnifier-off") {
+        // Uninstall: labwc's files without Shotoshot's magnifier.
+        return magnifier::forget();
     }
     if args.iter().any(|a| a == "--instant") {
         return instant();

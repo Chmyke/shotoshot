@@ -41,6 +41,15 @@ function Get-RunScript([string]$Dir, [string[]]$Tests, [switch]$Diagnostic) {
             'x11=unavailable; for s in /tmp/.X11-unix/X*; do x="${s##*X}"; ' +
             'DISPLAY=":$x" WAYLAND_DISPLAY= XDG_SESSION_TYPE=x11 timeout 10 nice -n 10 ./shotoshot --linux-x11-probe 2>/dev/null && { x11=ok; break; }; done; ' +
             '[ $x11 = ok ] || echo "x11: unavailable"; ' +
+            # labwc's magnifier, switched as the menu does, in the real session: its files are
+            # copied first and must come back byte for byte (put back and reported otherwise).
+            'pid=$(pgrep -u "$(id -u)" -x labwc | head -n 1); c="${XDG_CONFIG_HOME:-$HOME/.config}/labwc"; ' +
+            'if [ -n "$pid" ]; then mkdir -p "$d/labwc"; for f in rc.xml themerc-override; do [ ! -e "$c/$f" ] || cp -p "$c/$f" "$d/labwc/$f"; done; ' +
+            'LABWC_PID=$pid nice -n 10 ./shotoshot --linux-magnifier-probe || { status=1; echo "FAILED: magnifier"; }; changed=; ' +
+            'for f in rc.xml themerc-override; do if [ -e "$d/labwc/$f" ]; then cmp -s "$d/labwc/$f" "$c/$f" || { changed=1; cp -p "$d/labwc/$f" "$c/$f"; }; ' +
+            'elif [ -e "$c/$f" ]; then changed=1; rm -f "$c/$f"; fi; done; ' +
+            'if [ -n "$changed" ]; then status=1; echo "FAILED: magnifier left labwc files changed (put back)"; LABWC_PID=$pid labwc --reconfigure; fi; ' +
+            'else echo "magnifier: no labwc session"; fi; ' +
             # The resident must publish its notification-area icon, then stop.
             # Own lock directory: an installed resident may already hold the session lock.
             'mkdir -p "$d/xdg"; XDG_RUNTIME_DIR="$d/xdg" DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus ' +

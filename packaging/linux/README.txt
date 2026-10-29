@@ -15,6 +15,13 @@ Editable:  Ctrl+Shift+S saves an editable image (.shoto) there instead. Open it
            the PNG, keep the .shoto.
 Tray:      the Shotoshot icon starts at login; click it to capture.
            GNOME needs the AppIndicator extension to show it.
+Magnifier: under labwc (Raspberry Pi OS), the menu's Magnifier switches on
+           labwc's own magnifier around the pointer, 240 px at 2x (the sizes
+           of the Windows settings). It is square: labwc draws no round one.
+           Shotoshot adds a marked block to ~/.config/labwc/rc.xml and
+           themerc-override while it is on and takes it out when you switch
+           it off, quit or uninstall. Ctrl+Alt+M switches labwc's magnifier
+           too, without Shotoshot knowing: use one or the other.
 
 Requires a desktop with the XDG screenshot portal (GNOME, KDE, wlroots
 compositors such as labwc or Sway, most X11 desktops).

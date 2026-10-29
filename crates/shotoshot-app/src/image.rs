@@ -1,5 +1,9 @@
 use windows::{
-    Win32::{Graphics::Gdi::*, UI::WindowsAndMessaging::*},
+    Win32::{
+        Foundation::{LPARAM, RECT},
+        Graphics::Gdi::*,
+        UI::WindowsAndMessaging::*,
+    },
     core::*,
 };
 
@@ -182,6 +186,46 @@ pub(crate) fn blank_desktop() -> Result<Image> {
 }
 pub fn capture_desktop() -> Result<Image> {
     Screen::Desktop.capture()
+}
+
+/// The screen a probe on the real desktop shows its windows on: the rightmost one, never the
+/// primary screen while there is another, as Mickaël plays or works on the primary one, in the
+/// middle (2026-10-29: the loupe's probe covered every screen during his game).
+pub(crate) fn probe_screen() -> RECT {
+    let mut screens: Vec<(RECT, bool)> = Vec::new();
+    unsafe extern "system" fn each(monitor: HMONITOR, _: HDC, _: *mut RECT, list: LPARAM) -> BOOL {
+        let mut info = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        unsafe {
+            if GetMonitorInfoW(monitor, &mut info).as_bool() {
+                (*(list.0 as *mut Vec<(RECT, bool)>))
+                    .push((info.rcMonitor, info.dwFlags & MONITORINFOF_PRIMARY != 0));
+            }
+        }
+        true.into()
+    }
+    unsafe {
+        let _ = EnumDisplayMonitors(
+            None,
+            None,
+            Some(each),
+            LPARAM(&mut screens as *mut _ as isize),
+        );
+    }
+    screens
+        .iter()
+        .filter(|(_, primary)| !primary)
+        .max_by_key(|(r, _)| r.left)
+        .or_else(|| screens.iter().max_by_key(|(r, _)| r.left))
+        .map(|(r, _)| *r)
+        .unwrap_or(RECT {
+            left: 0,
+            top: 0,
+            right: unsafe { GetSystemMetrics(SM_CXSCREEN) },
+            bottom: unsafe { GetSystemMetrics(SM_CYSCREEN) },
+        })
 }
 
 /// Copies `src` into `dst` at (`x`, `y`), clipped.

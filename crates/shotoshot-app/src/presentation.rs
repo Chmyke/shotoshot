@@ -737,7 +737,17 @@ impl Presentation {
         }
     }
 }
+#[cfg(test)]
+thread_local! {
+    /// Where a test on the real desktop says the pointer is, on the probe's screen: it never
+    /// moves the real one, and the user's pointer lies on the screen in use.
+    static POINTER: std::cell::Cell<Option<POINT>> = const { std::cell::Cell::new(None) };
+}
 fn cursor() -> Result<POINT> {
+    #[cfg(test)]
+    if let Some(point) = POINTER.get() {
+        return Ok(point);
+    }
     let mut point = POINT::default();
     unsafe {
         GetCursorPos(&mut point)?;

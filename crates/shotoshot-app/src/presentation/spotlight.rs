@@ -357,10 +357,16 @@ mod tests {
             spotlight_dim: 60,
             ..Default::default()
         };
-        // A white sheet under the spotlight, so every shade reads as one known value.
+        // A white sheet under the spotlight, so every shade reads as one known value, on the
+        // probe's screen. The darkness itself spans every screen, for a second.
+        let screen = crate::image::probe_screen();
+        let origin = POINT {
+            x: screen.left + 100,
+            y: screen.top + 100,
+        };
         let sheet = layered_window(
             w!("Shotoshot spotlight test"),
-            POINT { x: 100, y: 100 },
+            origin,
             SIZE { cx: 700, cy: 600 },
         )
         .unwrap();
@@ -373,11 +379,11 @@ mod tests {
         let mut spotlight = Spotlight::new().unwrap();
         let half = 100;
         let feather = SPOTLIGHT_FEATHER as i32;
-        for center in [
-            POINT { x: 400, y: 400 },
-            POINT { x: 437, y: 395 },
-            POINT { x: 500, y: 400 },
-        ] {
+        for (dx, dy) in [(300, 300), (337, 295), (400, 300)] {
+            let center = POINT {
+                x: origin.x + dx,
+                y: origin.y + dy,
+            };
             spotlight.update(true, center, &settings, 1.).unwrap();
             std::thread::sleep(std::time::Duration::from_millis(300));
             let screen = crate::image::capture_desktop().unwrap();
