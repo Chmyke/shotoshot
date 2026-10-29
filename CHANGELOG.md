@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.23 · 2026-10-29
+
+- With two screens, the settings submenus no longer wander off to the neighbouring screen: when the menu sits at the right edge, they open on its left instead.
+
 ## 0.3.22 · 2026-10-28
 
 - New Magnifier, switched on from the notification menu or Pointer effects: a round lens follows your pointer and enlarges whatever sits under it, at 2x, 3x or 4x, in three sizes.

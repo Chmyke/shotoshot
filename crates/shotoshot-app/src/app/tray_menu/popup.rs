@@ -137,6 +137,20 @@ impl Column {
     }
 }
 
+/// Where a submenu of `size` opens beside `root`, its top wished at `top`: on the right,
+/// flipped to the left when `work` ends first, and always inside `work`.
+fn submenu_origin(root: RECT, top: i32, size: SIZE, work: RECT) -> POINT {
+    let x = if root.right + size.cx <= work.right {
+        root.right
+    } else if root.left - size.cx >= work.left {
+        root.left - size.cx
+    } else {
+        (work.right - size.cx).max(work.left)
+    };
+    let y = top.min(work.bottom - size.cy).max(work.top);
+    POINT { x, y }
+}
+
 struct Model {
     owner: HWND,
     root: HWND,
@@ -204,29 +218,34 @@ impl Model {
                 x: root.right,
                 y: root.top + self.columns[0].top(open) - sub.top(0),
             };
-            let mut placed = RECT {
-                left: beside.x,
-                top: beside.y,
-                ..Default::default()
-            };
+            let mut placed = beside;
             if self.on_screen {
-                // Flips to the left of the root when the screen ends on its right.
-                CalculatePopupWindowPosition(
-                    &beside,
-                    &SIZE {
+                // The root's own screen: anchored at the root's right edge, the system would
+                // take the work area of the screen beyond it and open the submenu there.
+                let mut monitor = MONITORINFO {
+                    cbSize: size_of::<MONITORINFO>() as u32,
+                    ..Default::default()
+                };
+                GetMonitorInfoW(
+                    MonitorFromRect(&root, MONITOR_DEFAULTTONEAREST),
+                    &mut monitor,
+                )
+                .ok()?;
+                placed = submenu_origin(
+                    root,
+                    beside.y,
+                    SIZE {
                         cx: sub.width,
                         cy: sub.height(),
                     },
-                    (TPM_LEFTALIGN | TPM_TOPALIGN | TPM_WORKAREA).0,
-                    Some(&root),
-                    &mut placed,
-                )?;
+                    monitor.rcWork,
+                );
             }
             SetWindowPos(
                 self.sub,
                 Some(HWND_TOPMOST),
-                placed.left,
-                placed.top,
+                placed.x,
+                placed.y,
                 sub.width,
                 sub.height(),
                 SWP_NOACTIVATE,
@@ -755,6 +774,38 @@ mod tests {
             assert_eq!(posted(owner.0), [(COMMAND, 2, 0)]);
             assert!(!IsWindowVisible(popup.root()).as_bool());
         }
+    }
+
+    #[test]
+    fn a_submenu_stays_on_the_screen_of_its_menu() {
+        let rect = |left, top, right, bottom| RECT {
+            left,
+            top,
+            right,
+            bottom,
+        };
+        let size = SIZE { cx: 200, cy: 300 };
+        // The left screen of two, the menu against its right edge: the submenu flips left
+        // instead of opening on the right screen.
+        let work = rect(0, 0, 1920, 1040);
+        let root = rect(1620, 500, 1920, 900);
+        assert_eq!(
+            submenu_origin(root, 600, size, work),
+            POINT { x: 1420, y: 600 }
+        );
+        // Room on the right: beside the menu, pulled up above the taskbar.
+        let root = rect(100, 700, 400, 1000);
+        assert_eq!(
+            submenu_origin(root, 900, size, work),
+            POINT { x: 400, y: 740 }
+        );
+        // The same on the right screen, whose coordinates start at 1920.
+        let work = rect(1920, 0, 3840, 1040);
+        let root = rect(3540, 100, 3840, 400);
+        assert_eq!(
+            submenu_origin(root, 150, size, work),
+            POINT { x: 3340, y: 150 }
+        );
     }
 
     #[test]
