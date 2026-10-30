@@ -269,8 +269,12 @@ pointer.high = Alto
 pointer.circle = Cerchio
 pointer.horizontal = Fascia orizzontale
 pointer.vertical = Fascia verticale
-pointer.zoom_value == {zoom}×
-pointer.size_value == {size} px
+pointer.zoom_2 == 2×
+pointer.zoom_3 == 3×
+pointer.zoom_4 == 4×
+pointer.small = Piccola
+pointer.medium_size = Media
+pointer.large = Grande
 pointer.reset = Ripristina predefiniti
 
 settings.title = Impostazioni

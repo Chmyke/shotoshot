@@ -284,37 +284,10 @@ fn a_change_in_a_card_turns_its_effect_and_the_pointer_effects_on() {
     panel.halo_on = false;
     panel.open = Some(Card::Loupe);
     panel.arrange();
-    let slider = zone(&panel, Item::Field(Field::LoupeZoom)).control;
-    panel.press(Point {
-        x: slider.max.x,
-        y: slider.center().y,
-    });
+    let point = segment_point(&panel, Item::Field(Field::LoupeZoom), 2);
+    panel.press(point);
     assert!(panel.loupe_on && !panel.halo_on);
-    assert_eq!(panel.settings.loupe_zoom, LOUPE_ZOOM_RANGE.1);
-}
-
-#[test]
-fn the_loupe_zoom_and_size_are_sliders_shown_in_its_summary() {
-    let mut panel = panel();
-    on(&mut panel, Page::Pointer);
-    panel.open = Some(Card::Loupe);
-    panel.loupe_on = true;
-    panel.arrange();
-    for field in [Field::LoupeZoom, Field::LoupeSize] {
-        let slider = zone(&panel, Item::Field(field)).control;
-        let y = slider.center().y;
-        panel.press(Point { x: slider.min.x, y });
-        panel.release(Point { x: slider.min.x, y });
-    }
-    let low = (panel.settings.loupe_zoom, panel.settings.loupe_size);
-    assert_eq!(low, (LOUPE_ZOOM_RANGE.0, LOUPE_SIZE_RANGE.0));
-    assert_eq!(panel.summary(Card::Loupe), "2× · 120 px");
-    // The keys move them by whole steps: one zoom, ten pixels.
-    panel.focus = Item::Field(Field::LoupeZoom);
-    panel.key(KeyInput::Right);
-    panel.focus = Item::Field(Field::LoupeSize);
-    panel.key(KeyInput::Right);
-    assert_eq!(panel.summary(Card::Loupe), "3× · 130 px");
+    assert_eq!(panel.settings.loupe_zoom, LOUPE_ZOOMS[2]);
 }
 
 #[test]

@@ -269,8 +269,12 @@ pointer.high = Yüksek
 pointer.circle = Daire
 pointer.horizontal = Yatay şerit
 pointer.vertical = Dikey şerit
-pointer.zoom_value == {zoom}×
-pointer.size_value == {size} px
+pointer.zoom_2 == 2×
+pointer.zoom_3 == 3×
+pointer.zoom_4 == 4×
+pointer.small = Küçük
+pointer.medium_size = Orta
+pointer.large = Büyük
 pointer.reset = Varsayılanlara dön
 
 settings.title = Ayarlar

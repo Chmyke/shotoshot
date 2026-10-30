@@ -12,9 +12,9 @@ use shotoshot_core::{
     Point, Rect,
     pointer::{
         Button as MouseButton, ClickSound, ClickStyle, Effects, Follow, HALO_DIAMETER_RANGE,
-        HALO_OPACITY_RANGE, HALO_SOFTNESS_RANGE, HALO_THICKNESS_RANGE, HaloShape, LOUPE_SIZE_RANGE,
-        LOUPE_ZOOM_RANGE, PointerSettings, SPOTLIGHT_DIM_RANGE, SPOTLIGHT_SIZE_RANGE,
-        SpotlightShape, TrailLength, TrailStyle, Volume,
+        HALO_OPACITY_RANGE, HALO_SOFTNESS_RANGE, HALO_THICKNESS_RANGE, HaloShape, LOUPE_SIZES,
+        LOUPE_ZOOMS, PointerSettings, SPOTLIGHT_DIM_RANGE, SPOTLIGHT_SIZE_RANGE, SpotlightShape,
+        TrailLength, TrailStyle, Volume,
     },
     settings::INPUT_SCALES,
 };
@@ -470,9 +470,7 @@ impl Field {
             | Self::HaloSoftness
             | Self::HaloThickness
             | Self::SpotlightSize
-            | Self::SpotlightDim
-            | Self::LoupeZoom
-            | Self::LoupeSize => Control::Slider,
+            | Self::SpotlightDim => Control::Slider,
             Self::HaloColor | Self::LeftColor | Self::RightColor => Control::Colors,
             Self::SpotlightMoving | Self::LoupeHold => Control::Switch,
             _ => Control::Segments,
@@ -541,6 +539,16 @@ impl Field {
                 (Key::PointerHorizontal, 2),
                 (Key::PointerVertical, 3),
             ],
+            Self::LoupeZoom => &[
+                (Key::PointerZoom2, 0),
+                (Key::PointerZoom3, 1),
+                (Key::PointerZoom4, 2),
+            ],
+            Self::LoupeSize => &[
+                (Key::PointerSmall, 0),
+                (Key::PointerMediumSize, 1),
+                (Key::PointerLarge, 2),
+            ],
             _ => &[],
         }
     }
@@ -553,8 +561,6 @@ impl Field {
             Self::HaloThickness => (HALO_THICKNESS_RANGE, 1),
             Self::SpotlightSize => (SPOTLIGHT_SIZE_RANGE, 20),
             Self::SpotlightDim => (SPOTLIGHT_DIM_RANGE, 5),
-            Self::LoupeZoom => (LOUPE_ZOOM_RANGE, 1),
-            Self::LoupeSize => (LOUPE_SIZE_RANGE, 10),
             _ => ((0, 0), 1),
         }
     }
@@ -810,17 +816,7 @@ impl Panel {
             }
             Card::Clicks => vec![name(Field::Click)],
             Card::Spotlight => vec![name(Field::Spotlight)],
-            Card::Loupe => {
-                let s = &self.settings;
-                return [
-                    (Key::PointerZoomValue, "zoom", s.loupe_zoom),
-                    (Key::PointerSizeValue, "size", s.loupe_size),
-                ]
-                .map(|(key, name, value)| {
-                    Text::with_in(self.language, key, &[(name, &value.to_string())]).to_string()
-                })
-                .join(" · ");
-            }
+            Card::Loupe => vec![name(Field::LoupeZoom), name(Field::LoupeSize)],
         };
         parts.join(" · ")
     }
@@ -895,14 +891,6 @@ impl Panel {
                 for (_, index) in field.options() {
                     self.set_choice(*field, *index);
                     summaries.push(self.summary(card));
-                }
-                if field.control() == Control::Slider {
-                    // The widest numbers a summary may show are at the ends of the range.
-                    let ((low, high), _) = field.range();
-                    for value in [low, high] {
-                        self.set_exact(*field, value);
-                        summaries.push(self.summary(card));
-                    }
                 }
             }
         }
@@ -1378,6 +1366,8 @@ impl Panel {
             Field::Sound => s.sound.index(),
             Field::Volume => s.volume.index(),
             Field::Spotlight => s.spotlight.index(),
+            Field::LoupeZoom => position(&LOUPE_ZOOMS, s.loupe_zoom),
+            Field::LoupeSize => position(&LOUPE_SIZES, s.loupe_size),
             _ => 0,
         }
     }
@@ -1395,6 +1385,8 @@ impl Panel {
             Field::Sound => s.sound = pick(ClickSound::ALL, index),
             Field::Volume => s.volume = pick(Volume::ALL, index),
             Field::Spotlight => s.spotlight = pick(SpotlightShape::ALL, index),
+            Field::LoupeZoom => s.loupe_zoom = pick(&LOUPE_ZOOMS, index),
+            Field::LoupeSize => s.loupe_size = pick(&LOUPE_SIZES, index),
             _ => {}
         }
     }
@@ -1407,8 +1399,6 @@ impl Panel {
             Field::HaloThickness => s.halo_thickness,
             Field::SpotlightSize => s.spotlight_size,
             Field::SpotlightDim => s.spotlight_dim,
-            Field::LoupeZoom => s.loupe_zoom,
-            Field::LoupeSize => s.loupe_size,
             _ => 0,
         }
     }
@@ -1430,8 +1420,6 @@ impl Panel {
             Field::HaloThickness => s.halo_thickness = value,
             Field::SpotlightSize => s.spotlight_size = value,
             Field::SpotlightDim => s.spotlight_dim = value,
-            Field::LoupeZoom => s.loupe_zoom = value,
-            Field::LoupeSize => s.loupe_size = value,
             _ => {}
         }
     }
@@ -1584,10 +1572,6 @@ impl Panel {
         self.arrange();
     }
 
-    /// Where the control of `item` sits on the current page, in logical pixels.
-    pub fn control(&self, item: Item) -> Option<Rect> {
-        self.layout.zone(item).map(|zone| zone.control)
-    }
     fn at(&self, p: Point) -> Option<Item> {
         if let Some((page, _)) = self.layout.nav.iter().find(|(_, r)| r.contains(p)) {
             return Some(Item::Nav(*page));
@@ -1851,6 +1835,10 @@ impl Panel {
     }
 }
 
+/// Where `value` is in `all`, the first when it is not there.
+fn position(all: &[u32], value: u32) -> usize {
+    all.iter().position(|item| *item == value).unwrap_or(0)
+}
 const fn area(left: f64, top: f64, right: f64, bottom: f64) -> Rect {
     Rect {
         min: Point { x: left, y: top },

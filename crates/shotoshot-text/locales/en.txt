@@ -310,8 +310,12 @@ pointer.high = High
 pointer.circle = Circle
 pointer.horizontal = Horizontal band
 pointer.vertical = Vertical band
-pointer.zoom_value = {zoom}×
-pointer.size_value = {size} px
+pointer.zoom_2 = 2×
+pointer.zoom_3 = 3×
+pointer.zoom_4 = 4×
+pointer.small = Small
+pointer.medium_size = Medium
+pointer.large = Large
 # A shortcut that is not set.
 pointer.reset = Restore defaults
 

@@ -269,8 +269,12 @@ pointer.high = 高
 pointer.circle = 圆形
 pointer.horizontal = 横条
 pointer.vertical = 竖条
-pointer.zoom_value == {zoom}×
-pointer.size_value == {size} px
+pointer.zoom_2 == 2×
+pointer.zoom_3 == 3×
+pointer.zoom_4 == 4×
+pointer.small = 小
+pointer.medium_size = 中
+pointer.large = 大
 pointer.reset = 恢复默认
 
 settings.title = 设置

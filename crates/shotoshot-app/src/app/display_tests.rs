@@ -2,13 +2,13 @@
 use super::*;
 use crate::presentation::Enabled;
 
-pub(super) struct Resident {
-    pub(super) window: crate::resources::OwnedWindow,
-    pub(super) state: Box<RefCell<App>>,
+struct Resident {
+    window: crate::resources::OwnedWindow,
+    state: Box<RefCell<App>>,
     _com: ComApartment,
 }
 impl Resident {
-    pub(super) fn new() -> Self {
+    fn new() -> Self {
         let com = ComApartment::new().unwrap();
         unsafe {
             let instance = GetModuleHandleW(None).unwrap();
@@ -72,7 +72,7 @@ impl Resident {
             }
         }
     }
-    pub(super) fn presentation(&self, action: impl FnOnce(&mut crate::presentation::Presentation)) {
+    fn presentation(&self, action: impl FnOnce(&mut crate::presentation::Presentation)) {
         action(
             &mut self
                 .state

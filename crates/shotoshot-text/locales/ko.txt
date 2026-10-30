@@ -269,8 +269,12 @@ pointer.high = 높음
 pointer.circle = 원
 pointer.horizontal = 가로 띠
 pointer.vertical = 세로 띠
-pointer.zoom_value == {zoom}×
-pointer.size_value == {size} px
+pointer.zoom_2 == 2×
+pointer.zoom_3 == 3×
+pointer.zoom_4 == 4×
+pointer.small = 작게
+pointer.medium_size = 보통
+pointer.large = 크게
 pointer.reset = 기본값 복원
 
 settings.title = 설정

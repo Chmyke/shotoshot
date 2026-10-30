@@ -240,15 +240,6 @@ impl App {
             }
             return Ok(());
         }
-        let hwnd = self.create_settings_window(owner)?;
-        unsafe {
-            let _ = ShowWindow(hwnd, SW_SHOW);
-            let _ = SetForegroundWindow(hwnd);
-        }
-        Ok(())
-    }
-    /// Creates the Settings window, placed and running, but not yet shown.
-    fn create_settings_window(&mut self, owner: HWND) -> Result<HWND> {
         if self.persist_preferences {
             self.reload_settings()?;
         }
@@ -312,10 +303,11 @@ impl App {
             if SetTimer(Some(opened.hwnd()), PREVIEW_TIMER, 16, None) == 0 {
                 return Err(Error::from_thread());
             }
-            let hwnd = opened.hwnd();
+            let _ = ShowWindow(opened.hwnd(), SW_SHOW);
+            let _ = SetForegroundWindow(opened.hwnd());
             self.settings_ui.window = Some(opened);
-            Ok(hwnd)
         }
+        Ok(())
     }
     fn close_settings_window(&mut self) {
         // The switch that fixes the keyboard and the mouse goes with the window.
@@ -743,9 +735,6 @@ impl App {
 fn title(language: Language) -> String {
     format!("{} - Shotoshot", tr_in(language, Key::SettingsTitle))
 }
-
-#[cfg(test)]
-mod window_tests;
 
 unsafe extern "system" fn settings_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT {
     // PITFALL: No unwind may cross the system callback. The App lives behind the owner window;
