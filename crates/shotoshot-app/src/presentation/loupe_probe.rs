@@ -454,6 +454,8 @@ fn fail(message: String) -> Error {
 /// windows it must leave out. `timed` adds the latency and the idle cost. `renderer` is the
 /// one asked for: the banded one, or the composed one where this Windows offers it.
 pub(crate) fn probe(timed: bool, renderer: Renderer) -> Result<Report> {
+    // The loupe captures windows through WinRT, which needs an apartment on this thread.
+    let _com = crate::ComApartment::new()?;
     // One screen only, away from the one Mickaël uses (`probe_screen`).
     let m = crate::image::probe_screen();
     let pattern = Sheet::new(m, pattern_bgra)?;
@@ -599,8 +601,23 @@ pub(crate) fn probe(timed: bool, renderer: Renderer) -> Result<Report> {
     report.renderer = Some(loupe.renderer());
     report.fallback = fallback_reason().map(String::from);
     drop(loupe);
+    // Only this process's: the installed resident, or another checkout's tests running at the
+    // same time, may show a loupe of their own (2026-10-30: one run in ten).
     report.left_behind = unsafe {
-        FindWindowW(w!("Shotoshot.Loupe"), PCWSTR::null()).is_ok_and(|hwnd| !hwnd.is_invalid())
+        let mut after = None;
+        loop {
+            match FindWindowExW(None, after, w!("Shotoshot.Loupe"), PCWSTR::null()) {
+                Ok(hwnd) if !hwnd.is_invalid() => {
+                    let mut process = 0;
+                    GetWindowThreadProcessId(hwnd, Some(&mut process));
+                    if process == std::process::id() {
+                        break true;
+                    }
+                    after = Some(hwnd);
+                }
+                _ => break false,
+            }
+        }
     };
     drop(pattern);
     Ok(report)

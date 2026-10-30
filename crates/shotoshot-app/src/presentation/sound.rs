@@ -32,35 +32,40 @@ fn wav(samples: &[i16]) -> Vec<u8> {
     bytes
 }
 
-/// The samples of `sound` at `gain`: a soft tick (a short falling tone) or a crisp click.
+/// The samples of `sound` at `gain`: a soft tick (a short falling tone) or a crisp click (a
+/// noise snap over a ringing body). Both last tens of milliseconds: a sound shorter than the
+/// time an idle audio device takes to wake up is swallowed whole, as the first 14 ms click was.
 pub(super) fn samples(sound: ClickSound, gain: f32) -> Vec<i16> {
-    let (length_ms, tone) = match sound {
+    let length_ms = match sound {
         ClickSound::Off => return Vec::new(),
-        ClickSound::Soft => (40., 1250.),
-        ClickSound::Click => (14., 3200.),
+        ClickSound::Soft => 40.,
+        ClickSound::Click => 50.,
     };
     let count = (RATE as f32 * length_ms / 1000.) as usize;
     // A fixed scramble instead of a random generator: the click is the same every time.
     let mut noise = 0x2545_f491u32;
+    let wave = |pitch: f32, t: f32| (std::f32::consts::TAU * pitch * t).sin();
     (0..count)
         .map(|index| {
             let t = index as f32 / RATE as f32;
             let progress = index as f32 / count as f32;
-            let envelope = (1. - progress).powi(3) * (progress * 60.).min(1.);
+            let attack = (progress * 60.).min(1.);
             let value = match sound {
                 ClickSound::Soft => {
-                    let pitch = tone * (1. - 0.25 * progress);
-                    (std::f32::consts::TAU * pitch * t).sin()
+                    (1. - progress).powi(3) * wave(1250. * (1. - 0.25 * progress), t)
                 }
                 _ => {
                     noise ^= noise << 13;
                     noise ^= noise >> 17;
                     noise ^= noise << 5;
                     let grain = (noise as f32 / u32::MAX as f32) * 2. - 1.;
-                    0.55 * (std::f32::consts::TAU * tone * t).sin() + 0.45 * grain
+                    let snap = 0.45 * grain * (-t / 0.0025).exp();
+                    let body =
+                        0.9 * (-t / 0.015).exp() * (0.7 * wave(2200., t) + 0.3 * wave(3400., t));
+                    (snap + body) * (1. - progress)
                 }
             };
-            (value * envelope * gain * i16::MAX as f32) as i16
+            (value * attack * gain * i16::MAX as f32) as i16
         })
         .collect()
 }
@@ -134,6 +139,30 @@ mod tests {
             );
         }
         assert!(samples(ClickSound::Off, 1.).is_empty());
+    }
+
+    /// An idle device swallows the first milliseconds: a sound must outlast them, with as much
+    /// left after 20 ms as the soft tick that is heard.
+    #[test]
+    fn sounds_survive_a_waking_audio_device() {
+        let energy = |s: &[i16]| s.iter().map(|&v| (v as f64).powi(2)).sum::<f64>();
+        let late = |sound| {
+            let all = samples(sound, Volume::Medium.gain());
+            assert!(
+                all.len() >= RATE as usize * 30 / 1000,
+                "{sound:?} lasts 30 ms"
+            );
+            energy(&all[RATE as usize * 20 / 1000..])
+        };
+        let soft = late(ClickSound::Soft);
+        assert!(
+            late(ClickSound::Click) >= soft,
+            "click as present as soft after 20 ms"
+        );
+    }
+
+    #[test]
+    fn wav_header_is_well_formed() {
         let file = wav(&[1, -1]);
         assert_eq!(&file[..4], b"RIFF");
         assert_eq!(file.len(), 48);

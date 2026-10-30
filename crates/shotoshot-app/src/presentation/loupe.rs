@@ -5,6 +5,7 @@
 //! (halo, input diagram). It is shown only once its content is in place. A window that refuses
 //! capture never enters it. Nothing polls: pointer moves and window events drive it. A failure
 //! of the composed renderer never ends the loupe: it falls back to the banded one, said once.
+//! Its thread holds a COM apartment (`ComApartment`) while it lives: captures go through WinRT.
 //!
 //! Two renderers (`docs/recherche/2026-10-28-loupe-essai/`):
 //! - Composed, preferred: DWM shared thumbnail visuals of the windows (dwmapi's undocumented

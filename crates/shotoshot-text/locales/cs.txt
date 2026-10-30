@@ -269,12 +269,8 @@ pointer.high = Vysoká
 pointer.circle = Kruh
 pointer.horizontal = Vodorovný pruh
 pointer.vertical = Svislý pruh
-pointer.zoom_2 == 2×
-pointer.zoom_3 == 3×
-pointer.zoom_4 == 4×
-pointer.small = Malá
-pointer.medium_size = Střední
-pointer.large = Velká
+pointer.zoom_value == {zoom}×
+pointer.size_value == {size} px
 pointer.reset = Obnovit výchozí
 
 settings.title = Nastavení

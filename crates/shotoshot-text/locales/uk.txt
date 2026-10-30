@@ -269,12 +269,8 @@ pointer.high = Висока
 pointer.circle = Коло
 pointer.horizontal = Горизонтальна смуга
 pointer.vertical = Вертикальна смуга
-pointer.zoom_2 == 2×
-pointer.zoom_3 == 3×
-pointer.zoom_4 == 4×
-pointer.small = Мала
-pointer.medium_size = Середня
-pointer.large = Велика
+pointer.zoom_value == {zoom}×
+pointer.size_value == {size} px
 pointer.reset = Відновити типові
 
 settings.title = Налаштування

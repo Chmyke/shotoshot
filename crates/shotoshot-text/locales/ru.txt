@@ -269,12 +269,8 @@ pointer.high = Высокая
 pointer.circle = Круг
 pointer.horizontal = Горизонтальная полоса
 pointer.vertical = Вертикальная полоса
-pointer.zoom_2 == 2×
-pointer.zoom_3 == 3×
-pointer.zoom_4 == 4×
-pointer.small = Маленькая
-pointer.medium_size = Средняя
-pointer.large = Большая
+pointer.zoom_value == {zoom}×
+pointer.size_value == {size} px
 pointer.reset = Сбросить настройки
 
 settings.title = Настройки

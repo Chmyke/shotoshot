@@ -269,12 +269,8 @@ pointer.high = Fort
 pointer.circle = Cercle
 pointer.horizontal = Bande horizontale
 pointer.vertical = Bande verticale
-pointer.zoom_2 == 2×
-pointer.zoom_3 == 3×
-pointer.zoom_4 == 4×
-pointer.small = Petite
-pointer.medium_size = Moyenne
-pointer.large = Grande
+pointer.zoom_value == {zoom}×
+pointer.size_value == {size} px
 pointer.reset = Valeurs par défaut
 
 settings.title = Paramètres

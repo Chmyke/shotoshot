@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.26 · 2026-10-30
+
+- The Click sound of the pointer effects actually clicks now: it was so short that speakers waking up swallowed it whole.
+
 ## 0.3.25 · 2026-10-30
 
 - Arrows and lines can now bend: drag the blue dot in their middle, right after drawing or once selected, and they curve through it, head and all. Bring it back near the straight line and it snaps straight again.

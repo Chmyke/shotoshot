@@ -130,18 +130,18 @@ pub struct PointerSettings {
     pub spotlight_hidden_moving: bool,
     /// With a shortcut, the spotlight shows only while it is held.
     pub spotlight_shortcut: Option<Shortcut>,
-    /// Logical pixels, one of `LOUPE_SIZES`.
+    /// Logical pixels: the loupe's diameter, inside `LOUPE_SIZE_RANGE`.
     pub loupe_size: u32,
-    /// How many times the loupe enlarges, one of `LOUPE_ZOOMS`.
+    /// How many times the loupe enlarges, inside `LOUPE_ZOOM_RANGE`.
     pub loupe_zoom: u32,
     /// Switches the loupe on or off. None: no shortcut.
     pub loupe_shortcut: Option<Shortcut>,
     /// With its shortcut, the loupe shows only while it is held instead of switching.
     pub loupe_hold: bool,
 }
-/// The loupe's diameters, in logical pixels.
-pub const LOUPE_SIZES: [u32; 3] = [160, 240, 320];
-pub const LOUPE_ZOOMS: [u32; 3] = [2, 3, 4];
+/// The loupe's diameter, in logical pixels.
+pub const LOUPE_SIZE_RANGE: (u32, u32) = (120, 480);
+pub const LOUPE_ZOOM_RANGE: (u32, u32) = (2, 8);
 pub const HALO_DIAMETER_RANGE: (u32, u32) = (24, 160);
 pub const HALO_OPACITY_RANGE: (u32, u32) = (10, 100);
 pub const HALO_THICKNESS_RANGE: (u32, u32) = (1, 12);
@@ -215,12 +215,8 @@ impl PointerSettings {
         self.halo_softness = clamp(self.halo_softness, HALO_SOFTNESS_RANGE);
         self.spotlight_size = clamp(self.spotlight_size, SPOTLIGHT_SIZE_RANGE);
         self.spotlight_dim = clamp(self.spotlight_dim, SPOTLIGHT_DIM_RANGE);
-        if !LOUPE_SIZES.contains(&self.loupe_size) {
-            self.loupe_size = PointerSettings::default().loupe_size;
-        }
-        if !LOUPE_ZOOMS.contains(&self.loupe_zoom) {
-            self.loupe_zoom = PointerSettings::default().loupe_zoom;
-        }
+        self.loupe_size = clamp(self.loupe_size, LOUPE_SIZE_RANGE);
+        self.loupe_zoom = clamp(self.loupe_zoom, LOUPE_ZOOM_RANGE);
         self
     }
     /// The pointer window's shortcuts: show a click, hold the spotlight, show the loupe.
@@ -365,15 +361,11 @@ impl PointerSettings {
                 None => 0,
             },
             loupe_size: match fields.get(20) {
-                Some(value) => Some(number(value, (0, u32::MAX))?)
-                    .filter(|size| LOUPE_SIZES.contains(size))
-                    .ok_or_else(invalid)?,
+                Some(value) => number(value, LOUPE_SIZE_RANGE)?,
                 None => Self::default().loupe_size,
             },
             loupe_zoom: match fields.get(21) {
-                Some(value) => Some(number(value, (0, u32::MAX))?)
-                    .filter(|zoom| LOUPE_ZOOMS.contains(zoom))
-                    .ok_or_else(invalid)?,
+                Some(value) => number(value, LOUPE_ZOOM_RANGE)?,
                 None => Self::default().loupe_zoom,
             },
             loupe_shortcut: match fields.get(22) {
@@ -947,10 +939,15 @@ mod tests {
             Ok(PointerSettings::default())
         );
         let mut fields: Vec<String> = line.split(',').map(String::from).collect();
+        // Any size and zoom of their range, as the sliders set them; none outside.
         fields[20] = "200".into();
+        fields[21] = "5".into();
+        let decoded = PointerSettings::decode(&fields.join(",")).unwrap();
+        assert_eq!((decoded.loupe_size, decoded.loupe_zoom), (200, 5));
+        fields[20] = "500".into();
         assert!(PointerSettings::decode(&fields.join(",")).is_err(), "size");
         fields[20] = "160".into();
-        fields[21] = "5".into();
+        fields[21] = "9".into();
         assert!(PointerSettings::decode(&fields.join(",")).is_err(), "zoom");
         fields[21] = "3".into();
         fields[23] = "2".into();
@@ -1000,7 +997,7 @@ mod tests {
             ..Default::default()
         }
         .clamped();
-        assert_eq!((wild.loupe_size, wild.loupe_zoom), (240, 2));
+        assert_eq!((wild.loupe_size, wild.loupe_zoom), (120, 8));
     }
 
     #[test]
