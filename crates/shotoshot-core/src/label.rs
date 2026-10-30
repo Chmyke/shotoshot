@@ -39,6 +39,28 @@ impl Label {
     }
 }
 
+/// The block a text `measured` at `size` keeps. A box validated without text stays at the
+/// size it was drawn (Mickaël, 2026-10-30): `height` tall, never less than its empty line,
+/// and never narrower than `min_wrap`, a click's box included.
+pub fn kept_block(
+    text: &str,
+    label: Option<Label>,
+    measured: Point,
+    size: f64,
+    height: f64,
+) -> Point {
+    match label {
+        Some(label) if text.trim().is_empty() => Point {
+            x: label
+                .wrap()
+                .unwrap_or(measured.x)
+                .max(Label::min_wrap(size)),
+            y: measured.y.max(height),
+        },
+        _ => measured,
+    }
+}
+
 /// Black or white, whichever contrasts more with `panel` (WCAG relative luminance).
 pub fn label_ink(panel: [u8; 3]) -> [u8; 3] {
     let linear = |c: u8| {

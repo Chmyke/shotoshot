@@ -4,7 +4,7 @@
 //! geometry comes from the caller's text measure, the same one that renders the text.
 use crate::{Canvas, Capture, Ink, caret, keys};
 use shotoshot_core::{
-    Label, Modifiers, Object, Point, Rect, Shape, label_ink, rotate_point, text_lines,
+    Label, Modifiers, Object, Point, Rect, Shape, kept_block, label_ink, rotate_point, text_lines,
 };
 use std::ops::Range;
 
@@ -43,6 +43,9 @@ pub struct TextField {
     pub label: Option<Label>,
     /// The ink of the text on its panel; `None` is the black or white that contrasts with it.
     pub ink: Option<[u8; 3]>,
+    /// The height of the text block a box keeps while it holds no text: the height it was
+    /// drawn at, or its own when reopened (`kept_block`).
+    pub height: f64,
     /// Newlines are refused (typed, pasted or Enter); used by the crop-size fields.
     single_line: bool,
     text: String,
@@ -65,6 +68,7 @@ impl TextField {
                         size,
                         label,
                         ink,
+                        extent,
                         ..
                     },
                 style,
@@ -78,6 +82,7 @@ impl TextField {
                 rotation: *rotation,
                 label: *label,
                 ink: *ink,
+                height: extent.y,
                 caret: text.len(),
                 anchor: text.len(),
                 text: text.clone(),
@@ -93,6 +98,7 @@ impl TextField {
                 rotation: 0.,
                 label: capture.new_label,
                 ink: capture.label_ink,
+                height: 0.,
                 single_line: false,
                 text: String::new(),
                 caret: 0,
@@ -112,6 +118,7 @@ impl TextField {
             rotation: 0.,
             label: None,
             ink: None,
+            height: 0.,
             single_line: true,
             caret: text.len(),
             anchor: 0,
@@ -327,14 +334,14 @@ impl TextField {
     /// Size of the text block the committed object will have: its lines, and a wrapped
     /// label's whole width.
     fn block(&self, measure: &mut impl FnMut(&str) -> Point) -> Point {
-        let Some(wrap) = self.label.and_then(Label::wrap) else {
-            return measure(&self.text);
+        let measured = match self.label.and_then(Label::wrap) {
+            None => measure(&self.text),
+            Some(wrap) => Point {
+                x: wrap,
+                y: self.lines(measure).len() as f64 * self.line_height(measure),
+            },
         };
-        let lines = self.lines(measure);
-        Point {
-            x: wrap,
-            y: lines.len() as f64 * self.line_height(measure),
-        }
+        kept_block(&self.text, self.label, measured, self.size(), self.height)
     }
     fn center(&self, measure: &mut impl FnMut(&str) -> Point) -> Point {
         self.position + self.block(measure) * 0.5
@@ -390,9 +397,11 @@ impl TextField {
         std::mem::take(&mut self.dragging)
     }
 
-    /// Adds the text, or updates the edited object, and selects it. Empty new text is dropped.
+    /// Adds the text, or updates the edited object, and selects it. Empty new text is
+    /// dropped, unless it is a box, which keeps its size.
     pub fn commit(self, capture: &mut Capture, extent: Point) {
         let size = self.size();
+        let extent = kept_block(&self.text, self.label, extent, size, self.height);
         if let Some(id) = self.object {
             capture
                 .editor
@@ -651,6 +660,31 @@ mod tests {
         let empty = TextField::open(&capture, Point { x: 300., y: 200. });
         empty.commit(&mut capture, Point::default());
         assert_eq!(capture.editor.objects().len(), 1);
+    }
+    #[test]
+    fn an_empty_box_keeps_the_height_it_was_drawn_at_and_reopens() {
+        let mut capture = Capture::new(Image::solid(400, 300, [0; 4]));
+        capture.new_label = Some(Label::Wrap(120.));
+        let mut f = TextField::open(&capture, Point { x: 50., y: 60. });
+        f.height = 70.;
+        let panel = |f: &TextField| f.block(&mut measure);
+        assert_eq!(panel(&f), Point { x: 120., y: 70. }, "drawn while empty");
+        f.insert("a");
+        assert_eq!(panel(&f).y, 20., "a typed line takes over");
+        f.key(KEY_BACKSPACE, none(), &mut measure);
+        f.commit(&mut capture, measure(""));
+        assert!(matches!(
+            &capture.editor.objects()[0].shape,
+            Shape::Text { text, extent, .. } if text.is_empty() && extent.y == 70.
+        ));
+        let mut again = TextField::open(&capture, Point { x: 60., y: 90. });
+        assert_eq!((again.object.is_some(), again.height), (true, 70.));
+        again.insert("Typed");
+        again.commit(&mut capture, measure("Typed"));
+        assert!(matches!(
+            &capture.editor.objects()[0].shape,
+            Shape::Text { text, .. } if text == "Typed"
+        ));
     }
     #[test]
     fn a_wrapped_label_moves_the_caret_along_its_drawn_lines() {

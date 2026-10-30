@@ -656,3 +656,65 @@ fn both_renderers_set_a_label_on_the_same_panel_and_lines() {
     assert!(green(&native.export(&image, &[], objects, crop).unwrap()));
     assert!(green(&portable.export(&image, &[], objects, crop).unwrap()));
 }
+#[test]
+fn both_renderers_draw_an_empty_box_at_its_drawn_size() {
+    let _com = ComApartment::new().unwrap();
+    let native = Renderer::new().unwrap();
+    let mut portable = Raster::new();
+    let (size, width) = (24., 150.);
+    let line = native
+        .measure_wrapped_annotation_text("", size, width)
+        .unwrap();
+    let other = portable.measure_wrapped_annotation_text("", size as f64, width as f64);
+    assert!(
+        (line.y - other.y).abs() < 1.5,
+        "an empty line: Direct2D {line:?}, portable {other:?}"
+    );
+    let label = Some(Label::Wrap(width as f64));
+    let object = Object {
+        rotation: 0.,
+        fill: Vec::new(),
+        id: 1,
+        style: Style {
+            color: [255, 255, 255],
+            width: 2.,
+        },
+        shape: Shape::Text {
+            position: Point { x: 40., y: 40. },
+            text: String::new(),
+            size: size as f64,
+            extent: kept_block("", label, line, size as f64, 80.),
+            label,
+            ink: None,
+        },
+    };
+    let image = Image::solid(300, 200, [0, 0, 0, 255]);
+    let crop = Rect::new(Point::default(), Point { x: 300., y: 200. }).unwrap();
+    let objects = std::slice::from_ref(&object);
+    let bright = |image: &Image| {
+        let (mut left, mut top, mut right, mut bottom) = (u32::MAX, u32::MAX, 0, 0);
+        for y in 0..image.height {
+            for x in 0..image.width {
+                if image.pixels[((y * image.width + x) * 4) as usize] >= 128 {
+                    (left, top) = (left.min(x), top.min(y));
+                    (right, bottom) = (right.max(x), bottom.max(y));
+                }
+            }
+        }
+        [left, top, right, bottom]
+    };
+    let direct = bright(&native.export(&image, &[], objects, crop).unwrap());
+    let raster = bright(&portable.export(&image, &[], objects, crop).unwrap());
+    // 24 px font: margins of 9.6 across and 6 down around the 150 by 80 block.
+    let expected = [30, 34, 199, 125];
+    for (got, want) in direct
+        .into_iter()
+        .chain(raster)
+        .zip(expected.into_iter().cycle())
+    {
+        assert!(
+            got.abs_diff(want) <= 1,
+            "Direct2D {direct:?}, portable {raster:?}"
+        );
+    }
+}

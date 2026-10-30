@@ -138,10 +138,11 @@ impl Host for Native {
         }
         Ok(())
     }
-    fn set_text_label(&mut self, position: Point, label: Option<Label>) {
+    fn set_text_label(&mut self, position: Point, label: Option<Label>, height: f64) {
         if let Some(field) = &mut self.field {
             field.position = position;
             field.label = label;
+            field.height = height;
         }
     }
     fn measure_text(&mut self, text: &str, size: f64) -> Result<Point, Self::Error> {

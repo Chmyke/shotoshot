@@ -5,6 +5,8 @@ use crate::{Attachment, Object, Point, Rect, Shape};
 
 /// How far, in interface pixels, an anchor sits outside the side of its box.
 pub const ANCHOR_GAP: f64 = 12.;
+/// How deep, in image pixels, the head bites into its target's outline.
+const BITE: f64 = 1.;
 /// Corners in samples: a quarter turn drawn as this many chords.
 const CORNER_SEGMENTS: usize = 8;
 
@@ -46,12 +48,20 @@ pub fn facing_port(target: &Object, aim: Point, gap: f64) -> Port {
     }
 }
 
-/// How far outside its target an end rests: past a closed shape's stroke, on a panel's edge,
-/// plus `cap` for a round line end.
-fn gap(target: &Object, cap: f64) -> f64 {
+/// How far outside its target the start rests: just inside a panel, its round cap hidden in
+/// the panel's own colour; past a closed shape's stroke plus `cap` (Mickaël, 2026-10-30).
+fn start_gap(target: &Object, cap: f64) -> f64 {
     match target.shape {
-        Shape::Text { .. } => cap,
+        Shape::Text { .. } => -cap,
         _ => target.style.width * 0.5 + cap,
+    }
+}
+/// How far outside its target the end rests: `BITE` into a panel's edge or into a closed
+/// shape's stroke, never past its middle, so the head touches (Mickaël, 2026-10-30).
+fn end_gap(target: &Object, cap: f64) -> f64 {
+    match target.shape {
+        Shape::Text { .. } => cap - BITE,
+        _ => (target.style.width * 0.5 - BITE).max(0.) + cap,
     }
 }
 
@@ -75,21 +85,62 @@ pub fn elbow_ends(o: &Object, objects: &[Object]) -> Option<(Port, Port)> {
     };
     let (from, to) = (target(start_attach), target(end_attach));
     let centre = |t: &Object| t.local_bounds().center();
-    let a = match from {
-        Some(t) => facing_port(t, to.map_or(*end, centre), gap(t, start_cap)),
+    let mut a = match from {
+        Some(t) => facing_port(t, to.map_or(*end, centre), start_gap(t, start_cap)),
         None => Port {
             point: *start,
             normal: None,
         },
     };
-    let b = match to {
-        Some(t) => facing_port(t, from.map_or(*start, centre), gap(t, end_cap)),
+    let mut b = match to {
+        Some(t) => facing_port(t, from.map_or(*start, centre), end_gap(t, end_cap)),
         None => Port {
             point: *end,
             normal: None,
         },
     };
+    // Ends almost in line run straight rather than through a cramped jog (Mickaël,
+    // 2026-10-30): the start slides along its side, else the end along its own.
+    let tolerance = 2. * corner_radius(o.style.width);
+    if !slide_in_line(&mut a, from, b.point, tolerance) {
+        slide_in_line(&mut b, to, a.point, tolerance);
+    }
     Some((a, b))
+}
+
+/// Slides `port` along the side of `target` it rests on until it lies in line with `other`,
+/// ahead of it, when that takes less than `tolerance` and stays on the side. False when the
+/// port is free, on a turned target, too far aside or would leave its side.
+fn slide_in_line(port: &mut Port, target: Option<&Object>, other: Point, tolerance: f64) -> bool {
+    let (Some(target), Some(n)) = (target, port.normal) else {
+        return false;
+    };
+    let n_axis = axis(n);
+    if (n - n_axis).length() > 1e-9 {
+        return false;
+    }
+    let along = Point {
+        x: n_axis.y.abs(),
+        y: n_axis.x.abs(),
+    };
+    let d = other - port.point;
+    let ahead = d.x * n_axis.x + d.y * n_axis.y;
+    let offset = d.x * along.x + d.y * along.y;
+    if ahead <= 0. || offset.abs() > tolerance {
+        return false;
+    }
+    let point = port.point + along * offset;
+    let side = target.local_bounds();
+    let (low, high) = (
+        side.min.x * along.x + side.min.y * along.y,
+        side.max.x * along.x + side.max.y * along.y,
+    );
+    let at = point.x * along.x + point.y * along.y;
+    if at < low || at > high {
+        return false;
+    }
+    port.point = point;
+    true
 }
 
 /// The straight leg before the first turn and after the last: room for the head and a
@@ -142,11 +193,31 @@ fn toward_free(p: Point, n: Point, q: Point, leg: f64) -> Vec<Point> {
 }
 
 /// The corners of the route from `a` to `b`, ends included, without rounding: a leg out of
-/// each side, then right angles in screen axes.
+/// each side, then right angles in screen axes. A free start bound for a side leaves along
+/// the axis that leads most toward it, as if out of a side of its own: an S or an L, never a
+/// run flat along the box it came off (Mickaël, 2026-10-30).
 pub fn elbow_route(a: Port, b: Port, leg: f64) -> Vec<Point> {
-    let (na, nb) = (a.normal.map(axis), b.normal.map(axis));
-    let p = na.map_or(a.point, |n| a.point + n * leg);
-    let q = nb.map_or(b.point, |n| b.point + n * leg);
+    let nb = b.normal.map(axis);
+    let na = a
+        .normal
+        .map(axis)
+        .or_else(|| nb.map(|_| axis(b.point - a.point)));
+    // Facing sides closer than two legs cross at the true middle of the gap: legs that long
+    // would overshoot it and come back in a hook (Mickaël, 2026-10-30).
+    let mut leg_a = leg;
+    let mut leg_b = leg;
+    if let (Some(na), Some(nb)) = (na, nb)
+        && na.x == -nb.x
+        && na.y == -nb.y
+    {
+        let d = b.point - a.point;
+        let gap = d.x * na.x + d.y * na.y;
+        if gap > 0. && gap < 2. * leg {
+            (leg_a, leg_b) = (gap * 0.5, gap * 0.5);
+        }
+    }
+    let p = na.map_or(a.point, |n| a.point + n * leg_a);
+    let q = nb.map_or(b.point, |n| b.point + n * leg_b);
     let middle = match (na, nb) {
         (Some(na), Some(nb)) => match (na.x != 0., nb.x != 0.) {
             (true, true) => {
@@ -161,12 +232,7 @@ pub fn elbow_route(a: Port, b: Port, leg: f64) -> Vec<Point> {
             (false, true) => vec![Point { x: p.x, y: q.y }],
         },
         (Some(n), None) => toward_free(p, n, q, leg),
-        (None, Some(n)) => {
-            let mut back = toward_free(q, n, p, leg);
-            back.reverse();
-            back
-        }
-        (None, None) => {
+        (None, _) => {
             let d = q - p;
             let n = axis(if d.length() < 1e-9 {
                 Point { x: 1., y: 0. }
@@ -312,6 +378,36 @@ mod tests {
             vec![p(100., 50.), p(300., 50.), p(300., 150.)],
             "out of one side, into the top of the other"
         );
+    }
+    #[test]
+    fn a_free_start_bound_for_a_side_leaves_along_its_main_axis() {
+        let s = elbow_route(free(p(100., 50.)), side(p(300., 150.), p(-1., 0.)), 20.);
+        assert_eq!(
+            s,
+            vec![p(100., 50.), p(200., 50.), p(200., 150.), p(300., 150.)],
+            "an S: out, across halfway, in"
+        );
+        let down = elbow_route(free(p(100., 50.)), side(p(120., 300.), p(0., -1.)), 20.);
+        assert_eq!(
+            down,
+            vec![p(100., 50.), p(100., 175.), p(120., 175.), p(120., 300.)]
+        );
+        let l = elbow_route(free(p(100., 50.)), side(p(300., 150.), p(0., -1.)), 20.);
+        assert_eq!(l, vec![p(100., 50.), p(300., 50.), p(300., 150.)], "an L");
+    }
+    #[test]
+    fn close_facing_sides_cross_at_the_true_middle_without_a_hook() {
+        // 40 px apart with 30 px legs: they used to reach 130 and 110, then come back.
+        let route = elbow_route(
+            side(p(100., 100.), p(0., 1.)),
+            side(p(300., 140.), p(0., -1.)),
+            30.,
+        );
+        assert_eq!(
+            route,
+            vec![p(100., 100.), p(100., 120.), p(300., 120.), p(300., 140.)]
+        );
+        assert!(route.windows(2).all(|w| w[1].y >= w[0].y), "never back up");
     }
     #[test]
     fn rounded_corners_keep_the_ends_and_stay_inside_the_turn() {

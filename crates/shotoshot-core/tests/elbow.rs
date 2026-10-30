@@ -126,10 +126,11 @@ fn pulling_an_anchor_draws_an_elbow_in_the_box_colour_straight_out_of_its_side()
     ));
     assert_eq!(o.style.color, YELLOW);
     assert_eq!(attachments(o), (Some(1), None));
-    // Out of the bottom (below the panel by the round cap), down, then across to the point.
+    // Out of the bottom (from inside the panel by the round cap, hidden in its colour), down,
+    // then across to the point.
     assert_eq!(
         corners(&e),
-        vec![p(150., 130.5), p(150., 300.), p(400., 300.)]
+        vec![p(150., 127.5), p(150., 300.), p(400., 300.)]
     );
     assert_eq!(e.bend_handle(), None, "an elbow has no middle to bend");
     e.undo();
@@ -138,17 +139,18 @@ fn pulling_an_anchor_draws_an_elbow_in_the_box_colour_straight_out_of_its_side()
 #[test]
 fn the_side_follows_the_target_whichever_anchor_was_pulled() {
     let mut e = editor(vec![label(1, 100., 100.)], Tool::Arrow);
-    // Pulled from the top towards a point to the right, level with the box.
+    // Pulled from the top towards a point to the right, level with the box: it leaves the
+    // right side, slid 3 px down it so the run is straight rather than a jog.
     pull(&mut e, TOP, p(500., 115.), Modifiers::default());
     let c = corners(&e);
-    assert!(close(c[0], p(209.5, 112.)), "{c:?}");
-    assert_eq!(c[1].y, 112., "leaves horizontally");
-    assert!(close(*c.last().unwrap(), p(500., 115.)));
+    assert_eq!(c.len(), 2, "{c:?}");
+    assert!(close(c[0], p(206.5, 115.)), "{c:?}");
+    assert!(close(c[1], p(500., 115.)));
     // Moved below its target, the box sends the arrow out of its top.
     e.tool = Tool::Select;
     pull(&mut e, p(150., 112.), p(450., 412.), Modifiers::default());
     let c = corners(&e);
-    assert!(close(c[0], p(450., 393.5)), "{c:?}");
+    assert!(close(c[0], p(450., 396.5)), "{c:?}");
     assert_eq!(c[1].x, 450., "leaves vertically");
 }
 #[test]
@@ -158,20 +160,20 @@ fn released_on_another_box_it_binds_and_enters_the_side_facing_it() {
     pull(&mut e, RIGHT, p(450., 312.), Modifiers::default());
     let o = arrow(&e);
     assert_eq!(attachments(o), (Some(1), Some(2)));
-    // Out of the bottom of the first, into the top of the second, meeting halfway.
+    // Out of the bottom of the first, into the top of the second a pixel deep, meeting halfway.
     let c = corners(&e);
-    assert!(close(c[0], p(150., 130.5)), "{c:?}");
-    assert!(close(*c.last().unwrap(), p(450., 295.)), "{c:?}");
+    assert!(close(c[0], p(150., 127.5)), "{c:?}");
+    assert!(close(*c.last().unwrap(), p(450., 296.)), "{c:?}");
     assert_eq!(c[c.len() - 2].x, 450., "enters vertically");
     // The head lies along that last run, pointing down into the box.
     let head = &paths(arrow(&e), e.objects())[1];
-    assert!(close(head[1], p(450., 295.)));
-    assert!(head[0].y < 295. && (head[0].y - head[2].y).abs() < 1e-9);
+    assert!(close(head[1], p(450., 296.)));
+    assert!(head[0].y < 296. && (head[0].y - head[2].y).abs() < 1e-9);
     // Moving the target beside the source turns both ends to face each other.
     pull(&mut e, p(450., 312.), p(750., 112.), Modifiers::default());
     let c = corners(&e);
-    assert!(close(c[0], p(209.5, 112.)), "{c:?}");
-    assert!(close(*c.last().unwrap(), p(692., 112.)), "{c:?}");
+    assert!(close(c[0], p(206.5, 112.)), "{c:?}");
+    assert!(close(*c.last().unwrap(), p(693., 112.)), "{c:?}");
     assert_eq!(c.len(), 2, "level boxes join in a straight line");
 }
 #[test]
@@ -200,6 +202,38 @@ fn an_empty_rectangle_binds_on_its_outline_and_lets_the_inside_point_at_the_imag
         "near its outline"
     );
     assert_eq!(e.connect_target(), None, "only while pulling");
+    // The head bites a pixel into the 3 px outline, which spans 298.5 to 301.5.
+    assert!(close(*corners(&e).last().unwrap(), p(400., 299.5)));
+}
+#[test]
+fn a_start_off_its_box_leaves_square_and_crosses_halfway() {
+    let free_start = Object {
+        rotation: 0.,
+        id: 3,
+        shape: Shape::Arrow {
+            start: p(300., 50.),
+            end: p(450., 296.),
+            start_attach: None,
+            end_attach: Some(Attachment {
+                target: 2,
+                direction: p(0., 0.),
+            }),
+            head: true,
+            bend: p(0., 0.),
+            elbow: true,
+        },
+        style: Style::default(),
+        fill: Vec::new(),
+    };
+    let e = editor(
+        vec![label(1, 100., 100.), label(2, 400., 300.), free_start],
+        Tool::Select,
+    );
+    // Mostly downward: out down, across at mid height, down into the top of the box.
+    assert_eq!(
+        corners(&e),
+        vec![p(300., 50.), p(300., 173.), p(450., 173.), p(450., 296.)]
+    );
 }
 #[test]
 fn the_target_shows_while_pulling() {
@@ -225,7 +259,7 @@ fn deleting_its_box_lets_the_arrow_go_where_it_was() {
     assert_eq!(attachments(o), (None, None));
     assert!(close(
         arrow_points(o, e.objects()).unwrap().0,
-        p(150., 130.5)
+        p(150., 127.5)
     ));
     e.undo();
     assert_eq!(
@@ -251,4 +285,29 @@ fn a_turned_box_sends_the_arrow_out_along_its_own_side() {
     // A quarter turn clockwise: the box's top now faces right.
     let top = e.anchors(1).unwrap()[0];
     assert!(close(top, p(150. + 17. + 12., 112.)), "{top:?}");
+}
+#[test]
+fn boxes_almost_level_join_straight_and_further_apart_in_an_s() {
+    let mut e = editor(
+        vec![label(1, 100., 100.), label(2, 400., 103.)],
+        Tool::Arrow,
+    );
+    e.style.width = 3.;
+    pull(&mut e, RIGHT, p(450., 115.), Modifiers::default());
+    assert_eq!(attachments(arrow(&e)), (Some(1), Some(2)));
+    let c = corners(&e);
+    assert_eq!(c.len(), 2, "no cramped jog: {c:?}");
+    assert!(
+        close(c[0], p(206.5, 115.)),
+        "the start slid 3 px down its side: {c:?}"
+    );
+    assert_eq!(c[1].y, 115.);
+
+    let mut e = editor(
+        vec![label(1, 100., 100.), label(2, 400., 140.)],
+        Tool::Arrow,
+    );
+    e.style.width = 3.;
+    pull(&mut e, RIGHT, p(450., 152.), Modifiers::default());
+    assert_eq!(corners(&e).len(), 4, "far enough aside for a real S");
 }

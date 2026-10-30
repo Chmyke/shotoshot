@@ -2,6 +2,13 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.30 · 2026-10-30
+
+- Arrows pulled out of a text box now really touch: they start from inside the box and the tip bites into its target, no more hairline gap at either end.
+- An arrow whose start came off its box no longer slides along the box's edge: it leaves square, crosses halfway and lands square, a tidy S.
+- No more ugly little hooks between boxes that sit close together or almost level: the arrow crosses right in the middle, or simply goes straight.
+- A text box left empty stays put at the size you drew it, ready to be typed into later (a file holding one needs this version to open).
+
 ## 0.3.29 · 2026-10-30
 
 - New Blur tool (X): drag a rectangle over a password, an address or a face and it becomes unreadable for good, scrambled before being blurred; the mouse wheel sets how strong.

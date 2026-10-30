@@ -29,9 +29,10 @@ pub trait Host {
     fn text_size(&self) -> Option<f32>;
     /// Gives the open field's font a new size; nothing without a field.
     fn set_text_size(&mut self, size: f32) -> Result<(), Self::Error>;
-    /// Moves the open field's first line to `position` and sets the panel it sits on;
-    /// nothing without a field. A new field takes its panel from `Capture::new_label`.
-    fn set_text_label(&mut self, position: Point, label: Option<Label>);
+    /// Moves the open field's first line to `position` and sets the panel it sits on, with
+    /// the `height` of text block it keeps while empty (`kept_block`); nothing without a
+    /// field. A new field takes its panel from `Capture::new_label`.
+    fn set_text_label(&mut self, position: Point, label: Option<Label>, height: f64);
     /// Extent of committed annotation text at `size`, as the renderer lays it out.
     fn measure_text(&mut self, text: &str, size: f64) -> Result<Point, Self::Error>;
     /// `measure_text` with lines also broken at `width`, as a wrapped label lays them out.

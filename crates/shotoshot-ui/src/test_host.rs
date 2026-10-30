@@ -10,6 +10,8 @@ pub struct FakeHost {
     pub text_size: f32,
     /// Where the open field's first line is and the panel it sits on.
     pub label: Option<(Point, Option<Label>)>,
+    /// The height of text block the open field's box keeps while empty.
+    pub label_height: f64,
     /// The open field's colour and its ink on a panel (`None`: automatic).
     pub color: Option<[u8; 3]>,
     pub ink: Option<[u8; 3]>,
@@ -63,9 +65,10 @@ impl Host for FakeHost {
         self.text_size = size;
         Ok(())
     }
-    fn set_text_label(&mut self, position: Point, label: Option<Label>) {
+    fn set_text_label(&mut self, position: Point, label: Option<Label>, height: f64) {
         if self.text_open {
             self.label = Some((position, label));
+            self.label_height = height;
         }
     }
     fn measure_text(&mut self, text: &str, size: f64) -> Result<Point, ()> {

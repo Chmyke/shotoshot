@@ -575,13 +575,22 @@ fn text_block(input: &TextInput, layout: &IDWriteTextLayout) -> Result<Point> {
     unsafe {
         layout.GetMetrics(&mut metrics)?;
     }
-    Ok(Point {
+    let measured = Point {
         x: input
             .label
             .and_then(Label::wrap)
             .unwrap_or(metrics.widthIncludingTrailingWhitespace as f64),
         y: metrics.height as f64,
-    })
+    };
+    // An empty box keeps its size, judged on the text the commit will read.
+    let text = String::from_utf16_lossy(&value(input.window));
+    Ok(shotoshot_core::kept_block(
+        &text,
+        input.label,
+        measured,
+        input.size as f64,
+        input.height,
+    ))
 }
 fn text_center(input: &TextInput, layout: &IDWriteTextLayout) -> Result<Point> {
     Ok(input.position + text_block(input, layout)? * 0.5)
@@ -696,6 +705,7 @@ mod tests {
                 color: [255; 3],
                 label: None,
                 ink: None,
+                height: 0.,
                 font,
                 drag_anchor: None,
                 scroll: Default::default(),

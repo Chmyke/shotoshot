@@ -1,7 +1,7 @@
 //! ROLE: The scene text inside a `.shoto` file: frame, region and objects. Version 2 adds
 //! stacked coats and the shapes each spares (`Paint`); version 1 has one plain coat at most.
 //! Version 3 adds the panel of a text (`Label`), 4 bends, 5 the ink of a panel's text, 6 elbow
-//! arrows and 7 blurred zones (`Shape::Blur`).
+//! arrows, 7 blurred zones (`Shape::Blur`) and 8 a box left without text.
 //! INVARIANTS: `decode` gives back the scene `encode` wrote, and accepts nothing it does not
 //! fully understand: skipping an unknown field could drop a mask at the next save.
 use crate::{Attachment, Label, Object, Paint, Point, Rect, Shape, Style, bent};
@@ -63,13 +63,18 @@ impl Scene {
     /// The lowest format version that holds this scene: 2 once a zone has more than one coat
     /// or a coat spares a shape, 3 once a text sits on a panel, 4 once an arrow or a line
     /// bends, 5 once a panel's text has an ink of its own, 6 once an arrow is an elbow, 7 once
-    /// a zone is blurred, so simpler files still open in an earlier Shotoshot.
+    /// a zone is blurred, 8 once a box is left empty, so simpler files still open in an
+    /// earlier Shotoshot.
     pub fn version(&self) -> u32 {
         let plain = |coats: &[Paint]| coats.len() <= 1 && coats.iter().all(|c| c.walls.is_empty());
         let labelled = |o: &Object| matches!(o.shape, Shape::Text { label: Some(_), .. });
         let inked = |o: &Object| matches!(o.shape, Shape::Text { ink: Some(_), .. });
         let elbow = |o: &Object| matches!(o.shape, Shape::Arrow { elbow: true, .. });
-        if self.objects.iter().any(Object::is_blur) {
+        let empty =
+            |o: &Object| matches!(&o.shape, Shape::Text { text, .. } if text.trim().is_empty());
+        if self.objects.iter().any(empty) {
+            8
+        } else if self.objects.iter().any(Object::is_blur) {
             7
         } else if self.objects.iter().any(elbow) {
             6
@@ -192,7 +197,8 @@ fn object_valid(object: &Object, points: &mut usize) -> bool {
                     && extent.x >= 0.
                     && extent.y >= 0.
                     && text.len() <= MAX_TEXT
-                    && !text.trim().is_empty()
+                    // A box stays when validated empty; a bare text needs words.
+                    && (label.is_some() || !text.trim().is_empty())
             }
         }
 }
@@ -528,16 +534,19 @@ fn decode_object(line: &str, version: u32, points: &mut usize) -> Option<Object>
                 Some(text) => Some(hex(text)?.try_into().ok()?),
                 None => None,
             };
+            let text =
+                String::from_utf8(hex(f.take("text").filter(|t| t.len() <= 2 * MAX_TEXT)?)?)
+                    .ok()?;
+            if version < 8 && text.trim().is_empty() {
+                return None;
+            }
             Shape::Text {
                 position: pair(x, y),
                 size: number(f.take("size")?)?,
                 extent: pair(w, h),
                 label,
                 ink,
-                text: String::from_utf8(hex(f
-                    .take("text")
-                    .filter(|t| t.len() <= 2 * MAX_TEXT)?)?)
-                .ok()?,
+                text,
             }
         }
         _ => return None,
@@ -1282,6 +1291,60 @@ object id=3 kind=blur color=000000 width=14 rotation=0 rect=500,300,640,420
             let text = VERSION_7.replacen(from, to, 1);
             assert_eq!(decode(&text, 7), None, "{from:?} replaced by {to:?}");
         }
+    }
+    /// Version 8 as it was first written: a box validated without text, which keeps the
+    /// size it was drawn at. Files with this text exist: it never changes.
+    const VERSION_8: &str = "frame 1920 1080
+origin -1920 0
+region 100.5 200 900 700.25
+last 5
+object id=1 kind=text color=fac042 width=3 rotation=0 at=50,60 size=24 extent=120.5,29 label=fit text=4e6f7465
+object id=3 kind=text color=1c1f28 width=3 rotation=0.5 at=10,20 size=32 extent=180,77 label=wrap:200.25 text=c3876120646f69742072657374657220696369
+object id=5 kind=text color=fac042 width=3 rotation=0 at=400,300 size=24 extent=150,90.5 label=wrap:150 text=
+";
+    fn emptied() -> Scene {
+        let mut scene = labelled();
+        scene.objects.push(object(
+            5,
+            0.,
+            [250, 192, 66],
+            3.,
+            Shape::Text {
+                position: pair(400., 300.),
+                text: String::new(),
+                size: 24.,
+                extent: pair(150., 90.5),
+                label: Some(Label::Wrap(150.)),
+                ink: None,
+            },
+        ));
+        scene.last_id = 5;
+        scene
+    }
+    #[test]
+    fn version_8_text_is_frozen() {
+        assert_eq!(emptied().version(), 8);
+        assert_eq!(emptied().encode(), VERSION_8);
+        assert_eq!(decode(VERSION_8, 8), Some(emptied()));
+        assert_eq!(decode(VERSION_7, 8), Some(blurred()), "version 8 reads 7");
+        assert_eq!(decode(VERSION_6, 8), Some(elbowed()), "and 6");
+        assert_eq!(decode(VERSION_1, 8), Some(sample()), "and 1");
+    }
+    #[test]
+    fn earlier_versions_know_no_empty_box() {
+        for version in 1..8 {
+            assert_eq!(decode(VERSION_8, version), None, "version {version}");
+        }
+    }
+    #[test]
+    fn only_a_box_may_be_empty() {
+        let bare = VERSION_8.replacen(" label=wrap:150 text=", " text=", 1);
+        assert_eq!(decode(&bare, 8), None, "a text without panel needs words");
+        let mut scene = emptied();
+        if let Shape::Text { label, .. } = &mut scene.objects[2].shape {
+            *label = None;
+        }
+        assert!(!scene.valid());
     }
     #[test]
     fn an_invalid_scene_is_recognised_before_it_is_written() {

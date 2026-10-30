@@ -249,7 +249,8 @@ impl Capture {
         Ok(())
     }
     /// The panel of a label being drawn: its top-left corner at the press, fitted to the text
-    /// until the drag goes further than a click, then as wide as the drag.
+    /// until the drag goes further than a click, then as wide as the drag; left empty, it
+    /// also keeps the drag's height (Mickaël, 2026-10-30).
     fn place_label<H: Host>(&mut self, host: &mut H) {
         let (Some((origin, current)), Some(size)) = (self.label_drag, host.text_size()) else {
             return;
@@ -258,7 +259,7 @@ impl Capture {
         let pad = Label::padding(size);
         let drag = current - origin;
         if drag.x.abs().max(drag.y.abs()) < LABEL_DRAG * self.pick_scale() {
-            host.set_text_label(origin + pad, Some(Label::Fit));
+            host.set_text_label(origin + pad, Some(Label::Fit), 0.);
             return;
         }
         let corner = Point {
@@ -266,7 +267,8 @@ impl Capture {
             y: origin.y.min(current.y),
         };
         let wrap = (drag.x.abs() - 2. * pad.x).max(Label::min_wrap(size));
-        host.set_text_label(corner + pad, Some(Label::Wrap(wrap)));
+        let height = (drag.y.abs() - 2. * pad.y).max(0.);
+        host.set_text_label(corner + pad, Some(Label::Wrap(wrap)), height);
     }
     /// Lays out again the lines of wrapped labels a gesture is resizing, so their panels
     /// follow the hand before it lets go.
@@ -1320,6 +1322,7 @@ mod tests {
             "the field opens at the press, ready for typing"
         );
         assert_eq!(host.label, Some((p(200., 200.) + pad, Some(Label::Fit))));
+        assert_eq!(host.label_height, 0., "a click's empty box is one line");
         c.pointer_move(&mut host, p(203., 202.), m);
         assert_eq!(host.label.unwrap().1, Some(Label::Fit), "a shaking click");
         c.pointer_up(&mut host, p(203., 202.), m);
@@ -1335,6 +1338,8 @@ mod tests {
         );
         c.pointer_up(&mut host, p(250., 380.), m);
         assert_eq!(host.label.unwrap().1, Some(Label::Wrap(134.)));
+        // Left empty, the box keeps the 80 px drawn, less its margins.
+        assert_eq!(host.label_height, 80. - 10.);
 
         host.text_open = false;
         c.pointer_down(&mut host, p(400., 300.), m).unwrap();

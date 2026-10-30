@@ -58,6 +58,7 @@ impl Native {
                 Ok(TextInput {
                     label: None,
                     ink: None,
+                    height: 0.,
                     window,
                     position: Point::default(),
                     object: None,

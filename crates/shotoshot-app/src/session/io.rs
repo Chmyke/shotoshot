@@ -175,44 +175,47 @@ impl Native {
     pub fn begin_text(&mut self, capture: &mut Capture, hwnd: HWND, p: Point) -> Result<()> {
         unsafe {
             let existing = capture.text_at(p);
-            let (position, value, id, size, rgb, rotation, label, ink) = if let Some(Object {
-                id,
-                shape:
-                    Shape::Text {
-                        position,
-                        text,
-                        size,
-                        label,
-                        ink,
-                        ..
-                    },
-                style,
-                rotation,
-                ..
-            }) = existing
-            {
-                (
-                    *position,
-                    text.clone(),
-                    Some(*id),
-                    *size as f32,
-                    style.color,
-                    *rotation,
-                    *label,
-                    *ink,
-                )
-            } else {
-                (
-                    p,
-                    String::new(),
-                    None,
-                    capture.text_size,
-                    capture.editor.style.color,
-                    0.,
-                    capture.new_label,
-                    capture.label_ink,
-                )
-            };
+            let (position, value, id, size, rgb, rotation, label, ink, kept) =
+                if let Some(Object {
+                    id,
+                    shape:
+                        Shape::Text {
+                            position,
+                            text,
+                            size,
+                            label,
+                            ink,
+                            extent,
+                        },
+                    style,
+                    rotation,
+                    ..
+                }) = existing
+                {
+                    (
+                        *position,
+                        text.clone(),
+                        Some(*id),
+                        *size as f32,
+                        style.color,
+                        *rotation,
+                        *label,
+                        *ink,
+                        extent.y,
+                    )
+                } else {
+                    (
+                        p,
+                        String::new(),
+                        None,
+                        capture.text_size,
+                        capture.editor.style.color,
+                        0.,
+                        capture.new_label,
+                        capture.label_ink,
+                        0.,
+                    )
+                };
             let width = (capture.image.width as f64 - position.x).max(1.) as i32;
             let height = (capture.image.height as f64 - position.y).max(1.) as i32;
             let input = CreateWindowExW(
@@ -253,6 +256,7 @@ impl Native {
                 color: rgb,
                 label,
                 ink,
+                height: kept,
                 font,
                 drag_anchor: None,
                 scroll: Default::default(),
@@ -281,7 +285,9 @@ impl Native {
                         None => self.renderer.measure_annotation_text(&text, input.size),
                     };
                     let extent = match measured {
-                        Ok(extent) => extent,
+                        Ok(extent) => {
+                            kept_block(&text, input.label, extent, input.size as f64, input.height)
+                        }
                         Err(error) => {
                             // The title says what failed, the body why, as Windows put it.
                             let title =

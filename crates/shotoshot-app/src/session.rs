@@ -46,6 +46,9 @@ pub struct TextInput {
     pub label: Option<Label>,
     /// The ink of the text on its panel; `None` is the black or white that contrasts with it.
     pub ink: Option<[u8; 3]>,
+    /// The height of the text block a box keeps while it holds no text: the height it was
+    /// drawn at, or its own when reopened (`kept_block`).
+    pub height: f64,
     pub font: HFONT,
     pub drag_anchor: Option<u32>,
     /// What a one-line field shows of a text wider than itself; a text with no field
@@ -380,10 +383,11 @@ impl Host for WinHost<'_> {
     fn set_text_size(&mut self, size: f32) -> Result<()> {
         self.native.set_text_size(self.hwnd, size)
     }
-    fn set_text_label(&mut self, position: Point, label: Option<Label>) {
+    fn set_text_label(&mut self, position: Point, label: Option<Label>, height: f64) {
         if let Some(text) = &mut self.native.text {
             text.position = position;
             text.label = label;
+            text.height = height;
             self.native.text_event_updated(self.hwnd);
         }
     }

@@ -277,3 +277,66 @@ fn an_edited_panel_keeps_its_ink_or_takes_the_new_one() {
     e.undo();
     assert_eq!(ink(&e, 0), Some([1, 2, 3]), "one undo step");
 }
+
+fn empty_box(e: &mut Editor, label: Label, extent: Point) -> Option<u64> {
+    e.add_label(
+        p(100., 100.),
+        String::new(),
+        extent,
+        [250, 192, 66],
+        20.,
+        Some(label),
+        None,
+    )
+}
+#[test]
+fn a_box_validated_empty_stays_at_its_size_and_a_bare_text_does_not() {
+    let mut e = Editor::default();
+    let id = empty_box(&mut e, Label::Wrap(150.), p(150., 80.)).expect("an empty box stays");
+    assert_eq!(shape(&e).2, p(150., 80.));
+    assert!(
+        e.objects()[0].hit(p(200., 150.), 0., e.objects()),
+        "grabbed inside"
+    );
+    assert_eq!(
+        e.add_label(p(0., 0.), " ".into(), p(5., 24.), [0; 3], 20., None, None),
+        None,
+        "the Text tool still drops an empty text"
+    );
+    // Typed in afterwards, it follows its text like any box.
+    e.update_text_inked(id, "Hi".into(), p(150., 24.), [250, 192, 66], 20., None);
+    assert_eq!(shape(&e).2, p(150., 24.));
+}
+#[test]
+fn an_empty_box_keeps_its_height_through_corner_and_wheel() {
+    let mut e = Editor::default();
+    let id = empty_box(&mut e, Label::Wrap(150.), p(150., 80.)).unwrap();
+    e.tool = Tool::Select;
+    e.selected = vec![id];
+    // Bottom-right corner of the panel (92,95)-(258,185) pulled 50 px in.
+    e.begin(p(258., 185.), Modifiers::default());
+    e.update(p(208., 185.));
+    e.reflow(id, p(100., 24.));
+    e.finish();
+    assert_eq!(
+        shape(&e).2,
+        p(100., 80.),
+        "one empty line measured, drawn height kept"
+    );
+    // A font twice as large doubles it, as it would its line.
+    assert!(e.set_text_size(id, 40., p(100., 48.)));
+    assert_eq!(shape(&e).2, p(100., 160.));
+}
+#[test]
+fn a_clicked_empty_box_is_one_line_at_least_two_letters_wide() {
+    assert_eq!(
+        kept_block("", Some(Label::Fit), p(0., 24.), 20., 0.),
+        p(20., 24.)
+    );
+    assert_eq!(
+        kept_block("Note", Some(Label::Fit), p(40., 24.), 20., 90.),
+        p(40., 24.),
+        "a box with text follows it"
+    );
+    assert_eq!(kept_block("", None, p(0., 24.), 20., 90.), p(0., 24.));
+}

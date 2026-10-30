@@ -186,8 +186,8 @@ pub fn render_demo() -> Result<()> {
 }
 
 /// Arrows pulled out of text boxes by their anchors, from real gestures: one to a button of
-/// the capture (free end), one into another box; the pointer rests on an anchor of a third
-/// box, larger, among its four.
+/// the capture (free end), one into another box, one into a box left empty; the pointer
+/// rests on an anchor of a third box, larger, among its four.
 fn elbows(renderer: &Renderer, path: &std::path::Path) -> Result<()> {
     let at = |x: f64, y: f64| Point { x, y };
     let mut image = Image::solid(1100, 680, [248, 245, 242, 255]);
@@ -234,6 +234,24 @@ fn elbows(renderer: &Renderer, path: &std::path::Path) -> Result<()> {
         .frame_of(second)
         .map_or(at(0., 0.), |f| f.bounds.center());
     pull(editor, first, 1, into);
+    // A box left empty keeps the size it was drawn at, and takes an arrow like any box.
+    let size = 22.;
+    let measured = renderer.measure_wrapped_annotation_text("", size as f32, 150.)?;
+    let empty = editor
+        .add_label(
+            at(850., 115.) + Label::padding(size),
+            String::new(),
+            kept_block("", Some(Label::Wrap(150.)), measured, size, 60.),
+            [237, 79, 92],
+            size,
+            Some(Label::Wrap(150.)),
+            None,
+        )
+        .ok_or_else(|| windows::core::Error::from(windows::Win32::Foundation::E_INVALIDARG))?;
+    let into = editor
+        .frame_of(empty)
+        .map_or(at(0., 0.), |f| f.bounds.center());
+    pull(editor, export, 1, into);
     let pointer = editor.anchors(hovered).map_or(at(0., 0.), |a| a[3]);
     session.capture.pointer = pointer;
     let preview = paint_image(1100, 680, |hdc| session.paint(hdc))?;

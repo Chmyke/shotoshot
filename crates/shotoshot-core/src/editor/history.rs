@@ -190,7 +190,8 @@ impl Editor {
         label: Option<Label>,
         ink: Option<[u8; 3]>,
     ) -> Option<u64> {
-        if text.trim().is_empty()
+        // A box stays when validated empty (`kept_block`); a bare text needs words.
+        if (text.trim().is_empty() && label.is_none())
             || !position.finite()
             || !extent.finite()
             || extent.x < 0.
@@ -356,10 +357,18 @@ impl Editor {
         let before = self.objects.clone();
         for &(id, new_size, measured) in sizes {
             if let Some(o) = self.objects.iter_mut().find(|o| o.id == id)
-                && let Shape::Text { size, extent, .. } = &mut o.shape
+                && let Shape::Text {
+                    text,
+                    size,
+                    extent,
+                    label,
+                    ..
+                } = &mut o.shape
             {
+                // An empty box grows with its font, as its line would.
+                let height = extent.y * new_size / *size;
+                *extent = kept_block(text, *label, measured, new_size, height);
                 *size = new_size;
-                *extent = measured;
             }
         }
         self.commit(before);
@@ -375,9 +384,15 @@ impl Editor {
             return;
         }
         if let Some(o) = self.objects.iter_mut().find(|o| o.id == id)
-            && let Shape::Text { extent, .. } = &mut o.shape
+            && let Shape::Text {
+                text,
+                size,
+                extent,
+                label,
+                ..
+            } = &mut o.shape
         {
-            *extent = measured;
+            *extent = kept_block(text, *label, measured, *size, extent.y);
         }
     }
     pub fn copy_selected(&self) -> Vec<Object> {
