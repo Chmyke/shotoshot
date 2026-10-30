@@ -2,12 +2,13 @@
 //! OWNER: App opens a `Popup` per opening; the Direct2D painter lives only while one is open.
 //! INVARIANTS: Layout is in 96-DPI logical pixels, scaled once at paint time.
 use super::*;
-use crate::presentation::menu as commands;
 use crate::render::{D2dCanvas, Renderer};
 use crate::settings::Shortcut;
 use shotoshot_core::{Rect, Tool};
-use shotoshot_text::{Key, Language, LanguageChoice, Text, language, tr_in};
-use shotoshot_ui::{Canvas, Ink};
+use shotoshot_text::{Key, Language, LanguageChoice, language, tr_in};
+pub(super) use shotoshot_ui::icon::Icon;
+pub(super) use shotoshot_ui::icon::draw as draw_icon;
+use shotoshot_ui::{Canvas, Ink, TextStyle, settings_panel};
 use std::borrow::Cow;
 mod popup;
 pub(super) use popup::{CLOSED, COMMAND, Popup};
@@ -25,27 +26,6 @@ enum Kind {
     Choice,
 }
 
-#[derive(Clone, Copy)]
-pub(super) enum Icon {
-    None,
-    Capture,
-    Instant,
-    Halo,
-    /// The live loupe: a lens and its handle.
-    Loupe,
-    Keyboard,
-    Mouse,
-    Size,
-    Clock,
-    Power,
-    /// A note pinned to the desktop.
-    Board,
-    /// The interface language.
-    Globe,
-    /// The editor toolbar's glyph for the same notion.
-    Toolbar(Action),
-}
-
 /// What a row shows as its name.
 #[derive(Clone, Copy)]
 enum Label {
@@ -54,8 +34,6 @@ enum Label {
     Languages,
     /// A language under its own name, whatever the interface language.
     Native(Language),
-    /// A size of the input diagram, in percent.
-    Percent(u32),
     Blank,
 }
 
@@ -87,10 +65,13 @@ const fn choice(id: u32, label: Label) -> Row {
 }
 
 /// Command ids are the ones `App::menu` handles; titles (90..) and the separator are inert.
+/// The menu acts; what is set once lives in the Settings window (Mickaël, 2026-10-30).
 const ROOT: &[Row] = &[
     row(1, Key::MenuTakeScreenshot, Icon::Capture, Kind::Command),
-    row(8, Key::MenuEditBoard, Icon::Board, Kind::Command),
-    row(9, Key::MenuShowBoard, Icon::Board, Kind::Toggle),
+    row(7, Key::MenuInstantScreenshot, Icon::Instant, Kind::Command),
+    title(91, Key::MenuBoard),
+    row(8, Key::MenuEditBoard, Icon::BoardEdit, Kind::Command),
+    row(9, Key::MenuShowBoard, Icon::Eye, Kind::Toggle),
     row(
         10,
         Key::MenuClearBoard,
@@ -98,84 +79,50 @@ const ROOT: &[Row] = &[
         Kind::Command,
     ),
     title(90, Key::MenuPresentation),
-    row(101, Key::MenuPointerHalo, Icon::Halo, Kind::Toggle),
+    row(101, Key::MenuPointerEffects, Icon::Halo, Kind::Toggle),
     row(107, Key::MenuMagnifier, Icon::Loupe, Kind::Toggle),
-    row(105, Key::MenuPointerEffects, Icon::Halo, Kind::Command),
     row(103, Key::MenuKeyboard, Icon::Keyboard, Kind::Toggle),
     row(104, Key::MenuMouse, Icon::Mouse, Kind::Toggle),
-    row(
-        106,
-        Key::MenuMoveInput,
-        Icon::Toolbar(Action::Tool(Tool::Select)),
-        Kind::Command,
-    ),
-    row(140, Key::MenuInputSize, Icon::Size, Kind::Submenu),
     row(
         102,
         Key::MenuTemporaryShapes,
         Icon::Toolbar(Action::Tool(Tool::Pen)),
         Kind::Toggle,
     ),
-    row(120, Key::MenuShapeDuration, Icon::Clock, Kind::Submenu),
-    title(91, Key::MenuShortcuts),
-    row(2, Key::MenuCapture, Icon::Capture, Kind::Command),
-    row(6, Key::MenuInstantScreenshot, Icon::Instant, Kind::Command),
+    // Their keys, to learn them; a click records new ones (Mickaël, 2026-10-30).
     row(
-        110,
+        171,
         Key::ToolbarArrow,
         Icon::Toolbar(Action::Tool(Tool::Arrow)),
         Kind::Command,
     ),
     row(
-        111,
+        172,
         Key::ToolbarRectangle,
         Icon::Toolbar(Action::Tool(Tool::Rectangle)),
         Kind::Command,
     ),
     row(
-        112,
+        173,
         Key::ToolbarEllipse,
         Icon::Toolbar(Action::Tool(Tool::Ellipse)),
         Kind::Command,
     ),
-    row(13, Key::MenuBoard, Icon::Board, Kind::Command),
-    title(92, Key::MenuOptions),
-    row(
-        5,
-        Key::MenuLiveCaptureDefault,
-        Icon::Toolbar(Action::Live),
-        Kind::Toggle,
-    ),
-    row(4, Key::MenuStartWithWindows, Icon::Power, Kind::Toggle),
-    // Last of the options, right above Quit: a fixed place, found without reading the menu.
-    Row {
-        id: 150,
-        label: Label::Languages,
-        icon: Icon::Globe,
-        kind: Kind::Submenu,
-    },
     Row {
         id: 0,
         label: Label::Blank,
         icon: Icon::None,
         kind: Kind::Separator,
     },
-    row(
-        3,
-        Key::MenuQuit,
-        Icon::Toolbar(Action::Close),
-        Kind::Command,
-    ),
-];
-const DURATIONS: &[Row] = &[
-    choice(121, Label::Text(Key::MenuDuration1)),
-    choice(122, Label::Text(Key::MenuDuration3)),
-    choice(123, Label::Text(Key::MenuDuration5)),
-];
-const SIZES: &[Row] = &[
-    choice(141, Label::Percent(100)),
-    choice(142, Label::Percent(150)),
-    choice(143, Label::Percent(200)),
+    row(170, Key::SettingsTitle, Icon::Gear, Kind::Command),
+    // Right above Quit: a fixed place, found without reading the menu.
+    Row {
+        id: 150,
+        label: Label::Languages,
+        icon: Icon::Globe,
+        kind: Kind::Submenu,
+    },
+    row(3, Key::MenuQuit, Icon::Power, Kind::Command),
 ];
 /// The automatic choice (151), then every language in table order (152..=166).
 const LANGUAGES: [Row; 1 + Language::ALL.len()] = {
@@ -190,18 +137,13 @@ const LANGUAGES: [Row; 1 + Language::ALL.len()] = {
 /// The values a submenu row opens.
 fn choices(id: u32) -> &'static [Row] {
     match id {
-        120 => DURATIONS,
-        140 => SIZES,
         150 => &LANGUAGES,
         _ => &[],
     }
 }
+#[cfg(test)]
 fn find(id: u32) -> Option<&'static Row> {
-    ROOT.iter()
-        .chain(DURATIONS)
-        .chain(SIZES)
-        .chain(&LANGUAGES)
-        .find(|row| row.id == id)
+    ROOT.iter().chain(&LANGUAGES).find(|row| row.id == id)
 }
 /// The language a choice of the language submenu selects, None for any other command.
 pub(super) fn on_language_choice(id: u32) -> Option<LanguageChoice> {
@@ -214,19 +156,11 @@ fn label_in(row: &Row, language: Language) -> Cow<'static, str> {
         Label::Text(key) => tr_in(language, key).into(),
         Label::Languages => shotoshot_text::language_menu_label_in(language),
         Label::Native(name) => name.native_name().into(),
-        Label::Percent(percent) => percent_in(percent as usize, language).into(),
         Label::Blank => "".into(),
     }
 }
 fn label(row: &Row) -> Cow<'static, str> {
     label_in(row, language())
-}
-fn percent_in(percent: usize, language: Language) -> String {
-    Text::with_in(language, Key::MenuPercent, &[("n", &percent.to_string())]).to_string()
-}
-/// The icon a menu row shows, for the surfaces that continue what the row opens.
-pub(super) fn icon(id: u32) -> Icon {
-    find(id).map_or(Icon::None, |row| row.icon)
 }
 
 /// What the rows display for the current settings.
@@ -235,18 +169,13 @@ pub(super) struct Values {
     /// Packed with `shortcut`.
     pub capture: usize,
     pub instant: usize,
-    /// Arrow, rectangle, ellipse.
-    pub shapes: [usize; 3],
-    pub duration_ms: u32,
-    /// Size of the input diagram, in percent.
-    pub size: u32,
     pub halo: bool,
     pub loupe: bool,
     pub temporary_shapes: bool,
+    /// The arrow, rectangle and ellipse shortcuts, packed with `shortcut`.
+    pub shapes: [usize; 3],
     pub keys: bool,
     pub mouse: bool,
-    pub live: bool,
-    pub startup: bool,
     /// Whether the board is shown in the wallpaper.
     pub board: bool,
     /// Packed with `shortcut`.
@@ -264,23 +193,16 @@ impl Values {
             102 => self.temporary_shapes,
             103 => self.keys,
             104 => self.mouse,
-            5 => self.live,
-            4 => self.startup,
             9 => self.board,
-            _ => {
-                commands::duration_ms(id) == Some(self.duration_ms)
-                    || commands::scale(id) == Some(self.size)
-            }
+            _ => false,
         }
     }
     fn data(&self, id: u32) -> usize {
         match id {
-            1 | 2 => self.capture,
-            6 => self.instant,
-            8 | 13 => self.board_shortcut,
-            110..=112 => self.shapes[(id - 110) as usize],
-            120 => self.duration_ms as usize,
-            140 => self.size as usize,
+            1 => self.capture,
+            7 => self.instant,
+            8 => self.board_shortcut,
+            171..=173 => self.shapes[id as usize - 171],
             // The position of the current choice in its submenu.
             150 => LANGUAGES
                 .iter()
@@ -298,34 +220,25 @@ pub(super) fn shortcut(shortcut: Shortcut, unavailable: bool) -> usize {
     }
     ((shortcut.key << 16) | shortcut.modifiers | (u32::from(unavailable) << 31)) as usize
 }
-fn shortcut_text_in(data: usize, language: Language) -> String {
+/// The keys of a shortcut row in `language`, one keycap each, and whether another program
+/// holds them: the keycaps then turn orange.
+fn caps_in(data: usize, language: Language) -> (Vec<String>, bool) {
     if data == 0 {
-        return String::new();
+        return (Vec::new(), false);
     }
     let (mods, key) = ((data & 0xffff) as u32, ((data >> 16) & 0xff) as u32);
-    let keys = setup::key_label_in(mods, key, language).replace(" + ", "+");
-    if data & (1 << 31) != 0 {
-        Text::with_in(language, Key::MenuShortcutInUse, &[("shortcut", &keys)]).to_string()
-    } else {
-        keys
-    }
+    let caps = setup::key_label_in(mods, key, language)
+        .split(" + ")
+        .map(str::to_string)
+        .collect();
+    (caps, data & (1 << 31) != 0)
 }
-/// Text on the right of a row, in `language`.
+/// The current choice a submenu row names on its right, in `language`.
 fn detail_in(row: &Row, data: usize, language: Language) -> String {
     match row.kind {
-        Kind::Command => shortcut_text_in(data, language),
-        Kind::Submenu => match row.id {
-            150 => choices(row.id)
-                .get(data)
-                .map_or(String::new(), |current| label_in(current, language).into()),
-            140 => percent_in(data, language),
-            _ => Text::with_in(
-                language,
-                Key::MenuSeconds,
-                &[("n", &(data / 1000).to_string())],
-            )
-            .to_string(),
-        },
+        Kind::Submenu => choices(row.id)
+            .get(data)
+            .map_or(String::new(), |current| label_in(current, language).into()),
         _ => String::new(),
     }
 }
@@ -342,17 +255,26 @@ const ICON_X: f64 = 12.;
 const ICON_SCALE: f64 = 0.8;
 const LABEL_X: f64 = 38.;
 const MARGIN: f64 = 14.;
-const TEXT_SIZE: f64 = 13.;
-const TITLE_SIZE: f64 = 11.;
+// The type of the Settings window (Mickaël, 2026-10-30): group titles semibold.
+const TEXT_SIZE: f64 = 14.;
+const TITLE_SIZE: f64 = 12.;
 const SWITCH: Point = Point { x: 28., y: 14. };
 /// Room for the submenu arrow.
 const ARROW: f64 = 14.;
 
 fn height(kind: Kind) -> f64 {
     match kind {
-        Kind::Title => 26.,
+        Kind::Title => 28.,
         Kind::Separator => 9.,
-        _ => 28.,
+        _ => 32.,
+    }
+}
+/// Group titles are the only text at `TITLE_SIZE`, and the only semibold one.
+fn style(size: f64) -> TextStyle {
+    if size == TITLE_SIZE {
+        TextStyle::Strong
+    } else {
+        TextStyle::Body
     }
 }
 /// Logical width a row needs to show its label and its right-hand side without clipping.
@@ -362,7 +284,11 @@ fn width(renderer: &Renderer, row: &Row, data: usize) -> Result<f64> {
 /// `width` for the texts of `language`.
 fn width_in(renderer: &Renderer, row: &Row, data: usize, language: Language) -> Result<f64> {
     let measure = |text: &str, size: f64| {
-        Ok::<_, Error>(renderer.measure_text_in(text, size as f32, language)?.x)
+        Ok::<_, Error>(
+            renderer
+                .measure_styled_text_in(text, size as f32, style(size), language)?
+                .x,
+        )
     };
     let name = label_in(row, language);
     Ok(match row.kind {
@@ -370,15 +296,27 @@ fn width_in(renderer: &Renderer, row: &Row, data: usize, language: Language) -> 
         Kind::Title => ICON_X + measure(&name, TITLE_SIZE)? + MARGIN,
         Kind::Toggle => LABEL_X + measure(&name, TEXT_SIZE)? + 2. * MARGIN + SWITCH.x + MARGIN,
         Kind::Choice => LABEL_X + measure(&name, TEXT_SIZE)? + 2. * MARGIN,
-        Kind::Command | Kind::Submenu => {
+        Kind::Command => {
+            let (caps, _) = caps_in(data, language);
+            let right = if caps.is_empty() {
+                0.
+            } else {
+                let mut widths = Vec::with_capacity(caps.len());
+                for cap in &caps {
+                    widths.push(measure(cap, settings_panel::SMALL_SIZE)?);
+                }
+                2. * MARGIN + settings_panel::keycaps_width(widths)
+            };
+            LABEL_X + measure(&name, TEXT_SIZE)? + right + MARGIN
+        }
+        Kind::Submenu => {
             let detail = detail_in(row, data, language);
-            let arrow = if row.kind == Kind::Submenu { ARROW } else { 0. };
             let right = if detail.is_empty() {
                 0.
             } else {
                 2. * MARGIN + measure(&detail, TEXT_SIZE)?
             };
-            LABEL_X + measure(&name, TEXT_SIZE)? + right + arrow + MARGIN
+            LABEL_X + measure(&name, TEXT_SIZE)? + right + ARROW + MARGIN
         }
     })
 }
@@ -390,189 +328,12 @@ struct State {
     data: usize,
 }
 
-fn segments<C: Canvas>(
-    canvas: &mut C,
-    origin: Point,
-    scale: f64,
-    rgb: [u8; 3],
-    points: &[(f64, f64)],
-) -> std::result::Result<(), C::Error> {
-    let at = |p: (f64, f64)| {
-        origin
-            + Point {
-                x: p.0 * scale,
-                y: p.1 * scale,
-            }
-    };
-    for pair in points.windows(2) {
-        canvas.line(at(pair[0]), at(pair[1]), Ink::solid(rgb), 1.6 * scale)?;
+/// The glyph `row` shows: Show board's eye is struck through while the board is hidden.
+fn shown_icon(row: &Row, state: State) -> Icon {
+    match row.icon {
+        Icon::Eye if !state.checked => Icon::EyeOff,
+        icon => icon,
     }
-    Ok(())
-}
-/// Clockwise arc in degrees from the positive x axis, on the glyph's 20 px grid.
-fn arc<C: Canvas>(
-    canvas: &mut C,
-    origin: Point,
-    scale: f64,
-    rgb: [u8; 3],
-    (center, radius): ((f64, f64), f64),
-    (from, to): (f64, f64),
-) -> std::result::Result<(), C::Error> {
-    let points: Vec<_> = (0..=16)
-        .map(|step| {
-            let angle = (from + (to - from) * step as f64 / 16.).to_radians();
-            (
-                center.0 + radius * angle.cos(),
-                center.1 + radius * angle.sin(),
-            )
-        })
-        .collect();
-    segments(canvas, origin, scale, rgb, &points)
-}
-pub(super) fn draw_icon<C: Canvas>(
-    canvas: &mut C,
-    icon: Icon,
-    origin: Point,
-    scale: f64,
-    rgb: [u8; 3],
-) -> std::result::Result<(), C::Error> {
-    let at = |x: f64, y: f64| {
-        origin
-            + Point {
-                x: x * scale,
-                y: y * scale,
-            }
-    };
-    let radius = |r: f64| Point {
-        x: r * scale,
-        y: r * scale,
-    };
-    let ink = Ink::solid(rgb);
-    match icon {
-        Icon::None => {}
-        Icon::Toolbar(action) => {
-            crate::toolbar::glyph(canvas, action, origin, scale, rgb, (rgb, rgb))?
-        }
-        Icon::Capture => {
-            // Corner brackets of a selected area.
-            for corner in [
-                [(2., 7.), (2., 2.), (7., 2.)],
-                [(13., 2.), (18., 2.), (18., 7.)],
-                [(18., 13.), (18., 18.), (13., 18.)],
-                [(7., 18.), (2., 18.), (2., 13.)],
-            ] {
-                segments(canvas, origin, scale, rgb, &corner)?;
-            }
-        }
-        Icon::Instant => segments(
-            canvas,
-            origin,
-            scale,
-            rgb,
-            &[
-                (11.5, 1.5),
-                (4., 11.5),
-                (9.5, 11.5),
-                (8.5, 18.5),
-                (16., 8.5),
-                (10.5, 8.5),
-                (11.5, 1.5),
-            ],
-        )?,
-        Icon::Halo => {
-            canvas.stroke_ellipse(at(10., 10.), radius(8.), ink, 1.6 * scale)?;
-            canvas.fill_ellipse(at(10., 10.), radius(2.8), ink)?;
-        }
-        Icon::Loupe => {
-            canvas.stroke_ellipse(at(8.5, 8.5), radius(6.), ink, 1.6 * scale)?;
-            segments(canvas, origin, scale, rgb, &[(13., 13.), (18., 18.)])?;
-        }
-        Icon::Keyboard => {
-            canvas.stroke_round_rect(
-                Rect {
-                    min: at(1., 4.),
-                    max: at(19., 16.),
-                },
-                2.5 * scale,
-                ink,
-                1.6 * scale,
-            )?;
-            for key in [
-                [(4.5, 8.5), (6., 8.5)],
-                [(9.25, 8.5), (10.75, 8.5)],
-                [(14., 8.5), (15.5, 8.5)],
-                [(6.5, 12.5), (13.5, 12.5)],
-            ] {
-                segments(canvas, origin, scale, rgb, &key)?;
-            }
-        }
-        Icon::Mouse => {
-            canvas.stroke_round_rect(
-                Rect {
-                    min: at(5., 1.5),
-                    max: at(15., 18.5),
-                },
-                5. * scale,
-                ink,
-                1.6 * scale,
-            )?;
-            segments(canvas, origin, scale, rgb, &[(10., 5.), (10., 8.5)])?;
-        }
-        Icon::Size => {
-            // Two corners pulled apart along a diagonal.
-            for stroke in [
-                &[(11.5, 3.), (17., 3.), (17., 8.5)][..],
-                &[(8.5, 17.), (3., 17.), (3., 11.5)],
-                &[(16.5, 3.5), (3.5, 16.5)],
-            ] {
-                segments(canvas, origin, scale, rgb, stroke)?;
-            }
-        }
-        Icon::Clock => {
-            canvas.stroke_ellipse(at(10., 10.), radius(8.), ink, 1.6 * scale)?;
-            segments(
-                canvas,
-                origin,
-                scale,
-                rgb,
-                &[(10., 5.5), (10., 10.), (13.5, 12.)],
-            )?;
-        }
-        Icon::Power => {
-            arc(canvas, origin, scale, rgb, ((10., 10.5), 7.5), (-55., 235.))?;
-            segments(canvas, origin, scale, rgb, &[(10., 2.), (10., 10.)])?;
-        }
-        Icon::Board => {
-            // A note and two lines of its text.
-            canvas.stroke_round_rect(
-                Rect {
-                    min: at(3., 2.5),
-                    max: at(17., 17.5),
-                },
-                2.5 * scale,
-                ink,
-                1.6 * scale,
-            )?;
-            for line in [[(6.5, 8.), (13.5, 8.)], [(6.5, 12.), (11., 12.)]] {
-                segments(canvas, origin, scale, rgb, &line)?;
-            }
-        }
-        Icon::Globe => {
-            // The earth, one meridian and the equator.
-            canvas.stroke_ellipse(at(10., 10.), radius(8.), ink, 1.6 * scale)?;
-            canvas.stroke_ellipse(
-                at(10., 10.),
-                Point {
-                    x: 3.5 * scale,
-                    y: 8. * scale,
-                },
-                ink,
-                1.6 * scale,
-            )?;
-            segments(canvas, origin, scale, rgb, &[(2., 10.), (18., 10.)])?;
-        }
-    }
-    Ok(())
 }
 
 /// One row filling `size` device pixels, at `scale` device pixels per logical pixel.
@@ -594,8 +355,8 @@ fn paint<C: Canvas>(
     let name = label(row);
     let middle = size.y / 2.;
     let text = |canvas: &mut C, text: &str, left: f64, right: f64, bottom: f64, size: f64, rgb| {
-        let line = canvas.measure_text("X", u(size))?.y;
-        canvas.text(
+        let line = canvas.measure_styled_text("X", u(size), style(size))?.y;
+        canvas.styled_text(
             text,
             Rect {
                 min: Point {
@@ -609,6 +370,7 @@ fn paint<C: Canvas>(
             },
             u(size),
             Ink::solid(rgb),
+            style(size),
         )
     };
     match row.kind {
@@ -659,31 +421,33 @@ fn paint<C: Canvas>(
     };
     if row.kind == Kind::Choice {
         if state.checked {
-            segments(
-                canvas,
-                icon_origin,
-                u(ICON_SCALE),
-                TEXT,
-                &[(4., 10.5), (8.5, 15.), (16., 5.5)],
-            )?;
+            draw_icon(canvas, Icon::Check, icon_origin, u(ICON_SCALE), TEXT)?;
         }
     } else {
-        draw_icon(canvas, row.icon, icon_origin, u(ICON_SCALE), SECONDARY)?;
+        draw_icon(
+            canvas,
+            shown_icon(row, state),
+            icon_origin,
+            u(ICON_SCALE),
+            SECONDARY,
+        )?;
     }
-    let line = canvas.measure_text("X", u(TEXT_SIZE))?.y;
+    let line = canvas
+        .measure_styled_text("X", u(TEXT_SIZE), TextStyle::Body)?
+        .y;
     let bottom = middle + line / 2.;
     text(canvas, &name, u(LABEL_X), size.x, bottom, TEXT_SIZE, TEXT)?;
     let mut right = size.x - u(MARGIN);
     if row.kind == Kind::Submenu {
-        segments(
+        draw_icon(
             canvas,
+            Icon::Chevron,
             Point {
                 x: right - u(8.),
                 y: middle - u(6.),
             },
             u(0.6),
             SECONDARY,
-            &[(6., 4.), (12., 10.), (6., 16.)],
         )?;
         right -= u(ARROW);
     }
@@ -731,9 +495,15 @@ fn paint<C: Canvas>(
         }
         return Ok(());
     }
+    if row.kind == Kind::Command {
+        let (caps, in_use) = caps_in(state.data, language());
+        return settings_panel::keycaps(canvas, &caps, right, middle, 9., scale, in_use);
+    }
     let detail = detail_in(row, state.data, language());
     if !detail.is_empty() {
-        let extent = canvas.measure_text(&detail, u(TEXT_SIZE))?.x;
+        let extent = canvas
+            .measure_styled_text(&detail, u(TEXT_SIZE), TextStyle::Body)?
+            .x;
         text(
             canvas,
             &detail,
@@ -829,7 +599,6 @@ fn render(values: &Values, selected: u32, open: u32, scale: f64) -> Result<Image
 }
 fn sample() -> Values {
     let defaults = Settings::default();
-    let shapes = defaults.presentation.shape_shortcuts;
     Values {
         capture: shortcut(
             Shortcut {
@@ -839,20 +608,15 @@ fn sample() -> Values {
             false,
         ),
         instant: shortcut(defaults.instant_shortcut, false),
-        shapes: [
-            shortcut(shapes[0], false),
-            shortcut(shapes[1], true),
-            shortcut(shapes[2], false),
-        ],
-        duration_ms: defaults.presentation.duration_ms,
-        size: defaults.presentation.input_scale,
         halo: true,
         loupe: false,
         temporary_shapes: true,
+        shapes: defaults
+            .presentation
+            .shape_shortcuts
+            .map(|keys| shortcut(keys, false)),
         keys: false,
         mouse: false,
-        live: defaults.live_capture,
-        startup: defaults.start_with_windows,
         board: defaults.board_visible,
         board_shortcut: shortcut(defaults.board_shortcut, false),
         language: defaults.language,
@@ -860,13 +624,13 @@ fn sample() -> Values {
 }
 pub(super) fn preview() -> Result<()> {
     save_png(
-        &render(&sample(), 110, 120, 1.)?,
+        &render(&sample(), 170, 0, 1.)?,
         std::path::Path::new("target/shotoshot-menu.png"),
     )
 }
 /// Opens and closes the menu's renderer the way a real menu does, for the resident diagnostic.
 pub(super) fn probe() -> Result<()> {
-    render(&sample(), 0, 120, 1.).map(|_| ())
+    render(&sample(), 0, 150, 1.).map(|_| ())
 }
 
 #[cfg(test)]
@@ -951,13 +715,30 @@ mod tests {
             ..Default::default()
         };
         assert!(values.checked(9));
-        assert_eq!([values.data(8), values.data(13)], [77, 77]);
+        assert_eq!(values.data(8), 77);
         assert!(find(8).is_some_and(|r| english(r) == "Edit board"));
         assert!(find(9).is_some_and(|r| english(r) == "Show board" && r.kind == Kind::Toggle));
-        assert!(find(13).is_some_and(|r| english(r) == "Board" && r.kind == Kind::Command));
         assert!(find(10).is_some_and(|r| english(r) == "Clear board"
             && r.kind == Kind::Command
             && matches!(r.icon, Icon::Toolbar(Action::ClearBoard))));
+    }
+
+    #[test]
+    fn the_shape_rows_teach_their_shortcuts() {
+        let values = Values {
+            shapes: [11, 22, 33],
+            ..Default::default()
+        };
+        // Right under the switch they need, each with its keys; a click records new ones.
+        let at = |id| ROOT.iter().position(|row| row.id == id).unwrap();
+        assert_eq!(
+            [at(171), at(172), at(173)],
+            [at(102) + 1, at(102) + 2, at(102) + 3]
+        );
+        for (id, keys) in [(171, 11), (172, 22), (173, 33)] {
+            assert!(find(id).is_some_and(|row| row.kind == Kind::Command));
+            assert_eq!(values.data(id), keys);
+        }
     }
 
     #[test]
@@ -982,61 +763,71 @@ mod tests {
     }
 
     #[test]
-    fn only_the_current_duration_is_ticked() {
-        let row = find(122).unwrap();
-        let other = rendered(row, State::default(), 1.);
-        let current = rendered(
-            row,
-            State {
-                checked: true,
-                ..Default::default()
-            },
-            1.,
-        );
-        assert_eq!(drawn(&other, ICON_X, ICON_X + 16., 1.), 0);
-        assert!(drawn(&current, ICON_X, ICON_X + 16., 1.) > 15);
-        let values = Values {
-            duration_ms: 3000,
-            size: 150,
-            ..Default::default()
-        };
-        assert_eq!(
-            [121, 122, 123].map(|id| values.checked(id)),
-            [false, true, false]
-        );
-        assert_eq!(
-            [141, 142, 143].map(|id| values.checked(id)),
-            [false, true, false]
-        );
+    fn the_menu_acts_and_settings_open_elsewhere() {
+        let actions = ROOT
+            .iter()
+            .filter(|row| !matches!(row.kind, Kind::Title | Kind::Separator))
+            .count();
+        assert_eq!(actions, 16, "a short menu");
+        assert!(find(170).is_some_and(|r| english(r) == "Settings" && r.kind == Kind::Command));
+        // One submenu only: the language, the way back for who cannot read the current one.
+        let submenus: Vec<u32> = ROOT
+            .iter()
+            .filter(|row| row.kind == Kind::Submenu)
+            .map(|row| row.id)
+            .collect();
+        assert_eq!(submenus, [150]);
+        // Each board row has its own icon.
+        assert!(matches!(find(8).map(|r| r.icon), Some(Icon::BoardEdit)));
+        assert!(matches!(find(9).map(|r| r.icon), Some(Icon::Eye)));
     }
 
     #[test]
-    fn a_submenu_row_names_its_current_choice() {
-        let values = Values {
-            duration_ms: 5000,
-            size: 200,
-            ..Default::default()
+    fn each_command_shows_its_own_icon() {
+        // Mickaël, 2026-10-30: the power symbol quits, a bin clears the board, a pencil edits
+        // it and the eye of Show board is struck through while the board is hidden.
+        let icon = |id: u32| find(id).map(|row| row.icon);
+        assert_eq!(icon(3), Some(Icon::Power));
+        assert_eq!(icon(10), Some(Icon::Toolbar(Action::ClearBoard)));
+        assert_eq!(icon(8), Some(Icon::BoardEdit));
+        let show = find(9).unwrap();
+        let shown = |checked| {
+            shown_icon(
+                show,
+                State {
+                    checked,
+                    ..Default::default()
+                },
+            )
         };
-        let shown = |id| detail_in(find(id).unwrap(), values.data(id), Language::En);
-        assert_eq!([shown(120), shown(140)], ["5 s", "200%"]);
-        // The presentation submenus offer three values; the language one, every language.
-        for row in ROOT
+        assert_eq!(shown(true), Icon::Eye);
+        assert_eq!(shown(false), Icon::EyeOff);
+        // No two rows of the menu share a glyph.
+        let icons: Vec<Icon> = ROOT
             .iter()
-            .filter(|row| row.kind == Kind::Submenu && row.id != 150)
-        {
-            assert_eq!(choices(row.id).len(), 3, "{}", english(row));
+            .filter(|row| !matches!(row.kind, Kind::Title | Kind::Separator))
+            .map(|row| row.icon)
+            .collect();
+        for (index, a) in icons.iter().enumerate() {
+            assert!(*a != Icon::None, "a row without an icon");
+            assert!(!icons[index + 1..].contains(a), "{a:?} is used by two rows");
         }
+        // The board bin is not the eraser of one object.
+        assert_ne!(icon(10), Some(Icon::Toolbar(Action::Tool(Tool::Eraser))));
     }
 
     #[test]
     fn rows_scale_with_the_monitor() {
-        let row = find(4).unwrap();
+        let row = find(101).unwrap();
         let state = State {
             checked: true,
             ..Default::default()
         };
         let (normal, doubled) = (rendered(row, state, 1.), rendered(row, state, 2.));
-        assert_eq!((doubled.width, doubled.height), (2 * normal.width, 56));
+        assert_eq!(
+            (doubled.width, doubled.height),
+            (2 * normal.width, 2 * height(Kind::Toggle) as u32)
+        );
         // Same layout at twice the size: four times the ink, give or take antialiasing.
         let ratio = accent(&doubled) as f64 / accent(&normal) as f64;
         assert!((3.5..=5.).contains(&ratio), "{ratio}");
@@ -1047,7 +838,7 @@ mod tests {
     #[test]
     fn width_leaves_room_for_the_shortcut() {
         let _open = Open;
-        let row = find(6).unwrap();
+        let row = find(7).unwrap();
         let width_of = |data| with_painter(|renderer| width(renderer, row, data)).unwrap();
         let short = shortcut(
             Shortcut {
@@ -1063,10 +854,18 @@ mod tests {
             },
             true,
         );
-        assert_eq!(shortcut_text_in(short, Language::En), "Scroll Lock");
         assert_eq!(
-            shortcut_text_in(long, Language::En),
-            "Ctrl+Shift+Alt+Print Screen (in use)"
+            caps_in(short, Language::En),
+            (vec!["Scroll Lock".into()], false)
+        );
+        assert_eq!(
+            caps_in(long, Language::En),
+            (
+                ["Ctrl", "Shift", "Alt", "Print Screen"]
+                    .map(String::from)
+                    .to_vec(),
+                true
+            )
         );
         assert!(width_of(0) < width_of(short) && width_of(short) < width_of(long));
         // The longest shortcut is drawn entirely inside the width the row asks for.
@@ -1092,9 +891,11 @@ mod tests {
         })
         .unwrap();
         let label_end = LABEL_X
-            + with_painter(|renderer| renderer.measure_text(&label(row), TEXT_SIZE as f32))
-                .unwrap()
-                .x;
+            + with_painter(|renderer| {
+                renderer.measure_styled_text(&label(row), TEXT_SIZE as f32, TextStyle::Body)
+            })
+            .unwrap()
+            .x;
         assert_eq!(drawn(&image, label_end + 2., label_end + MARGIN, 1.), 0);
         assert_eq!(drawn(&image, needed - MARGIN + 2., needed, 1.), 0);
     }
@@ -1110,40 +911,24 @@ mod tests {
             root,
             [
                 "Take a screenshot",
+                "Instant screenshot",
+                "Board",
                 "Edit board",
                 "Show board",
                 "Clear board",
                 "Presentation",
-                "Pointer halo",
-                "Magnifier",
                 "Pointer effects",
+                "Magnifier",
                 "Keyboard",
                 "Mouse",
-                "Move keyboard and mouse",
-                "Keyboard and mouse size",
                 "Temporary shapes",
-                "Shape duration",
-                "Shortcuts · click to change",
-                "Capture",
-                "Instant screenshot",
                 "Arrow",
                 "Rectangle",
                 "Ellipse",
-                "Board",
-                "Options",
-                "Live capture by default",
-                "Start with Windows",
                 "",
+                "Settings",
                 "Quit Shotoshot",
             ]
-        );
-        assert_eq!(
-            DURATIONS.iter().map(english).collect::<Vec<_>>(),
-            ["1 second", "3 seconds", "5 seconds"]
-        );
-        assert_eq!(
-            SIZES.iter().map(english).collect::<Vec<_>>(),
-            ["100%", "150%", "200%"]
         );
     }
 
@@ -1274,7 +1059,7 @@ mod tests {
         let _open = Open;
         let values = sample();
         for language in Language::ALL {
-            for rows in [ROOT, DURATIONS, SIZES, &LANGUAGES[..]] {
+            for rows in [ROOT, &LANGUAGES[..]] {
                 let width = widest(rows, &values, language);
                 assert!(
                     width <= 480.,
@@ -1286,20 +1071,9 @@ mod tests {
     }
 
     #[test]
-    fn the_language_row_leaves_the_english_menu_as_wide_as_it_was() {
-        let _open = Open;
-        let values = sample();
-        let others: Vec<Row> = ROOT.iter().filter(|row| row.id != 150).copied().collect();
-        let language_row = [*find(150).unwrap()];
-        assert!(
-            widest(&language_row, &values, Language::En) <= widest(&others, &values, Language::En)
-        );
-    }
-
-    #[test]
     fn a_closed_menu_keeps_no_renderer() {
-        for open in [120, 140] {
-            render(&sample(), 110, open, 1.).unwrap();
+        for open in [0, 150] {
+            render(&sample(), 170, open, 1.).unwrap();
         }
         assert!(PAINTER.with(|painter| painter.borrow().is_none()));
     }

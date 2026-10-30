@@ -425,6 +425,7 @@ impl Capture {
         if notches == 0 {
             return Ok(());
         }
+        self.wheel_hint = false;
         if let Some(size) = host.text_size() {
             let resized = wheel::text_size_after(size.into(), notches) as f32;
             if resized != size {
@@ -1085,6 +1086,26 @@ mod tests {
         c.action(&mut host, Action::Tool(Tool::Text));
         c.wheel(&mut host, 120).unwrap();
         assert_eq!(c.text_size, 28.);
+    }
+    #[test]
+    fn the_wheel_hint_shows_with_drawing_tools_until_the_first_notch() {
+        let (mut c, mut host) = selected();
+        c.wheel_hint = true;
+        c.pointer = p(200., 200.);
+        for tool in [Tool::Arrow, Tool::Pen, Tool::Text, Tool::Eraser] {
+            c.action(&mut host, Action::Tool(tool));
+            assert!(c.wheel_hint_visible(), "{tool:?}");
+        }
+        c.action(&mut host, Action::Tool(Tool::Select));
+        assert!(!c.wheel_hint_visible(), "selecting does not resize a tool");
+        c.action(&mut host, Action::Tool(Tool::Rectangle));
+        c.pointer = p(-100., -100.);
+        assert!(!c.wheel_hint_visible(), "no badge pinned to a corner");
+        c.pointer = p(200., 200.);
+        c.wheel(&mut host, 30).unwrap();
+        assert!(c.wheel_hint, "a fraction of a notch resizes nothing yet");
+        c.wheel(&mut host, 90).unwrap();
+        assert!(!c.wheel_hint && !c.wheel_hint_visible());
     }
     #[test]
     fn wheel_travel_over_the_color_picker_is_not_kept_for_later() {

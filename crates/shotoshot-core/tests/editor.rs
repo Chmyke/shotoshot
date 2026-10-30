@@ -392,12 +392,13 @@ fn moving_one_object_in_a_large_pile_touches_only_it_and_undoes_in_one_step() {
     }
     let drawn = e.objects().to_vec();
     let target = drawn[777].id;
-    let center = drawn[777].bounds().center();
+    // On the arrow, away from its middle, whose handle would bend it.
+    let grab = drawn[777].bounds().center() - p(15., 15.);
     e.select_only(target);
     e.tool = Tool::Select;
-    e.begin(center, Modifiers::default());
-    e.update(center + p(3., 4.));
-    e.update(center + p(6., 8.));
+    e.begin(grab, Modifiers::default());
+    e.update(grab + p(3., 4.));
+    e.update(grab + p(6., 8.));
     e.finish();
     let moved = e.objects().to_vec();
     for (now, then) in moved.iter().zip(&drawn) {

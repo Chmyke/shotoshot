@@ -3,6 +3,7 @@
 language.menu = Lingua
 
 tooltip.with_shortcut = {label} · {shortcut}
+tooltip.with_shortcut_and_wheel = {label} · {shortcut} · Rotellina per la dimensione
 
 key.ctrl == Ctrl
 key.shift = Maiusc
@@ -73,6 +74,7 @@ capture.edit_dimensions = Modifica dimensioni · espressioni: 800+20, 1920/2
 overlay.select_area = Seleziona un’area
 overlay.cancel = {shortcut} per annullare
 overlay.stroke_width == {width} px
+overlay.wheel_hint = Rotellina per la dimensione
 magnifier.pick = Clic: preleva · {shortcut}
 picker.apply = Clic fuori: applica · {shortcut}: annulla
 
@@ -84,7 +86,7 @@ menu.edit_board = Modifica il Board
 menu.show_board = Mostra il Board
 menu.clear_board = Svuota il Board
 menu.presentation = Presentazione
-menu.pointer_halo = Alone del puntatore
+menu.board = ==
 menu.pointer_effects = Effetti del puntatore
 menu.magnifier = Lente
 menu.keyboard = Tastiera
@@ -93,20 +95,13 @@ menu.move_input = Sposta tastiera e mouse
 menu.input_size = Dimensione di tastiera e mouse
 menu.temporary_shapes = Forme temporanee
 menu.shape_duration = Durata delle forme
-menu.shortcuts = Scorciatoie · fai clic per cambiare
 menu.capture = Acquisizione
 menu.instant_screenshot = Schermata istantanea
-menu.board == Board
-menu.options = Opzioni
 menu.live_capture_default = Acquisizione live predefinita
 menu.start_with_windows = Avvia con Windows
 menu.quit = Esci da Shotoshot
-menu.duration_1 = 1 secondo
-menu.duration_3 = 3 secondi
-menu.duration_5 = 5 secondi
 menu.seconds = {n} s
 menu.percent = {n}%
-menu.shortcut_in_use = {shortcut} (in uso)
 menu.language_auto = Lingua di Windows
 menu.language_system = Lingua di sistema
 
@@ -154,8 +149,8 @@ notice.saved = Immagine salvata.
 notice.searching = Ricerca su Google…
 notice.preferences = Impostazioni salvate.
 notice.saved_editable = Immagine modificabile salvata, schermo incluso.
-notice.instant_unavailable = Scorciatoia della schermata istantanea non disponibile. Cambiala nel menu di Shotoshot.
-notice.board_unavailable = Scorciatoia del Board non disponibile. Cambiala nel menu di Shotoshot.
+notice.instant_unavailable = Scorciatoia della schermata istantanea non disponibile. Cambiala nelle impostazioni di Shotoshot.
+notice.board_unavailable = Scorciatoia del Board non disponibile. Cambiala nelle impostazioni di Shotoshot.
 notice.shortcuts_unavailable = Scorciatoia non disponibile: {names}
 notice.names_separator == {before}, {after}
 notice.screenshot_failed = Schermata non riuscita: file non salvato
@@ -226,9 +221,7 @@ installer.language.auto = Lingua di Windows
 installer.shoto_file = Immagine Shotoshot modificabile
 
 # Pointer effects
-pointer.title = Effetti del puntatore
 pointer.section_halo = Alone
-pointer.show_halo = Mostra l'alone
 pointer.section_trail = Scia
 pointer.section_clicks = Clic
 pointer.section_spotlight = Riflettore
@@ -252,10 +245,7 @@ pointer.darkness = Oscuramento
 pointer.hide_moving = Nascondi in movimento
 pointer.hold = Mostra tenendo premuto
 pointer.zoom = Ingrandimento
-pointer.show_loupe = Mostra la lente
-pointer.shortcut = Scorciatoia
 pointer.off = Disattivato
-pointer.hidden = Nascosto
 pointer.disc = Disco
 pointer.ring = Anello
 pointer.neon == Neon
@@ -285,6 +275,13 @@ pointer.zoom_4 == 4×
 pointer.small = Piccola
 pointer.medium_size = Media
 pointer.large = Grande
-pointer.no_shortcut = Nessuna
 pointer.reset = Ripristina predefiniti
-pointer.undo = Annulla modifiche
+
+settings.title = Impostazioni
+settings.general = Generali
+settings.shortcuts = Scorciatoie
+settings.add = Aggiungi
+settings.in_use = In uso da un'altra app
+settings.start_with_windows_note = Pronto a catturare appena accedi.
+settings.live_capture_note = L'acquisizione si aggiorna finché non la copi o la salvi.
+settings.shape_duration_note = Per quanto tempo le forme temporanee restano sullo schermo.

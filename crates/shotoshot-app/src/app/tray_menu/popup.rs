@@ -678,17 +678,17 @@ mod tests {
         for row in ROOT {
             let expected = match row.id {
                 // Switches: the menu stays open to set several in a row.
-                101..=104 | 107 | 4 | 5 | 7 | 9 => Effect::Apply(row.id),
-                // They open a submenu, which stays open on its choices too.
-                120 | 140 | 150 => Effect::Open,
-                // Each opens or runs something else.
-                1 | 2 | 3 | 6 | 8 | 10 | 13 | 105 | 106 | 110..=112 => Effect::Run(row.id),
+                101..=104 | 107 | 9 => Effect::Apply(row.id),
+                // It opens a submenu, which stays open on its choices too.
+                150 => Effect::Open,
+                // Each opens or runs something else; a shape row records its shortcut.
+                1 | 3 | 7 | 8 | 10 | 170..=173 => Effect::Run(row.id),
                 _ => Effect::None,
             };
             assert_eq!(effect(row), expected, "{}", label_in(row, Language::En));
         }
         // A language is a setting too: the menu shows it at once.
-        for choice in DURATIONS.iter().chain(SIZES).chain(&LANGUAGES) {
+        for choice in &LANGUAGES {
             assert_eq!(
                 effect(choice),
                 Effect::Apply(choice.id),
@@ -705,8 +705,9 @@ mod tests {
         // From the last board row down to the first switch, over the title.
         assert_eq!(step(ROOT, Some(index(10)), true), Some(index(101)));
         assert_eq!(step(ROOT, Some(index(101)), false), Some(index(10)));
-        // Down to the language, over the separator, and around.
-        assert_eq!(step(ROOT, Some(index(4)), true), Some(index(150)));
+        // Through the shape shortcuts, then to the settings over the separator, and around.
+        assert_eq!(step(ROOT, Some(index(102)), true), Some(index(171)));
+        assert_eq!(step(ROOT, Some(index(173)), true), Some(index(170)));
         assert_eq!(step(ROOT, Some(index(150)), true), Some(index(3)));
         assert_eq!(step(ROOT, Some(index(3)), true), Some(0));
         assert_eq!(step(&[], None, true), None);
@@ -770,8 +771,8 @@ mod tests {
             assert!(IsWindowVisible(popup.root()).as_bool());
             click(popup.root(), &column, index(90));
             assert_eq!(posted(owner.0), [], "a title does nothing");
-            click(popup.root(), &column, index(2));
-            assert_eq!(posted(owner.0), [(COMMAND, 2, 0)]);
+            click(popup.root(), &column, index(170));
+            assert_eq!(posted(owner.0), [(COMMAND, 170, 0)]);
             assert!(!IsWindowVisible(popup.root()).as_bool());
         }
     }
@@ -822,33 +823,33 @@ mod tests {
                     tops,
                     width: 0,
                 },
-                index(140),
+                index(150),
             );
             let (sub, tops) = {
                 let model = popup.model.borrow();
-                assert_eq!(model.open, Some(index(140)));
+                assert_eq!(model.open, Some(index(150)));
                 (model.sub, model.columns[1].tops.clone())
             };
             assert!(IsWindowVisible(sub).as_bool());
             click(
                 sub,
                 &Column {
-                    rows: SIZES,
+                    rows: &LANGUAGES,
                     tops,
                     width: 0,
                 },
-                2,
+                6,
             );
-            assert_eq!(posted(owner.0), [(COMMAND, 143, 1)]);
+            assert_eq!(posted(owner.0), [(COMMAND, 157, 1)]);
             assert!(IsWindowVisible(sub).as_bool() && IsWindowVisible(popup.root()).as_bool());
             // The shown choice follows the setting App applied.
             popup
                 .update(Values {
-                    size: 200,
+                    language: LanguageChoice::Fixed(Language::De),
                     ..Default::default()
                 })
                 .unwrap();
-            assert!(popup.model.borrow().values.checked(143));
+            assert!(popup.model.borrow().values.checked(157));
         }
     }
 
@@ -860,21 +861,21 @@ mod tests {
             SendMessageW(popup.root(), WM_KEYDOWN, Some(WPARAM(vk.0 as usize)), None);
         };
         // Down to the first switch, which Space turns on without closing.
-        for _ in 0..5 {
+        for _ in 0..6 {
             key(VK_DOWN);
         }
         assert_eq!(popup.model.borrow().selected[0], Some(index(101)));
         key(VK_SPACE);
         assert_eq!(posted(owner.0), [(COMMAND, 101, 1)]);
-        // Past the magnifier, the pointer effects and the move, into the size submenu.
-        for _ in 0..6 {
+        // Past the other switches, the shape shortcuts and the settings, into the languages.
+        for _ in 0..9 {
             key(VK_DOWN);
         }
-        assert_eq!(popup.model.borrow().selected[0], Some(index(140)));
+        assert_eq!(popup.model.borrow().selected[0], Some(index(150)));
         key(VK_RIGHT);
         key(VK_DOWN);
         key(VK_RETURN);
-        assert_eq!(posted(owner.0), [(COMMAND, 142, 1)]);
+        assert_eq!(posted(owner.0), [(COMMAND, 152, 1)]);
         // Escape closes the submenu first, then the menu.
         key(VK_ESCAPE);
         assert_eq!(popup.model.borrow().open, None);

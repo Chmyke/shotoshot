@@ -61,6 +61,17 @@ fn save_editor_in(
     Settings::save_editor_to(&path, color, width, eraser, None, rename)
 }
 
+/// Records that the user has resized with the wheel, keeping every other preference.
+pub fn save_wheel_learned() -> Result<(), String> {
+    save_wheel_learned_in(&folder())
+}
+fn save_wheel_learned_in(folder: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(folder).map_err(|e| e.to_string())?;
+    let lock = std::fs::File::create(folder.join("settings.lock")).map_err(|e| e.to_string())?;
+    lock.lock().map_err(|e| e.to_string())?;
+    Settings::save_wheel_learned_to(&folder.join("settings.txt"), rename)
+}
+
 /// Stores the interface language chosen in the menu, keeping every other preference as stored.
 pub fn save_language(choice: LanguageChoice) -> Result<(), String> {
     save_language_in(&folder(), choice)

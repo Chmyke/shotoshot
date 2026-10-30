@@ -39,6 +39,7 @@ impl Presentation {
             102 => next.shapes = !next.shapes,
             103 => next.keys = !next.keys,
             104 => next.mouse = !next.mouse,
+            106 if self.moving => return self.end_move(),
             106 => return self.start_move(),
             _ => return Ok(()),
         }

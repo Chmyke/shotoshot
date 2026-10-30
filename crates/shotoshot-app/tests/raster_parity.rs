@@ -6,7 +6,7 @@ use shotoshot_raster::Raster;
 
 fn scene() -> Vec<Object> {
     let mut e = Editor::default();
-    let mut draw = |tool: Tool, color: [u8; 3], width: f64, points: &[Point]| {
+    let draw = |e: &mut Editor, tool: Tool, color: [u8; 3], width: f64, points: &[Point]| {
         e.tool = tool;
         e.style = Style { color, width };
         e.begin(points[0], Modifiers::default());
@@ -16,37 +16,52 @@ fn scene() -> Vec<Object> {
         e.finish();
     };
     let p = |x: f64, y: f64| Point { x, y };
+    // The arrow or line just drawn, bent by its middle handle.
+    let bend = |e: &mut Editor, by: Point| {
+        let (_, middle) = e.bend_handle().unwrap();
+        e.begin(middle, Modifiers::default());
+        e.update(middle + by);
+        e.finish();
+    };
     draw(
+        &mut e,
         Tool::Rectangle,
         [237, 79, 92],
         3.,
         &[p(30., 30.), p(210., 150.)],
     );
     draw(
+        &mut e,
         Tool::Ellipse,
         [80, 153, 244],
         5.,
         &[p(330., 90.), p(400., 90.)],
     );
     draw(
+        &mut e,
         Tool::Arrow,
         [40, 60, 80],
         4.,
         &[p(60., 260.), p(300., 190.)],
     );
+    bend(&mut e, p(0., -30.));
     draw(
+        &mut e,
         Tool::Line,
         [64, 199, 128],
         6.,
         &[p(60., 320.), p(420., 300.)],
     );
+    bend(&mut e, p(0., 40.));
     draw(
+        &mut e,
         Tool::Pen,
         [28, 31, 40],
         8.,
         &[p(250., 40.), p(280., 70.), p(270., 120.), p(320., 150.)],
     );
     draw(
+        &mut e,
         Tool::Highlight,
         [250, 192, 66],
         6.,
@@ -110,6 +125,7 @@ fn both_renderers_keep_fractional_arrow_joins_solid_and_tails_round() {
             start_attach: None,
             end_attach: None,
             head: true,
+            bend: Default::default(),
         },
     }];
     for output in [

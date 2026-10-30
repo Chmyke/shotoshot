@@ -89,6 +89,8 @@ pub struct Capture {
     /// Armed bucket: every click in the region fills, until another action puts it down.
     pub bucket: bool,
     pub width_preview: bool,
+    /// Shows "Scroll to resize" by the pointer of a drawing tool, until the first wheel notch.
+    pub wheel_hint: bool,
     pub(crate) wheel_travel: crate::wheel::Notches,
     pub region_resize: Option<usize>,
     pub toolbar_visible: bool,
@@ -153,6 +155,7 @@ impl Capture {
             eyedropper: false,
             bucket: false,
             width_preview: false,
+            wheel_hint: false,
             wheel_travel: Default::default(),
             region_resize: None,
             toolbar_visible: true,
@@ -414,6 +417,20 @@ impl Capture {
                 || (self.region.is_some()
                     && !self.selecting
                     && matches!(self.editor.tool, Tool::Pen | Tool::Highlight | Tool::Eraser)))
+    }
+    /// The wheel hint shows where a wheel notch would resize the tool about to draw.
+    pub fn wheel_hint_visible(&self) -> bool {
+        self.wheel_hint
+            && !self.bucket
+            && !self.eyedropper
+            && self.picker.is_none()
+            && self.region.is_some()
+            && !self.selecting
+            && self.editor.tool != Tool::Select
+            && !self.toolbar_contains(self.pointer)
+            // A pointer gone from the window would pin the badge to a corner.
+            && (0. ..self.image.width as f64).contains(&self.pointer.x)
+            && (0. ..self.image.height as f64).contains(&self.pointer.y)
     }
     /// The size badge's "W × H" label.
     pub fn dimensions_label(&self) -> Option<String> {
@@ -722,6 +739,13 @@ impl Capture {
                 CursorKind::NewText
             };
         }
+        if self
+            .editor
+            .bend_handle()
+            .is_some_and(|(_, h)| (h - f).length() < grip)
+        {
+            return CursorKind::Move;
+        }
         if self.editor.tool != Tool::Select {
             return CursorKind::Cross;
         }
@@ -863,6 +887,19 @@ mod tests {
         assert_eq!(c.cursor(Point { x: 600., y: 250. }), CursorKind::ResizeWe);
         assert_eq!(c.cursor(Point { x: 350., y: 400. }), CursorKind::ResizeNs);
         assert_eq!(c.cursor(Point { x: 300., y: 250. }), CursorKind::Cross);
+    }
+    #[test]
+    fn the_middle_of_the_arrow_just_drawn_shows_it_can_be_dragged() {
+        let mut c = capture();
+        c.editor.tool = Tool::Arrow;
+        c.editor.begin(
+            Point { x: 200., y: 200. },
+            shotoshot_core::Modifiers::default(),
+        );
+        c.editor.update(Point { x: 400., y: 200. });
+        c.editor.finish();
+        assert_eq!(c.cursor(Point { x: 300., y: 200. }), CursorKind::Move);
+        assert_eq!(c.cursor(Point { x: 300., y: 230. }), CursorKind::Cross);
     }
     #[test]
     fn the_text_tool_shows_whether_a_click_edits_or_creates() {

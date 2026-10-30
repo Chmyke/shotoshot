@@ -46,7 +46,7 @@ fn capture_shortcut_cannot_steal_a_suspended_shape_shortcut() {
         board_rebake_forced: false,
         menu: None,
         menu_closed_on_icon: None,
-        pointer_window: None,
+        settings_ui: Default::default(),
     };
     app.setup_activate(owner.0, 2).unwrap();
     assert!(
@@ -304,7 +304,7 @@ fn resident(owner: HWND) -> App {
         board_rebake_forced: false,
         menu: None,
         menu_closed_on_icon: None,
-        pointer_window: None,
+        settings_ui: Default::default(),
     }
 }
 
@@ -524,7 +524,7 @@ fn stop_presentation_is_handled_even_while_a_menu_borrows_the_app() {
             board_rebake_forced: false,
             menu: None,
             menu_closed_on_icon: None,
-            pointer_window: None,
+            settings_ui: Default::default(),
             setup_ui: setup::Setup::default(),
         }));
         let window = crate::resources::OwnedWindow(
@@ -654,7 +654,7 @@ fn entering_the_live_eyedropper_samples_without_mouse_movement() {
             board_rebake_forced: false,
             menu: None,
             menu_closed_on_icon: None,
-            pointer_window: None,
+            settings_ui: Default::default(),
         };
         app.action(owner.0, Action::Eyedropper).unwrap();
         assert_eq!(
@@ -750,7 +750,7 @@ fn native_window_messages_edit_export_and_recover_after_failure() {
             board_rebake_forced: false,
             menu: None,
             menu_closed_on_icon: None,
-            pointer_window: None,
+            settings_ui: Default::default(),
             setup_ui: setup::Setup::default(),
         }));
         let hwnd = CreateWindowExW(
@@ -1553,7 +1553,7 @@ unsafe fn app_window(class: PCWSTR, session: Session) -> (Box<RefCell<App>>, HWN
             board_rebake_forced: false,
             menu: None,
             menu_closed_on_icon: None,
-            pointer_window: None,
+            settings_ui: Default::default(),
             setup_ui: setup::Setup::default(),
         }));
         let hwnd = CreateWindowExW(

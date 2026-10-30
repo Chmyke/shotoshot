@@ -280,6 +280,30 @@ fn swept_objects_are_drawn_faded_apart_from_the_rest() {
 }
 
 #[test]
+fn the_wheel_hint_sits_past_the_pen_ring_and_beside_a_shape_tool_pointer() {
+    let mut c = Capture::new(Image::solid(800, 300, [0, 0, 0, 255]));
+    c.region = Rect::new(Point::default(), Point { x: 800., y: 300. });
+    c.selecting = false;
+    c.wheel_hint = true;
+    c.pointer = Point { x: 200., y: 100. };
+    c.editor.style.width = 40.;
+    let badge = |c: &Capture| {
+        let mut recorder = Recorder {
+            size: Point { x: 800., y: 300. },
+            ops: Vec::new(),
+        };
+        c.draw_wheel_hint(&mut recorder).unwrap();
+        let names: Vec<_> = recorder.ops.iter().map(|o| o.name).collect();
+        assert_eq!(names, ["fill_round_rect", "text"]);
+        recorder.ops[0].lengths[0]
+    };
+    c.editor.tool = Tool::Pen;
+    assert_eq!(badge(&c), 200. + 20. + 10., "clear of the 40 px ring");
+    c.editor.tool = Tool::Rectangle;
+    assert_eq!(badge(&c), 200. + 8. + 10., "beside the pointer, no ring");
+}
+
+#[test]
 fn the_loupe_swatch_shows_the_frame_pixel_under_a_zoomed_pointer() {
     let mut c = Capture::new(Image::solid(800, 300, [0, 0, 0, 255]));
     c.region = Rect::new(Point::default(), Point { x: 800., y: 300. });
@@ -379,6 +403,10 @@ fn scene(scale: f64) -> Vec<Op> {
     c.pointer_move(&mut host, at(450., 350.), m);
     c.width_preview = true;
     c.draw_width_ring(&mut canvas).unwrap();
+    c.width_preview = false;
+    c.wheel_hint = true;
+    c.draw_wheel_hint(&mut canvas).unwrap();
+    c.wheel_hint = false;
     c.draw_magnifier(&mut canvas).unwrap();
     c.action(&mut host, Action::CustomColor);
     c.picker

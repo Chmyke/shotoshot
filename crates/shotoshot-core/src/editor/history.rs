@@ -81,6 +81,7 @@ impl Editor {
     }
     pub fn undo(&mut self) {
         self.cancel();
+        self.fresh = None;
         if let Some(c) = self.undo.pop() {
             self.apply(&c.after, &c.before, c.order.as_ref().map(|s| &s.before[..]));
             if let Some(repaint) = &c.background {
@@ -91,6 +92,7 @@ impl Editor {
     }
     pub fn redo(&mut self) {
         self.cancel();
+        self.fresh = None;
         if let Some(c) = self.redo.pop() {
             self.apply(&c.before, &c.after, c.order.as_ref().map(|s| &s.after[..]));
             if let Some(repaint) = &c.background {

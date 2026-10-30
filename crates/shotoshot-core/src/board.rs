@@ -6,8 +6,8 @@ use std::fmt::Write;
 
 pub const HEADER: &str = "shotoshot-board";
 /// The latest version read; a board is written in the lowest one that holds its scenes,
-/// the version of the scene text they share (`Scene::version`).
-pub const VERSION: u32 = 2;
+/// the version of the scene text they share (`Scene::version`), so it reads every one.
+pub const VERSION: u32 = crate::shoto::VERSION;
 const MAX_SCREENS: usize = 64;
 
 /// Why a board file does not load.
@@ -309,6 +309,7 @@ mod tests {
                 start_attach: None,
                 end_attach,
                 head: true,
+                bend: Default::default(),
             },
             style: Style {
                 color: [0, 0, 0],
@@ -354,6 +355,41 @@ mod tests {
         assert_eq!(again.objects[1].bounds().min, Point { x: 300., y: 300. });
         assert!(again.objects[0].id < again.objects[1].id);
         assert_eq!(again.last_id, again.objects[1].id);
+    }
+
+    #[test]
+    fn labels_and_bends_survive_a_round_trip() {
+        let screens = [screen("main", 0., 0.)];
+        let mut bent = arrow(1, Point { x: 10., y: 10. }, Point { x: 300., y: 40. }, None);
+        if let Shape::Arrow { bend, .. } = &mut bent.shape {
+            *bend = Point { x: 0., y: 0.2 };
+        }
+        let label = Object {
+            id: 2,
+            rotation: 0.,
+            shape: Shape::Text {
+                position: Point { x: 50., y: 60. },
+                text: "Note".into(),
+                size: 24.,
+                extent: Point { x: 60., y: 29. },
+                label: Some(crate::Label::Fit),
+            },
+            style: Style {
+                color: [250, 192, 66],
+                width: 3.,
+            },
+            fill: Vec::new(),
+        };
+        for (objects, version) in [(vec![label.clone()], 3), (vec![label, bent], 4)] {
+            let mut board = Board::default();
+            board.scatter(&desktop(objects, 2), &screens);
+            let text = board.encode();
+            assert!(
+                text.starts_with(&format!("shotoshot-board {version}\n")),
+                "{text}"
+            );
+            assert_eq!(Board::decode(&text), Ok(board), "version {version}");
+        }
     }
 
     #[test]
@@ -589,7 +625,8 @@ mod tests {
 
     #[test]
     fn newer_or_damaged_files_are_refused() {
-        assert_eq!(Board::decode("shotoshot-board 3\n"), Err(Error::Newer));
+        let newer = format!("shotoshot-board {}\n", VERSION + 1);
+        assert_eq!(Board::decode(&newer), Err(Error::Newer));
         assert_eq!(Board::decode("shotoshot-board 0\n"), Err(Error::Damaged));
         assert_eq!(Board::decode("shotoshot-board 1"), Err(Error::Damaged));
         assert_eq!(

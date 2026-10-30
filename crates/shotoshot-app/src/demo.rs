@@ -119,8 +119,13 @@ pub fn render_demo() -> Result<()> {
         &preview,
         &path.with_file_name("shotoshot-stroke-preview.png"),
     )?;
-    session.capture.editor = slate();
+    // Before the first wheel notch: the hint past the ring.
     session.capture.width_preview = false;
+    session.capture.wheel_hint = true;
+    let preview = paint_image(1100, 680, |hdc| session.paint(hdc))?;
+    save_png(&preview, &path.with_file_name("shotoshot-wheel-hint.png"))?;
+    session.capture.wheel_hint = false;
+    session.capture.editor = slate();
     session.capture.bucket = true;
     // On the chalk curve, in chalk: the bucket would change nothing, so it outlines nothing.
     session.capture.pointer = Point { x: 300., y: 485. };

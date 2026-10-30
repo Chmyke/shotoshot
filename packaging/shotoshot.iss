@@ -3,7 +3,7 @@
 ; Test:  powershell -NoProfile -ExecutionPolicy Bypass -File packaging\test-installer.ps1
 ; RULE: keep AppVersion equal to [workspace.package] version in Cargo.toml (checked by the build script).
 
-#define AppVersion "0.3.24"
+#define AppVersion "0.3.25"
 #define AppName "Shotoshot"
 #define AppExeName "shotoshot.exe"
 #define AppPublisher "Mickaël Mancini"
@@ -147,7 +147,7 @@ const
     included) of settings.txt, comma-separated. The app's tests keep both equal to what
     Settings::encode writes (crates/shotoshot-core/src/settings.rs). }
   SettingsHeader = 'shotoshot-settings-';
-  KnownSettingsVersions = '16,17';
+  KnownSettingsVersions = '16,17,18';
   SettingsLanguageLine = 28;
   { Read, then deleted, by the app when it starts (crates/shotoshot-app/src/language.rs). }
   LanguageChoiceFile = 'installer-language.txt';

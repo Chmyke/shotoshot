@@ -1,5 +1,6 @@
 use crate::{
-    Label, Paint, Point, Rect, coat_seen, label_ink, remap_walls, rotate_point, segment_distance,
+    Label, Paint, Point, Rect, bent_bounds, coat_seen, label_ink, remap_walls, rotate_point,
+    segment_distance,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -31,6 +32,9 @@ pub enum Shape {
         end_attach: Option<Attachment>,
         /// False for the Line tool: the same bindable segment without a head.
         head: bool,
+        /// Where the curve passes halfway, relative to its resolved ends (`bend_point`);
+        /// zero for a straight segment.
+        bend: Point,
     },
     Stroke {
         points: Vec<Point>,
@@ -112,8 +116,15 @@ impl Object {
     }
     pub fn resolved_bounds(&self, objects: &[Object]) -> Rect {
         arrow_points(self, objects)
-            .and_then(|(a, b)| Rect::new(a, b))
+            .and_then(|(a, b)| bent_bounds(a, b, self.bend()))
             .unwrap_or_else(|| self.bounds())
+    }
+    /// An arrow's or line's bend; zero for every other shape.
+    pub fn bend(&self) -> Point {
+        match self.shape {
+            Shape::Arrow { bend, .. } => bend,
+            _ => Point::default(),
+        }
     }
     pub fn local_to_world(&self, p: Point) -> Point {
         rotate_point(p, self.local_bounds().center(), self.rotation)
@@ -169,7 +180,9 @@ impl Object {
     pub fn local_bounds(&self) -> Rect {
         match &self.shape {
             Shape::Rectangle(r) | Shape::Ellipse(r) => *r,
-            Shape::Arrow { start, end, .. } => Rect::new(*start, *end).unwrap_or_default(),
+            Shape::Arrow {
+                start, end, bend, ..
+            } => bent_bounds(*start, *end, *bend).unwrap_or_default(),
             Shape::Stroke { points, .. } => points
                 .iter()
                 .fold(None, |r: Option<Rect>, p| {
@@ -245,6 +258,7 @@ impl Object {
             Shape::Rectangle(r) | Shape::Ellipse(r) => {
                 *r = Rect::new(map(r.min), map(r.max)).unwrap_or(*r);
             }
+            // The bend is relative to the ends, so the curve follows them.
             Shape::Arrow { start, end, .. } => {
                 *start = map(*start);
                 *end = map(*end);
@@ -321,24 +335,29 @@ impl Object {
             // Use the rendered geometry: radial ellipse estimates severely understate
             // distances near flat tips. Arrow heads also have a selectable filled interior.
             Shape::Ellipse(_) | Shape::Arrow { .. } => {
-                crate::paths(self, objects).iter().any(|path| {
-                    if matches!(self.shape, Shape::Arrow { .. }) && path.len() == 4 {
-                        let cross = |a: Point, b: Point| {
-                            (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)
-                        };
-                        let sides = [
-                            cross(path[0], path[1]),
-                            cross(path[1], path[2]),
-                            cross(path[2], path[0]),
-                        ];
-                        if sides.iter().all(|v| *v >= 0.) || sides.iter().all(|v| *v <= 0.) {
-                            return true;
+                let head = matches!(self.shape, Shape::Arrow { head: true, .. });
+                crate::paths(self, objects)
+                    .iter()
+                    .enumerate()
+                    .any(|(i, path)| {
+                        // An arrow's second path is its closed head; its shaft may bend.
+                        if head && i == 1 {
+                            let cross = |a: Point, b: Point| {
+                                (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)
+                            };
+                            let sides = [
+                                cross(path[0], path[1]),
+                                cross(path[1], path[2]),
+                                cross(path[2], path[0]),
+                            ];
+                            if sides.iter().all(|v| *v >= 0.) || sides.iter().all(|v| *v <= 0.) {
+                                return true;
+                            }
                         }
-                    }
-                    path.windows(2).any(|w| {
-                        segment_distance(p, w[0], w[1]) <= tolerance + self.style.width * 0.5
+                        path.windows(2).any(|w| {
+                            segment_distance(p, w[0], w[1]) <= tolerance + self.style.width * 0.5
+                        })
                     })
-                })
             }
             Shape::Stroke { .. } => crate::stroke_runs(self).iter().any(|(points, width)| {
                 points

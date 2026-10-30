@@ -3,6 +3,21 @@
 //! INVARIANTS: Coordinates are device pixels; lines use flat caps unless stated.
 use shotoshot_core::{Object, Point, Rect};
 
+/// Weight and optical size of interface text, in the system family where the platform has
+/// one (Segoe UI Variable on Windows 11); other platforms draw plain interface text.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum TextStyle {
+    /// Labels and values.
+    #[default]
+    Body,
+    /// Group headings: the body face, semibold.
+    Strong,
+    /// Page titles: the display face, semibold.
+    Title,
+    /// Explanations under a label: the face cut for small sizes.
+    Caption,
+}
+
 /// Straight RGB colour with its opacity.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Ink {
@@ -93,6 +108,26 @@ pub trait Canvas {
     fn set_rotation(&mut self, rotation: Option<(Point, f64)>) -> Result<(), Self::Error>;
     fn measure_text(&mut self, text: &str, size: f64) -> Result<Point, Self::Error>;
     fn measure_annotation_text(&mut self, text: &str, size: f64) -> Result<Point, Self::Error>;
+    /// Like `text`, in `style`.
+    fn styled_text(
+        &mut self,
+        text: &str,
+        r: Rect,
+        size: f64,
+        ink: Ink,
+        _style: TextStyle,
+    ) -> Result<(), Self::Error> {
+        self.text(text, r, size, ink)
+    }
+    /// Like `measure_text`, in `style`.
+    fn measure_styled_text(
+        &mut self,
+        text: &str,
+        size: f64,
+        _style: TextStyle,
+    ) -> Result<Point, Self::Error> {
+        self.measure_text(text, size)
+    }
     /// Premultiplied BGRA raster scaled into `dst`. The canvas may keep it under `key`
     /// until `version` changes; `pixels` runs only when it has no current copy.
     fn raster(

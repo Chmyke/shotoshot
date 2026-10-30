@@ -96,10 +96,11 @@ impl Session {
         }
         if capture.eyedropper {
             capture.draw_magnifier(canvas)
-        } else if capture.width_ring_visible() {
-            capture.draw_width_ring(canvas)
         } else {
-            Ok(())
+            if capture.width_ring_visible() {
+                capture.draw_width_ring(canvas)?;
+            }
+            capture.draw_wheel_hint(canvas)
         }
     }
 }

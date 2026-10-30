@@ -246,7 +246,7 @@ mod tests {
             board_rebake_forced: false,
             menu: None,
             menu_closed_on_icon: None,
-            pointer_window: None,
+            settings_ui: Default::default(),
         }
     }
     #[test]

@@ -29,6 +29,7 @@ fn arrow(length: f64) -> Object {
             start_attach: None,
             end_attach: None,
             head: true,
+            bend: Default::default(),
         },
         style: Style {
             width: 3.,

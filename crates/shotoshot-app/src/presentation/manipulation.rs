@@ -2,7 +2,7 @@
 use super::*;
 
 impl Presentation {
-    /// Shows the whole diagram, draggable, with its lock; a diagram turned off comes on first.
+    /// Shows the whole diagram, draggable; a diagram turned off comes on first.
     pub(super) fn start_move(&mut self) -> Result<()> {
         if !self.enabled.devices() {
             self.set_enabled(Enabled {
@@ -14,41 +14,13 @@ impl Presentation {
         self.show_devices()
     }
     /// Back to the still ghost: only pressed keys show and clicks pass through.
-    pub(super) fn end_move(&mut self) -> Result<()> {
+    pub fn end_move(&mut self) -> Result<()> {
         if !self.moving {
             return Ok(());
         }
         self.end_input_drag(true)?;
         self.moving = false;
         self.show_devices()
-    }
-    pub(super) fn show_lock(&mut self) -> Result<()> {
-        // The lock exists only during a move: a still diagram takes no click anywhere.
-        let Some(keys) = self.keys.as_ref().filter(|_| self.moving) else {
-            self.lock = None;
-            return Ok(());
-        };
-        let mut bounds = RECT::default();
-        unsafe {
-            GetWindowRect(keys.hwnd(), &mut bounds)?;
-        }
-        let plan = keys.plan();
-        let scale = keys.width as f64 / plan.width() as f64;
-        let size = (diagram::LOCK_SIZE as f64 * scale) as i32;
-        let (x, y) = plan.lock();
-        if self.lock.as_ref().is_none_or(|layer| layer.width != size) {
-            self.lock = Some(Layer::new(self.address, 0, 0, size, size)?);
-        }
-        if let Some(lock) = &self.lock {
-            lock.mouse_interactive(true)?;
-            lock.position(
-                bounds.left + (x as f64 * scale) as i32,
-                bounds.top + (y as f64 * scale) as i32,
-            )?;
-            self.paint(lock.hwnd())?;
-            lock.show(true);
-        }
-        Ok(())
     }
     pub(super) fn move_input_drag(&mut self) -> Result<()> {
         let Some((start, origin)) = self.input_drag else {
@@ -71,8 +43,7 @@ impl Presentation {
         let y = (origin.y + point.y - start.y - info.rcWork.top).clamp(0, room_y);
         self.preferences.input_offset = Some([normalize(x, room_x), normalize(y, room_y)]);
         self.input_monitor = point;
-        keys.position(info.rcWork.left + x, info.rcWork.top + y)?;
-        self.show_lock()
+        keys.position(info.rcWork.left + x, info.rcWork.top + y)
     }
     pub(super) fn end_input_drag(&mut self, save: bool) -> Result<()> {
         if self.input_drag.take().is_some() {
@@ -96,14 +67,11 @@ impl Presentation {
         unsafe { PostMessageW(Some(self.owner), PREFERENCES_CHANGED, WPARAM(0), LPARAM(0)) }
     }
     pub(super) fn input_window_message(&mut self, hwnd: HWND, msg: u32) -> Result<Option<LRESULT>> {
-        let lock = self.lock.as_ref().is_some_and(|layer| layer.hwnd() == hwnd);
-        let keys = self.keys.as_ref().is_some_and(|layer| layer.hwnd() == hwnd);
-        if !lock && !keys {
+        if !self.keys.as_ref().is_some_and(|layer| layer.hwnd() == hwnd) {
             return Ok(None);
         }
         match msg {
             WM_MOUSEACTIVATE => return Ok(Some(LRESULT(MA_NOACTIVATE as isize))),
-            WM_LBUTTONDOWN if lock => self.end_move()?,
             WM_LBUTTONDOWN if self.moving => {
                 let mut bounds = RECT::default();
                 unsafe {
@@ -126,10 +94,7 @@ impl Presentation {
             WM_CANCELMODE | WM_CAPTURECHANGED => self.end_input_drag(true)?,
             WM_SETCURSOR => {
                 unsafe {
-                    SetCursor(Some(LoadCursorW(
-                        None,
-                        if lock { IDC_HAND } else { IDC_SIZEALL },
-                    )?));
+                    SetCursor(Some(LoadCursorW(None, IDC_SIZEALL)?));
                 }
                 return Ok(Some(LRESULT(1)));
             }
@@ -157,7 +122,7 @@ mod tests {
         assert_eq!(normalize(10, 0), 0);
     }
     #[test]
-    fn diagram_lock_changes_hit_testing_without_allowing_activation() {
+    fn a_moved_diagram_takes_clicks_without_allowing_activation() {
         let _com = crate::ComApartment::new().unwrap();
         let layer = Layer::new(
             std::ptr::null(),

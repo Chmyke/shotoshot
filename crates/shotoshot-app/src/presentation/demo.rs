@@ -2,28 +2,17 @@
 use super::*;
 use shotoshot_core::{Object, Rect, Shape, Style};
 
-/// Where the lock sits on the full diagram the previews show.
-const LOCK: (i32, i32) = diagram::Plan::FULL.lock();
-
-/// Real presentation layers: shapes (with opacity), halo, device diagram and its lock.
+/// Real presentation layers: shapes (with opacity), halo and device diagram.
 struct Layers {
     shapes: Layer,
     halo: Layer,
     keys: Layer,
-    lock: Layer,
     devices: Devices,
 }
 
 fn layers(width: i32, height: i32, shapes: [(Shape, f32); 3]) -> Result<Layers> {
     let shape_layer = Layer::new(std::ptr::null(), -32000, -32000, width, height)?;
     let halo = Layer::new(std::ptr::null(), -32000, -32000, 72, 72)?;
-    let lock = Layer::new(
-        std::ptr::null(),
-        -32000,
-        -32000,
-        diagram::LOCK_SIZE,
-        diagram::LOCK_SIZE,
-    )?;
     let keys = Layer::new(
         std::ptr::null(),
         -32000,
@@ -63,14 +52,10 @@ fn layers(width: i32, height: i32, shapes: [(Shape, f32); 3]) -> Result<Layers> 
     devices.mouse(1, 0);
     keys.devices(&devices, 0, true);
     keys.end()?;
-    lock.begin(true)?;
-    lock.lock_icon(false);
-    lock.end()?;
     Ok(Layers {
         shapes: shape_layer,
         halo,
         keys,
-        lock,
         devices,
     })
 }
@@ -89,6 +74,7 @@ fn arrow(x0: f64, y0: f64, x1: f64, y1: f64) -> Shape {
         start_attach: None,
         end_attach: None,
         head: true,
+        bend: Default::default(),
     }
 }
 
@@ -97,7 +83,6 @@ pub(crate) fn render() -> Result<()> {
         shapes,
         halo,
         keys,
-        lock,
         mut devices,
     } = layers(
         960,
@@ -153,8 +138,7 @@ pub(crate) fn render() -> Result<()> {
         }
         shapes.composite(dc, 0, 0)?;
         halo.composite(dc, 276, 341)?;
-        keys.composite(dc, 220, 396)?;
-        lock.composite(dc, 220 + LOCK.0, 396 + LOCK.1)
+        keys.composite(dc, 220, 396)
     })?;
     crate::save_png(
         &image,
@@ -175,7 +159,7 @@ pub(crate) fn render() -> Result<()> {
 }
 
 /// Reference picture of what the menu can ask for: a lone keyboard, a lone mouse and both
-/// on an ANSI keyboard, each whole with its lock as while moved, then both as a still ghost.
+/// on an ANSI keyboard, each whole as while moved, then both as a still ghost.
 fn render_plans() -> Result<()> {
     let plan = |keyboard, mouse| diagram::Plan { keyboard, mouse };
     let mut devices = Devices::default();
@@ -199,17 +183,6 @@ fn render_plans() -> Result<()> {
         keys.devices(&devices, 0, whole);
         keys.end()?;
         drawn.push((keys, x, y));
-        if !whole {
-            continue;
-        }
-        let size = (diagram::LOCK_SIZE as f64 * scale) as i32;
-        let lock = Layer::new(std::ptr::null(), -32000, -32000, size, size)?;
-        lock.begin(true)?;
-        lock.lock_icon(false);
-        lock.end()?;
-        let at = plan.lock();
-        let offset = |logical: i32| (logical as f64 * scale) as i32;
-        drawn.push((lock, x + offset(at.0), y + offset(at.1)));
     }
     let renderer = crate::Renderer::new()?;
     let image = crate::paint_image(640, 570, |dc| {
@@ -242,11 +215,7 @@ fn render_plans() -> Result<()> {
 pub(crate) fn render_over(backdrop: &crate::Image, path: &std::path::Path) -> Result<()> {
     let (width, height) = (backdrop.width as i32, backdrop.height as i32);
     let Layers {
-        shapes,
-        halo,
-        keys,
-        lock,
-        ..
+        shapes, halo, keys, ..
     } = layers(
         width,
         height,
@@ -275,8 +244,7 @@ pub(crate) fn render_over(backdrop: &crate::Image, path: &std::path::Path) -> Re
         }
         shapes.composite(dc, 0, 0)?;
         halo.composite(dc, 668, 184)?;
-        keys.composite(dc, 410, 352)?;
-        lock.composite(dc, 410 + LOCK.0, 352 + LOCK.1)
+        keys.composite(dc, 410, 352)
     })?;
     crate::save_png(&image, path)
 }
@@ -290,7 +258,6 @@ struct LiveFilm<'a> {
     canvas: Layer,
     halo: Layer,
     keys: Layer,
-    lock: Layer,
     scene: model::Scene,
     devices: Devices,
     halo_state: halo::HaloState,
@@ -378,9 +345,7 @@ impl LiveFilm<'_> {
             self.canvas.composite(dc, 0, 0)?;
             self.halo
                 .composite(dc, at.x as i32 - HALO_SIZE / 2, at.y as i32 - HALO_SIZE / 2)?;
-            self.keys.composite(dc, KEYS_AT.0, KEYS_AT.1)?;
-            self.lock
-                .composite(dc, KEYS_AT.0 + LOCK.0, KEYS_AT.1 + LOCK.1)
+            self.keys.composite(dc, KEYS_AT.0, KEYS_AT.1)
         })?;
         if self.recording {
             let name = format!("{:03}.png", self.pointers.len());
@@ -488,10 +453,6 @@ pub(crate) fn film_over(backdrop: &crate::Image, folder: &std::path::Path) -> Re
     std::fs::create_dir_all(folder).map_err(fail)?;
     let (width, height) = (backdrop.width as i32, backdrop.height as i32);
     let null = std::ptr::null();
-    let lock = Layer::new(null, -32000, -32000, diagram::LOCK_SIZE, diagram::LOCK_SIZE)?;
-    lock.begin(true)?;
-    lock.lock_icon(false);
-    lock.end()?;
     let mut film = LiveFilm {
         backdrop,
         folder: folder.to_path_buf(),
@@ -499,7 +460,6 @@ pub(crate) fn film_over(backdrop: &crate::Image, folder: &std::path::Path) -> Re
         canvas: Layer::new(null, -32000, -32000, width, height)?,
         halo: Layer::new(null, -32000, -32000, HALO_SIZE, HALO_SIZE)?,
         keys: Layer::new(null, -32000, -32000, diagram::WIDTH, diagram::HEIGHT)?,
-        lock,
         scene: model::Scene::default(),
         devices: Devices::default(),
         halo_state: halo::HaloState::default(),

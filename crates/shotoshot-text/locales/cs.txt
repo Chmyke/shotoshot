@@ -3,6 +3,7 @@
 language.menu = Jazyk
 
 tooltip.with_shortcut = {label} · {shortcut}
+tooltip.with_shortcut_and_wheel = {label} · {shortcut} · Kolečko mění velikost
 
 key.ctrl == Ctrl
 key.shift == Shift
@@ -73,6 +74,7 @@ capture.edit_dimensions = Upravit rozměry · výrazy: 800+20, 1920/2
 overlay.select_area = Vyberte oblast
 overlay.cancel = {shortcut} zruší
 overlay.stroke_width == {width} px
+overlay.wheel_hint = Kolečko mění velikost
 magnifier.pick = Klik nabere · {shortcut}
 picker.apply = Klik mimo použije · {shortcut} zruší
 
@@ -84,7 +86,7 @@ menu.edit_board = Upravit Board
 menu.show_board = Zobrazit Board
 menu.clear_board = Vymazat Board
 menu.presentation = Prezentace
-menu.pointer_halo = Zvýraznění ukazatele
+menu.board = ==
 menu.pointer_effects = Efekty ukazatele
 menu.magnifier = Lupa
 menu.keyboard = Klávesnice
@@ -93,20 +95,13 @@ menu.move_input = Přesunout klávesnici a myš
 menu.input_size = Velikost klávesnice a myši
 menu.temporary_shapes = Dočasné tvary
 menu.shape_duration = Doba zobrazení tvarů
-menu.shortcuts = Klávesové zkratky · kliknutím změníte
 menu.capture = Snímání
 menu.instant_screenshot = Okamžitý snímek obrazovky
-menu.board == Board
-menu.options = Možnosti
 menu.live_capture_default = Výchozí živé snímání
 menu.start_with_windows = Spouštět s Windows
 menu.quit = Ukončit Shotoshot
-menu.duration_1 = 1 sekunda
-menu.duration_3 = 3 sekundy
-menu.duration_5 = 5 sekund
 menu.seconds = {n} s
 menu.percent = {n} %
-menu.shortcut_in_use = {shortcut} (obsazeno)
 menu.language_auto = Jazyk Windows
 menu.language_system = Jazyk systému
 
@@ -154,8 +149,8 @@ notice.saved = Obrázek uložen.
 notice.searching = Hledání na Googlu…
 notice.preferences = Nastavení uloženo.
 notice.saved_editable = Upravitelný obrázek uložen i s obrazovkou.
-notice.instant_unavailable = Zkratka okamžitého snímku není k dispozici. Změňte ji v nabídce Shotoshot.
-notice.board_unavailable = Zkratka Board není k dispozici. Změňte ji v nabídce Shotoshot.
+notice.instant_unavailable = Zkratka okamžitého snímku není k dispozici. Změňte ji v nastavení Shotoshot.
+notice.board_unavailable = Zkratka Board není k dispozici. Změňte ji v nastavení Shotoshot.
 notice.shortcuts_unavailable = Zkratka není k dispozici: {names}
 notice.names_separator == {before}, {after}
 notice.screenshot_failed = Snímek se nezdařil: soubor nebyl uložen
@@ -226,9 +221,7 @@ installer.language.auto = Jazyk Windows
 installer.shoto_file = Upravitelný obrázek Shotoshot
 
 # Pointer effects
-pointer.title = Efekty ukazatele
 pointer.section_halo = Zvýraznění
-pointer.show_halo = Zobrazit zvýraznění
 pointer.section_trail = Stopa
 pointer.section_clicks = Kliknutí
 pointer.section_spotlight = Reflektor
@@ -252,10 +245,7 @@ pointer.darkness = Ztmavení
 pointer.hide_moving = Skrýt při pohybu
 pointer.hold = Zobrazit při držení
 pointer.zoom = Zvětšení
-pointer.show_loupe = Zobrazit lupu
-pointer.shortcut = Zkratka
 pointer.off = Vypnuto
-pointer.hidden = Skryté
 pointer.disc = Kotouč
 pointer.ring = Kroužek
 pointer.neon == Neon
@@ -285,6 +275,13 @@ pointer.zoom_4 == 4×
 pointer.small = Malá
 pointer.medium_size = Střední
 pointer.large = Velká
-pointer.no_shortcut = Žádná
 pointer.reset = Obnovit výchozí
-pointer.undo = Vrátit změny
+
+settings.title = Nastavení
+settings.general = Obecné
+settings.shortcuts = Klávesové zkratky
+settings.add = Přidat
+settings.in_use = Obsazeno jinou aplikací
+settings.start_with_windows_note = Připraveno k snímání hned po přihlášení.
+settings.live_capture_note = Snímek se aktualizuje, dokud ho nezkopírujete nebo neuložíte.
+settings.shape_duration_note = Jak dlouho dočasné tvary zůstanou na obrazovce.

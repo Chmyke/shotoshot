@@ -10,7 +10,6 @@ use windows::Win32::Graphics::{
 };
 pub const WIDTH: i32 = Plan::FULL.width();
 pub const HEIGHT: i32 = 140;
-pub const LOCK_SIZE: i32 = 17;
 const PITCH: f32 = 18.;
 /// Height of a keycap label of one or two characters, in logical pixels.
 pub const LABEL_SIZE: f32 = 11.;
@@ -42,7 +41,7 @@ pub fn label_format(
 /// Left edge of the mouse body beside the full keyboard, where its outlines are authored.
 const MOUSE_X: i32 = 455;
 
-/// What the diagram shows; its width and the place of its lock follow.
+/// What the diagram shows; its width follows.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Plan {
     pub keyboard: bool,
@@ -66,15 +65,6 @@ impl Plan {
             self.mouse_x() + 65
         } else {
             self.panel() + 1
-        }
-    }
-    /// Top-left corner of the lock: the highest free key place on the right of the keyboard,
-    /// or above a lone mouse.
-    pub const fn lock(self) -> (i32, i32) {
-        if self.keyboard {
-            (407, 8)
-        } else {
-            (self.mouse_x() + 48 - LOCK_SIZE, 4)
         }
     }
 }
@@ -695,27 +685,15 @@ mod tests {
     }
 
     #[test]
-    fn the_full_diagram_keeps_its_size_and_lock() {
+    fn the_full_diagram_keeps_its_size() {
         assert_eq!((WIDTH, HEIGHT), (520, 140));
-        assert_eq!(Plan::FULL.lock(), (407, 8));
         assert_eq!(Plan::FULL.mouse_x(), MOUSE_X);
     }
 
     #[test]
-    fn every_plan_fits_its_window_without_overlapping_keys_or_lock() {
+    fn every_plan_fits_its_window_without_overlapping_keys() {
         for (keyboard, mouse) in [(true, true), (true, false), (false, true)] {
             let plan = plan(keyboard, mouse);
-            let (lock_x, lock_y) = plan.lock();
-            let lock = [
-                lock_x as f32,
-                lock_y as f32,
-                (lock_x + LOCK_SIZE) as f32,
-                (lock_y + LOCK_SIZE) as f32,
-            ];
-            assert!(
-                lock[0] >= 0. && lock[2] <= plan.width() as f32 && lock[3] <= HEIGHT as f32,
-                "{plan:?}: lock outside the window"
-            );
             if mouse {
                 let body = plan.mouse_x() as f32;
                 assert!(
@@ -723,7 +701,6 @@ mod tests {
                     "{plan:?}: mouse over the keys"
                 );
                 assert!(body + 48. < plan.width() as f32, "{plan:?}: mouse cut off");
-                assert!(apart(lock, [body, 24., body + 48., 126.]), "{plan:?}");
             }
             for ansi in [false, true] {
                 let boxes = boxes(plan, ansi);
@@ -737,7 +714,6 @@ mod tests {
                         cap[2] <= plan.panel() as f32 - 8.,
                         "{plan:?}: key {scan} passes the right edge"
                     );
-                    assert!(apart(*cap, lock), "{plan:?}: key {scan} under the lock");
                     for (other, _, earlier) in &boxes[..index] {
                         assert!(
                             apart(*cap, *earlier),

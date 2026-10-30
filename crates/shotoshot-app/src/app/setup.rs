@@ -219,15 +219,20 @@ impl ShortcutTarget {
         }
     }
     /// The notification menu row that opens this shortcut; the window borrows its icon.
-    fn menu_id(self) -> u32 {
+    /// The icon of the action, as the menu and the toolbar draw it.
+    fn icon(self) -> tray_menu::Icon {
+        use shotoshot_core::Tool;
+        use tray_menu::Icon;
         match self {
-            Self::Capture => 2,
-            Self::Instant => 6,
-            Self::Arrow => 110,
-            Self::Rectangle => 111,
-            Self::Ellipse => 112,
-            Self::Board => 13,
-            Self::ShowClick | Self::Spotlight | Self::Loupe => 105,
+            Self::Capture => Icon::Capture,
+            Self::Instant => Icon::Instant,
+            Self::Arrow => Icon::Toolbar(Action::Tool(Tool::Arrow)),
+            Self::Rectangle => Icon::Toolbar(Action::Tool(Tool::Rectangle)),
+            Self::Ellipse => Icon::Toolbar(Action::Tool(Tool::Ellipse)),
+            Self::Board => Icon::BoardEdit,
+            Self::ShowClick => Icon::Click,
+            Self::Spotlight => Icon::Spotlight,
+            Self::Loupe => Icon::Loupe,
         }
     }
     fn title(self) -> Key {
@@ -770,7 +775,7 @@ fn paint<C: Canvas>(canvas: &mut C, ui: &Setup, scale: f64) -> std::result::Resu
     )?;
     tray_menu::draw_icon(
         canvas,
-        tray_menu::icon(ui.target.menu_id()),
+        ui.target.icon(),
         ICON * scale,
         u(ICON_SCALE),
         SECONDARY,
@@ -946,7 +951,7 @@ pub(super) fn preview() -> Result<()> {
             &std::path::Path::new("target").join(name),
         )?;
     }
-    pointer_window::preview()?;
+    settings_window::preview()?;
     tray_menu::preview()
 }
 

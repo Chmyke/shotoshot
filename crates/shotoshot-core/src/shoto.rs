@@ -9,7 +9,7 @@ pub use scene::Scene;
 
 const HEADER: &[u8] = b"shotoshot-document ";
 /// The latest version read; a file is written in the lowest one that holds it (`Scene::version`).
-const VERSION: u32 = 3;
+pub(crate) const VERSION: u32 = 4;
 const FRAME: &[u8] = b"frame-png ";
 /// Larger files are refused unread: far above any desktop saved as two PNG images.
 pub const MAX_FILE: u64 = 256 << 20;
@@ -156,7 +156,10 @@ mod tests {
         assert_eq!(unpack(&PIXEL), Err(Error::NotEditable));
         assert_eq!(unpack(b"plain text"), Err(Error::NotEditable));
         assert_eq!(
-            unpack(&with("shotoshot-document 4\nanything at all\n")),
+            unpack(&with(&format!(
+                "shotoshot-document {}\nanything at all\n",
+                VERSION + 1
+            ))),
             Err(Error::Newer)
         );
         for payload in [

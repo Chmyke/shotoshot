@@ -1,4 +1,4 @@
-use crate::{Object, Point, Shape, arrow_points};
+use crate::{Object, Point, Shape, arrow_points, bent, bent_arrival, bent_points};
 
 // Bound the deviation from the analytic ellipse in screen/document pixels.
 const CURVE_ERROR: f64 = 0.2;
@@ -16,6 +16,39 @@ pub fn arrow_shaft_end(start: Point, end: Point, width: f64, head_length: f64) -
     }
     let overlap = ARROW_JOIN_OVERLAP.min(head_length - width / (2. * ARROW_HEAD_HALF_WIDTH));
     Some(end - delta * ((head_length - overlap.max(0.)) / length))
+}
+
+/// A bent shaft cut where it enters the head, at the distance from the tip that
+/// `arrow_shaft_end` keeps on a straight one; empty when the head covers the curve.
+fn bent_shaft(mut curve: Vec<Point>, width: f64, head_length: f64) -> Vec<Point> {
+    let (Some(&a), Some(&b)) = (curve.first(), curve.last()) else {
+        return curve;
+    };
+    if (b - a).length() <= head_length + width * 0.5 {
+        return Vec::new();
+    }
+    let overlap = ARROW_JOIN_OVERLAP.min(head_length - width / (2. * ARROW_HEAD_HALF_WIDTH));
+    let reach = head_length - overlap.max(0.);
+    // The last sample still outside the reach, then the crossing on the segment after it.
+    let Some(i) = curve.iter().rposition(|p| (b - *p).length() >= reach) else {
+        return Vec::new();
+    };
+    let Some(&inside) = curve.get(i + 1) else {
+        return curve;
+    };
+    let outside = curve[i];
+    let (mut low, mut high) = (0., 1.);
+    for _ in 0..40 {
+        let t = (low + high) * 0.5;
+        if (b - (outside + (inside - outside) * t)).length() >= reach {
+            low = t;
+        } else {
+            high = t;
+        }
+    }
+    curve.truncate(i + 1);
+    curve.push(outside + (inside - outside) * low);
+    curve
 }
 
 pub fn paths(object: &Object, objects: &[Object]) -> Vec<Vec<Point>> {
@@ -50,25 +83,36 @@ pub fn paths(object: &Object, objects: &[Object]) -> Vec<Vec<Point>> {
                     .collect(),
             ]
         }
-        Shape::Arrow { head, .. } => {
+        Shape::Arrow { head, bend, .. } => {
             let (a, b) = arrow_points(object, objects).unwrap_or_default();
             let d = b - a;
             let length = d.length();
             if length < 0.001 {
                 return vec![];
             }
+            let curve = bent(*bend).then(|| bent_points(a, b, *bend));
             if !head {
-                return vec![vec![a, b]];
+                return vec![curve.unwrap_or_else(|| vec![a, b])];
             }
-            let unit = d * (1. / length);
+            let unit = match curve {
+                Some(_) => {
+                    let arrival = bent_arrival(a, b, *bend);
+                    arrival * (1. / arrival.length())
+                }
+                None => d * (1. / length),
+            };
             let wing = Point {
                 x: -unit.y,
                 y: unit.x,
             };
             let size = object.style.width * 3.84;
-            vec![
-                arrow_shaft_end(a, b, object.style.width, size)
+            let shaft = match curve {
+                Some(curve) => bent_shaft(curve, object.style.width, size),
+                None => arrow_shaft_end(a, b, object.style.width, size)
                     .map_or_else(Vec::new, |end| vec![a, end]),
+            };
+            vec![
+                shaft,
                 vec![
                     b - unit * size + wing * (size * ARROW_HEAD_HALF_WIDTH),
                     b,

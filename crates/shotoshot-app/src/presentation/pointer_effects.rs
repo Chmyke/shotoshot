@@ -72,7 +72,7 @@ impl Presentation {
         // The halo's trail and the input diagram stay as they are: only the screen under them
         // grows.
         // The OBS mirror is parked off the desktop, never under the loupe.
-        let excluded: Vec<HWND> = [&self.halo, &self.keys, &self.lock]
+        let excluded: Vec<HWND> = [&self.halo, &self.keys]
             .into_iter()
             .flatten()
             .map(Layer::hwnd)

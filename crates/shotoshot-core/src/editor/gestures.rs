@@ -23,7 +23,12 @@ impl Editor {
         }
         self.cancel();
         let before = self.objects.clone();
-        let kind = if self.tool == Tool::Select {
+        let fresh = self.fresh_bend_handle(p);
+        self.fresh = None;
+        let kind = if let Some(index) = fresh {
+            self.fresh = Some(self.objects[index].id);
+            GestureKind::Bend { index }
+        } else if self.tool == Tool::Select {
             self.selection_gesture(p, modifiers)
         } else if self.tool == Tool::Eraser {
             self.selected.clear();
@@ -40,6 +45,7 @@ impl Editor {
                     start_attach: None,
                     end_attach: None,
                     head: self.tool == Tool::Arrow,
+                    bend: Point::default(),
                 },
                 Tool::Pen | Tool::Highlight => Shape::Stroke {
                     points: vec![p],
@@ -156,6 +162,12 @@ impl Editor {
                     start: false,
                 });
             }
+            if self
+                .bend_handle()
+                .is_some_and(|(_, h)| (p - h).length() < grip)
+            {
+                return Some(GestureKind::Bend { index });
+            }
         }
         if let (Some(frame), Some(bounds)) = (self.selection_frame(), self.selection_bounds()) {
             let corners = frame.corners();
@@ -170,6 +182,26 @@ impl Editor {
             }
         }
         None
+    }
+    /// The middle handle of the lone selected arrow or line, or of the one just drawn while
+    /// its tool is in hand: the object's index and where the curve passes halfway.
+    pub fn bend_handle(&self) -> Option<(usize, Point)> {
+        let id = match (self.tool, &self.selected[..]) {
+            (Tool::Select, [id]) => *id,
+            (Tool::Arrow | Tool::Line, _) if self.gesture.is_none() => self.fresh?,
+            _ => return None,
+        };
+        let index = self.objects.iter().position(|o| o.id == id)?;
+        let o = &self.objects[index];
+        let (a, b) = arrow_points(o, &self.objects)?;
+        Some((index, bend_point(a, b, o.bend())))
+    }
+    fn fresh_bend_handle(&self, p: Point) -> Option<usize> {
+        if self.tool == Tool::Select {
+            return None;
+        }
+        let (index, h) = self.bend_handle()?;
+        ((p - h).length() < 9. * self.ui_scale).then_some(index)
     }
     pub fn update_with_modifiers(&mut self, p: Point, modifiers: Modifiers) {
         self.held = modifiers;
@@ -367,6 +399,23 @@ impl Editor {
                     }
                 }
             }
+            GestureKind::Bend { index } => {
+                let o = &self.objects[index];
+                if let Some((a, b)) = arrow_points(o, &self.objects) {
+                    // Near the chord it springs straight again, as nothing else does.
+                    let straight = (b - a).length() < 0.001
+                        || ((p - a).x * (b - a).y - (p - a).y * (b - a).x).abs()
+                            < BEND_SNAP * self.ui_scale * (b - a).length();
+                    let bent = if straight {
+                        Point::default()
+                    } else {
+                        bend_through(a, b, p)
+                    };
+                    if let Shape::Arrow { bend, .. } = &mut self.objects[index].shape {
+                        *bend = bent;
+                    }
+                }
+            }
             GestureKind::Marquee => {}
         }
     }
@@ -397,6 +446,11 @@ impl Editor {
         {
             self.objects = g.before;
         } else {
+            if matches!(g.kind, GestureKind::Draw) {
+                self.fresh = (self.objects.last())
+                    .filter(|o| matches!(o.shape, Shape::Arrow { .. }))
+                    .map(|o| o.id);
+            }
             self.commit(g.before);
         }
     }

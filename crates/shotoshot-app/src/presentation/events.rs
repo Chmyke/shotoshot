@@ -47,7 +47,7 @@ impl Presentation {
         }
         Ok(())
     }
-    /// Shows a key event; Enter or Esc pressed during a move ends it, as the lock does.
+    /// Shows a key event; Enter or Esc pressed during a move ends it, as the Settings switch does.
     pub(super) fn key_event(&mut self, key: RAWKEYBOARD) -> Result<()> {
         let shown = self.keyboard(key);
         if self.moving && key.Flags & 1 == 0 && [VK_RETURN.0, VK_ESCAPE.0].contains(&key.VKey) {

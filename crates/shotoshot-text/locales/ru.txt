@@ -3,6 +3,7 @@
 language.menu = Язык
 
 tooltip.with_shortcut = {label} · {shortcut}
+tooltip.with_shortcut_and_wheel = {label} · {shortcut} · Колесо меняет размер
 
 key.ctrl == Ctrl
 key.shift == Shift
@@ -73,6 +74,7 @@ capture.edit_dimensions = Изменить размеры · выражения:
 overlay.select_area = Выделите область
 overlay.cancel = {shortcut}: отмена
 overlay.stroke_width == {width} px
+overlay.wheel_hint = Колесо меняет размер
 magnifier.pick = Клик: взять · {shortcut}
 picker.apply = Клик мимо применит · {shortcut} отменит
 
@@ -84,7 +86,7 @@ menu.edit_board = Изменить Board
 menu.show_board = Показывать Board
 menu.clear_board = Очистить Board
 menu.presentation = Презентация
-menu.pointer_halo = Подсветка указателя
+menu.board = ==
 menu.pointer_effects = Эффекты указателя
 menu.magnifier = Лупа
 menu.keyboard = Клавиатура
@@ -93,20 +95,13 @@ menu.move_input = Переместить клавиатуру и мышь
 menu.input_size = Размер клавиатуры и мыши
 menu.temporary_shapes = Временные фигуры
 menu.shape_duration = Время показа фигур
-menu.shortcuts = Сочетания клавиш · щёлкните, чтобы изменить
 menu.capture = Снимок
 menu.instant_screenshot = Мгновенный снимок экрана
-menu.board == Board
-menu.options = Параметры
 menu.live_capture_default = Съёмка в реальном времени по умолчанию
 menu.start_with_windows = Запускать вместе с Windows
 menu.quit = Выйти из Shotoshot
-menu.duration_1 = 1 секунда
-menu.duration_3 = 3 секунды
-menu.duration_5 = 5 секунд
 menu.seconds = {n} с
 menu.percent = {n} %
-menu.shortcut_in_use = {shortcut} (занято)
 menu.language_auto = Язык Windows
 menu.language_system = Язык системы
 
@@ -154,8 +149,8 @@ notice.saved = Изображение сохранено.
 notice.searching = Поиск в Google…
 notice.preferences = Настройки сохранены.
 notice.saved_editable = Редактируемое изображение сохранено вместе с экраном.
-notice.instant_unavailable = Сочетание для мгновенного снимка недоступно. Измените его в меню Shotoshot.
-notice.board_unavailable = Сочетание для Board недоступно. Измените его в меню Shotoshot.
+notice.instant_unavailable = Сочетание для мгновенного снимка недоступно. Измените его в настройках Shotoshot.
+notice.board_unavailable = Сочетание для Board недоступно. Измените его в настройках Shotoshot.
 notice.shortcuts_unavailable = Сочетание недоступно: {names}
 notice.names_separator == {before}, {after}
 notice.screenshot_failed = Снимок не удался: файл не сохранён
@@ -226,9 +221,7 @@ installer.language.auto = Язык Windows
 installer.shoto_file = Редактируемое изображение Shotoshot
 
 # Pointer effects
-pointer.title = Эффекты указателя
 pointer.section_halo = Подсветка
-pointer.show_halo = Показывать подсветку
 pointer.section_trail = След
 pointer.section_clicks = Щелчки
 pointer.section_spotlight = Прожектор
@@ -252,10 +245,7 @@ pointer.darkness = Затемнение
 pointer.hide_moving = Скрывать при движении
 pointer.hold = Показывать при удержании
 pointer.zoom = Увеличение
-pointer.show_loupe = Показать лупу
-pointer.shortcut = Сочетание клавиш
 pointer.off = Выкл.
-pointer.hidden = Скрыта
 pointer.disc = Диск
 pointer.ring = Кольцо
 pointer.neon = Неон
@@ -285,6 +275,13 @@ pointer.zoom_4 == 4×
 pointer.small = Маленькая
 pointer.medium_size = Средняя
 pointer.large = Большая
-pointer.no_shortcut = Нет
 pointer.reset = Сбросить настройки
-pointer.undo = Отменить изменения
+
+settings.title = Настройки
+settings.general = Общие
+settings.shortcuts = Сочетания клавиш
+settings.add = Добавить
+settings.in_use = Занято другим приложением
+settings.start_with_windows_note = Готов к съёмке сразу после входа в систему.
+settings.live_capture_note = Снимок обновляется, пока вы его не скопируете или не сохраните.
+settings.shape_duration_note = Сколько времени временные фигуры остаются на экране.

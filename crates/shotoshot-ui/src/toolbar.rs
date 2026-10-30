@@ -306,7 +306,12 @@ fn hint_in(label: Key, action: Action, language: Language) -> String {
         return Text::with_in(language, label, &[("shortcut", &shortcut)]).to_string();
     }
     let args = [("label", tr_in(language, label)), ("shortcut", &shortcut)];
-    Text::with_in(language, Key::TooltipWithShortcut, &args).to_string()
+    // A drawing tool also says that the wheel sizes it (issue #2: nobody guessed).
+    let template = match action {
+        Action::Tool(tool) if tool != Tool::Select => Key::TooltipWithShortcutAndWheel,
+        _ => Key::TooltipWithShortcut,
+    };
+    Text::with_in(language, template, &args).to_string()
 }
 
 /// Every label a hint can show with its button's action: the toolbar, the board and the states.
@@ -686,15 +691,15 @@ mod tests {
     /// The English hints as they were written before translation, in listing order.
     const ENGLISH_HINTS: [&str; 36] = [
         "Select · V · Page Up/Down forward or back",
-        "Rectangle · R",
-        "Ellipse · C",
-        "Line · L",
-        "Arrow · A",
-        "Pen · P",
-        "Highlighter · H",
-        "Text box · B",
-        "Text · T",
-        "Eraser · E",
+        "Rectangle · R · Scroll to resize",
+        "Ellipse · C · Scroll to resize",
+        "Line · L · Scroll to resize",
+        "Arrow · A · Scroll to resize",
+        "Pen · P · Scroll to resize",
+        "Highlighter · H · Scroll to resize",
+        "Text box · B · Scroll to resize",
+        "Text · T · Scroll to resize",
+        "Eraser · E · Scroll to resize",
         "Live capture · F2 · refresh on copy or save",
         "Red · 1",
         "Yellow · 2",
@@ -742,10 +747,10 @@ mod tests {
         let all = buttons(region, 1920, 1080);
         let find = |action| all.iter().find(|b| b.action == action).unwrap();
         let rectangle = tooltip_in(find(Action::Tool(Tool::Rectangle)), Language::Fr);
-        assert!(rectangle.ends_with("· R"), "{rectangle}");
+        assert!(rectangle.contains("· R ·"), "{rectangle}");
         assert_eq!(
             tooltip_in(find(Action::Tool(Tool::Pen)), Language::Fr),
-            "Stylo · P"
+            "Stylo · P · Molette pour la taille"
         );
         let redo = tooltip_in(find(Action::Redo), Language::Fr);
         assert!(redo.ends_with("· Ctrl+Y / Ctrl+Maj+Z"), "{redo}");
@@ -797,7 +802,10 @@ mod tests {
                 .iter()
                 .find(|b| b.action == Action::Tool(Tool::Eraser))
                 .unwrap();
-            assert_eq!(tooltip_in(eraser, Language::En), "Eraser · E");
+            assert_eq!(
+                tooltip_in(eraser, Language::En),
+                "Eraser · E · Scroll to resize"
+            );
         }
     }
     #[test]

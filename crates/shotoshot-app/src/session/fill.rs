@@ -71,7 +71,8 @@ mod tests {
         s.capture.editor.fill_at(p(100., 150.), false);
         let shown = frame(&mut s);
         assert_eq!(rgb(&shown, 100, 150), SLATE);
-        assert_eq!(rgb(&shown, 140, 80), CHALK, "drawings stay above the slate");
+        // Off the middle, where the line just drawn shows its bend handle.
+        assert_eq!(rgb(&shown, 110, 80), CHALK, "drawings stay above the slate");
         assert_ne!(
             rgb(&shown, 20, 20),
             SLATE,

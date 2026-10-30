@@ -109,7 +109,7 @@ impl App {
                 (presentation.enabled, presentation.shortcut_conflicts())
             })
             .unwrap_or_default();
-        let shapes = self.settings.presentation.shape_shortcuts;
+        let shapes = &self.settings.presentation.shape_shortcuts;
         Ok(tray_menu::Values {
             capture: tray_menu::shortcut(
                 crate::settings::Shortcut {
@@ -122,18 +122,12 @@ impl App {
                 self.settings.instant_shortcut,
                 !self.instant.hotkey.active(),
             ),
-            shapes: std::array::from_fn(|index| {
-                tray_menu::shortcut(shapes[index], conflicts[index])
-            }),
-            duration_ms: self.settings.presentation.duration_ms,
-            size: self.settings.presentation.input_scale,
             halo: enabled.halo,
             loupe: enabled.loupe,
             temporary_shapes: enabled.shapes,
+            shapes: [0, 1, 2].map(|index| tray_menu::shortcut(shapes[index], conflicts[index])),
             keys: enabled.keys,
             mouse: enabled.mouse,
-            live: self.settings.live_capture,
-            startup: crate::startup::enabled()?,
             board: self.settings.board_visible,
             board_shortcut: tray_menu::shortcut(
                 self.settings.board_shortcut,
@@ -206,22 +200,18 @@ impl App {
         }
         Ok(())
     }
-    fn run_menu_command(&mut self, hwnd: HWND, chosen: u32) -> Result<()> {
+    /// Runs menu command `chosen`; the Settings window runs the ones it shares with it.
+    pub(super) fn run_menu_command(&mut self, hwnd: HWND, chosen: u32) -> Result<()> {
         unsafe {
             if (101..=143).contains(&chosen) && self.worker_busy() {
                 message(hwnd, &Text::new(Key::ErrorPresentationBusy));
                 return Ok(());
             }
             match chosen {
-                105 => self.open_pointer_window(hwnd)?,
-                110..=112 => {
-                    let target = [
-                        setup::ShortcutTarget::Arrow,
-                        setup::ShortcutTarget::Rectangle,
-                        setup::ShortcutTarget::Ellipse,
-                    ][(chosen - 110) as usize];
-                    self.show_shortcut_setup(hwnd, target)?;
-                }
+                170 => self.open_settings_window(hwnd)?,
+                171 => self.show_shortcut_setup(hwnd, setup::ShortcutTarget::Arrow)?,
+                172 => self.show_shortcut_setup(hwnd, setup::ShortcutTarget::Rectangle)?,
+                173 => self.show_shortcut_setup(hwnd, setup::ShortcutTarget::Ellipse)?,
                 101..=143 => {
                     if let Some(preferences) =
                         crate::presentation::menu::preference(chosen, &self.settings.presentation)
@@ -243,8 +233,7 @@ impl App {
                 1 => {
                     PostMessageW(Some(hwnd), CAPTURE_MESSAGE, WPARAM(0), LPARAM(0))?;
                 }
-                2 => self.show_setup(hwnd)?,
-                6 => self.show_shortcut_setup(hwnd, setup::ShortcutTarget::Instant)?,
+                7 => self.start_instant_capture(hwnd),
                 8 => super::board::spawn_session()?,
                 // Every note gone, in a process of its own; it refuses while a session is open.
                 10 => crate::board::clear::spawn()?,
@@ -279,7 +268,6 @@ impl App {
                         return Err(error);
                     }
                 }
-                13 => self.show_shortcut_setup(hwnd, setup::ShortcutTarget::Board)?,
                 4 => {
                     let enabled = !crate::startup::enabled()?;
                     crate::startup::set_enabled(enabled)?;

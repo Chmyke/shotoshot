@@ -3,7 +3,7 @@
 //! Version 3 adds the panel of a text (`Label`).
 //! INVARIANTS: `decode` gives back the scene `encode` wrote, and accepts nothing it does not
 //! fully understand: skipping an unknown field could drop a mask at the next save.
-use crate::{Attachment, Label, Object, Paint, Point, Rect, Shape, Style};
+use crate::{Attachment, Label, Object, Paint, Point, Rect, Shape, Style, bent};
 use std::fmt::Write;
 
 /// Largest frame side, far above any desktop.
@@ -60,12 +60,14 @@ impl Scene {
             })
     }
     /// The lowest format version that holds this scene: 2 once a zone has more than one coat
-    /// or a coat spares a shape, 3 once a text sits on a panel, so simpler files still open
-    /// in an earlier Shotoshot.
+    /// or a coat spares a shape, 3 once a text sits on a panel, 4 once an arrow or a line
+    /// bends, so simpler files still open in an earlier Shotoshot.
     pub fn version(&self) -> u32 {
         let plain = |coats: &[Paint]| coats.len() <= 1 && coats.iter().all(|c| c.walls.is_empty());
         let labelled = |o: &Object| matches!(o.shape, Shape::Text { label: Some(_), .. });
-        if self.objects.iter().any(labelled) {
+        if self.objects.iter().any(|o| bent(o.bend())) {
+            4
+        } else if self.objects.iter().any(labelled) {
             3
         } else if plain(&self.background) && self.objects.iter().all(|o| plain(&o.fill)) {
             1
@@ -133,9 +135,11 @@ fn object_valid(object: &Object, points: &mut usize) -> bool {
                 start_attach,
                 end_attach,
                 head: _,
+                bend,
             } => {
                 start.finite()
                     && end.finite()
+                    && bend.finite()
                     && [start_attach, end_attach]
                         .iter()
                         .all(|a| a.is_none_or(|a| a.direction.finite()))
@@ -209,12 +213,16 @@ fn encode_object(out: &mut String, object: &Object) -> std::fmt::Result {
             start_attach,
             end_attach,
             head,
+            bend,
         } => {
             write!(
                 out,
                 " from={},{} to={},{} head={}",
                 start.x, start.y, end.x, end.y, *head as u8
             )?;
+            if bent(*bend) {
+                write!(out, " bend={},{}", bend.x, bend.y)?;
+            }
             for (key, attach) in [("start", start_attach), ("end", end_attach)] {
                 if let Some(Attachment { target, direction }) = attach {
                     write!(out, " {key}={target},{},{}", direction.x, direction.y)?;
@@ -440,6 +448,12 @@ fn decode_object(line: &str, version: u32, points: &mut usize) -> Option<Object>
                 Some(text) => Some(attachment(text)?),
                 None => None,
             },
+            bend: match f.take("bend") {
+                Some(_) if version < 4 => return None,
+                // A straight line is written without the field, never as a zero bend.
+                Some(text) => point(text).filter(|b| bent(*b))?,
+                None => Point::default(),
+            },
         },
         "stroke" => Shape::Stroke {
             highlight: flag(f.take("highlight")?)?,
@@ -517,6 +531,7 @@ pub(super) mod tests {
             start_attach,
             end_attach,
             head,
+            bend: Point::default(),
         };
         let (red, white, blue) = ([237, 79, 92], [255; 3], [16, 32, 48]);
         let from = pair(1., 2.);
@@ -893,6 +908,91 @@ object id=3 kind=text color=1c1f28 width=3 rotation=0.5 at=10,20 size=32 extent=
             assert!(VERSION_3.contains(from), "{from:?} is not in the reference");
             let text = VERSION_3.replacen(from, to, 1);
             assert_eq!(decode(&text, 3), None, "{from:?} replaced by {to:?}");
+        }
+    }
+    /// Version 4 as it was first written: a bent arrow and a bent line. Files with this
+    /// text exist: it never changes.
+    const VERSION_4: &str = "\
+frame 1920 1080
+origin -1920 0
+region 100.5 200 900 700.25
+last 2
+object id=1 kind=arrow color=ed4f5c width=3 rotation=0 from=10,20 to=210,20 head=1 bend=0.125,-0.3
+object id=2 kind=arrow color=1c1f28 width=5 rotation=0 from=40,90 to=40,300.5 head=0 bend=0,0.25
+";
+    fn bent() -> Scene {
+        let arrow = |start, end, head, bend| Shape::Arrow {
+            start,
+            end,
+            start_attach: None,
+            end_attach: None,
+            head,
+            bend,
+        };
+        Scene {
+            background: Vec::new(),
+            objects: vec![
+                object(
+                    1,
+                    0.,
+                    [237, 79, 92],
+                    3.,
+                    arrow(pair(10., 20.), pair(210., 20.), true, pair(0.125, -0.3)),
+                ),
+                object(
+                    2,
+                    0.,
+                    [28, 31, 40],
+                    5.,
+                    arrow(pair(40., 90.), pair(40., 300.5), false, pair(0., 0.25)),
+                ),
+            ],
+            last_id: 2,
+            ..sample()
+        }
+    }
+    #[test]
+    fn version_4_text_is_frozen() {
+        assert_eq!(bent().version(), 4);
+        assert_eq!(bent().encode(), VERSION_4);
+        assert_eq!(decode(VERSION_4, 4), Some(bent()));
+        assert_eq!(decode(VERSION_1, 4), Some(sample()), "version 4 reads 1");
+        assert_eq!(decode(VERSION_2, 4), Some(layered()), "and 2");
+        assert_eq!(decode(VERSION_3, 4), Some(labelled()), "and 3");
+        let mut labelled_and_bent = labelled();
+        labelled_and_bent
+            .objects
+            .extend(bent().objects.into_iter().map(|mut o| {
+                o.id += 3;
+                o
+            }));
+        labelled_and_bent.last_id = 5;
+        assert_eq!(labelled_and_bent.version(), 4, "a bend outranks a label");
+    }
+    #[test]
+    fn earlier_versions_know_no_bend() {
+        for version in 1..4 {
+            assert_eq!(decode(VERSION_4, version), None, "version {version}");
+        }
+        let straight =
+            VERSION_4
+                .replacen(" bend=0.125,-0.3", "", 1)
+                .replacen(" bend=0,0.25", "", 1);
+        assert!(decode(&straight, 1).is_some(), "the same arrows straight");
+    }
+    #[test]
+    fn bends_not_fully_understood_are_refused() {
+        for (from, to) in [
+            ("bend=0,0.25", "bend=0,0"),
+            ("bend=0,0.25", "bend=0.25"),
+            ("bend=0,0.25", "bend="),
+            ("bend=0,0.25", "bend=0,inf"),
+            ("bend=0,0.25", "bend=0,0.25 bend=0,0.25"),
+            ("bend=0,0.25", "bend=0,0.25,1"),
+        ] {
+            assert!(VERSION_4.contains(from), "{from:?} is not in the reference");
+            let text = VERSION_4.replacen(from, to, 1);
+            assert_eq!(decode(&text, 4), None, "{from:?} replaced by {to:?}");
         }
     }
     #[test]

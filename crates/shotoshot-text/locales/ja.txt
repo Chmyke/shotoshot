@@ -3,6 +3,7 @@
 language.menu = 言語
 
 tooltip.with_shortcut = {label} · {shortcut}
+tooltip.with_shortcut_and_wheel = {label} · {shortcut} · ホイールでサイズ変更
 
 key.ctrl == Ctrl
 key.shift == Shift
@@ -73,6 +74,7 @@ capture.edit_dimensions = サイズを編集 · 計算式: 800+20, 1920/2
 overlay.select_area = 範囲を選択
 overlay.cancel = {shortcut} でキャンセル
 overlay.stroke_width == {width} px
+overlay.wheel_hint = ホイールでサイズ変更
 magnifier.pick = クリックで取得 · {shortcut}
 picker.apply = 外側をクリックで適用 · {shortcut} でキャンセル
 
@@ -84,7 +86,7 @@ menu.edit_board = Board を編集
 menu.show_board = Board を表示
 menu.clear_board = Board を消去
 menu.presentation = プレゼンテーション
-menu.pointer_halo = ポインターの強調
+menu.board = ==
 menu.pointer_effects = ポインター効果
 menu.magnifier = 拡大鏡
 menu.keyboard = キーボード
@@ -93,20 +95,13 @@ menu.move_input = キーボードとマウスを移動
 menu.input_size = キーボードとマウスのサイズ
 menu.temporary_shapes = 一時的な図形
 menu.shape_duration = 図形の表示時間
-menu.shortcuts = ショートカット · クリックで変更
 menu.capture = キャプチャ
 menu.instant_screenshot = 即時スクリーンショット
-menu.board == Board
-menu.options = オプション
 menu.live_capture_default = 既定でライブキャプチャ
 menu.start_with_windows = Windows の起動時に開始
 menu.quit = Shotoshot を終了
-menu.duration_1 = 1 秒
-menu.duration_3 = 3 秒
-menu.duration_5 = 5 秒
 menu.seconds = {n} 秒
 menu.percent = {n}%
-menu.shortcut_in_use = {shortcut}（使用中）
 menu.language_auto = Windows の言語
 menu.language_system = システムの言語
 
@@ -154,8 +149,8 @@ notice.saved = 画像を保存しました。
 notice.searching = Google で検索しています…
 notice.preferences = 設定を保存しました。
 notice.saved_editable = 編集可能な画像を画面ごと保存しました。
-notice.instant_unavailable = 即時スクリーンショットのショートカットが使えません。Shotoshot のメニューで変更してください。
-notice.board_unavailable = Board のショートカットが使えません。Shotoshot のメニューで変更してください。
+notice.instant_unavailable = 即時スクリーンショットのショートカットが使えません。Shotoshot の設定で変更してください。
+notice.board_unavailable = Board のショートカットが使えません。Shotoshot の設定で変更してください。
 notice.shortcuts_unavailable = ショートカットを使用できません: {names}
 notice.names_separator = {before}、{after}
 notice.screenshot_failed = スクリーンショットに失敗: ファイルは未保存
@@ -226,9 +221,7 @@ installer.language.auto = Windows の言語
 installer.shoto_file = 編集可能な Shotoshot 画像
 
 # Pointer effects
-pointer.title = ポインター効果
 pointer.section_halo = 強調
-pointer.show_halo = 強調を表示
 pointer.section_trail = 軌跡
 pointer.section_clicks = クリック
 pointer.section_spotlight = スポットライト
@@ -252,10 +245,7 @@ pointer.darkness = 暗さ
 pointer.hide_moving = 移動中は隠す
 pointer.hold = 押している間表示
 pointer.zoom = 倍率
-pointer.show_loupe = 拡大鏡を表示
-pointer.shortcut = ショートカット
 pointer.off = オフ
-pointer.hidden = 非表示
 pointer.disc = 円盤
 pointer.ring = リング
 pointer.neon = ネオン
@@ -285,6 +275,13 @@ pointer.zoom_4 == 4×
 pointer.small = 小
 pointer.medium_size = 中
 pointer.large = 大
-pointer.no_shortcut = なし
 pointer.reset = 既定に戻す
-pointer.undo = 変更を元に戻す
+
+settings.title = 設定
+settings.general = 全般
+settings.shortcuts = ショートカット
+settings.add = 追加
+settings.in_use = ほかのアプリが使用中
+settings.start_with_windows_note = サインインしてすぐにキャプチャできます。
+settings.live_capture_note = コピーまたは保存するまでキャプチャが更新され続けます。
+settings.shape_duration_note = 一時的な図形を画面に表示しておく時間です。

@@ -90,10 +90,9 @@ pub(crate) struct Presentation {
     halo: Option<Layer>,
     canvas: Option<Layer>,
     keys: Option<Layer>,
-    lock: Option<Layer>,
     broadcast: Option<Rc<Broadcast>>,
     input_drag: Option<(POINT, POINT)>,
-    /// The whole diagram is shown and draggable, until its lock, Enter or Esc ends the move.
+    /// The whole diagram is shown and draggable, until the Settings switch, Enter or Esc ends the move.
     /// Otherwise only pressed keys and buttons appear and every click passes through.
     pub moving: bool,
     wheel_travel: wheel::Notches,
@@ -143,7 +142,6 @@ impl Presentation {
             halo: None,
             canvas: None,
             keys: None,
-            lock: None,
             broadcast: None,
             input_drag: None,
             moving: false,
@@ -290,7 +288,6 @@ impl Presentation {
             self.end_input_drag(false)?;
             self.moving = false;
             self.keys = None;
-            self.lock = None;
         }
         if !enabled.shapes {
             self.release_gesture()?;
@@ -329,7 +326,6 @@ impl Presentation {
         self.canvas = None;
         self.halo = None;
         self.keys = None;
-        self.lock = None;
         self.broadcast = None;
         self.input_drag = None;
         self.moving = false;
@@ -634,7 +630,6 @@ impl Presentation {
             self.paint(keys.hwnd())?;
             keys.show(true);
         }
-        self.show_lock()?;
         self.sync_timer()
     }
     /// Attaches a viewer-facing layer to the OBS mirror, opening the mirror on first use.
@@ -672,13 +667,6 @@ impl Presentation {
             keys.devices(&self.devices, now, self.moving);
             return keys.end();
         }
-        if let Some(lock) = &self.lock
-            && lock.hwnd() == hwnd
-        {
-            lock.begin(true)?;
-            lock.lock_icon(false);
-            return lock.end();
-        }
         if let Some(canvas) = &self.canvas
             && canvas.hwnd() == hwnd
         {
@@ -701,10 +689,7 @@ impl Drop for Presentation {
         unsafe {
             let _ = RemovePropW(self.owner, STATE_PROPERTY);
         }
-        for layer in [&self.canvas, &self.halo, &self.keys, &self.lock]
-            .into_iter()
-            .flatten()
-        {
+        for layer in [&self.canvas, &self.halo, &self.keys].into_iter().flatten() {
             layer.detach();
         }
         let _ = self.release_gesture();

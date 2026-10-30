@@ -28,6 +28,8 @@ pub enum Tool {
 }
 /// The eraser's diameter at 100 % until the wheel changes it, in pixels.
 pub const ERASER_SIZE: f64 = 14.;
+/// How close to its chord, in interface pixels, a dragged middle makes a curve straight.
+const BEND_SNAP: f64 = 8.;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Modifiers {
     pub shift: bool,
@@ -85,6 +87,10 @@ enum GestureKind {
     Endpoint {
         index: usize,
         start: bool,
+    },
+    /// The middle of an arrow or line, which bends it.
+    Bend {
+        index: usize,
     },
     /// Objects swept so far, in pile order; removed together on release.
     Erase {
@@ -145,6 +151,9 @@ pub struct Editor {
     next_id: u64,
     /// Modifier keys last reported, gesture or not: the bucket's preview follows Alt.
     held: Modifiers,
+    /// The arrow or line just drawn, whose middle can be bent with its tool still in hand,
+    /// until the next press elsewhere or undo.
+    fresh: Option<u64>,
 }
 impl Default for Editor {
     fn default() -> Self {
@@ -161,6 +170,7 @@ impl Default for Editor {
             gesture: None,
             next_id: 0,
             held: Modifiers::default(),
+            fresh: None,
         }
     }
 }

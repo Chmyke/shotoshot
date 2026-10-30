@@ -146,6 +146,15 @@ impl Capture {
                 canvas.stroke_ellipse(handle, radius, ACCENT, 2. * s)?;
             }
         }
+        // The middle of the selected arrow, or of the one just drawn, which bends it.
+        if show_selection && let Some((_, middle)) = self.editor.bend_handle() {
+            let radius = Point {
+                x: 5. * s,
+                y: 5. * s,
+            };
+            canvas.fill_ellipse(middle, radius, ACCENT)?;
+            canvas.stroke_ellipse(middle, radius, Ink::solid([250, 250, 250]), 1.5 * s)?;
+        }
         if let Some(m) = self.editor.marquee() {
             canvas.stroke_rect(m, ACCENT, s)?;
         }
@@ -280,14 +289,7 @@ impl Capture {
     /// Outline of the current stroke width at the pointer, or of the eraser's disc as the
     /// view shows it; with a size change, its size.
     pub fn draw_width_ring<C: Canvas>(&self, canvas: &mut C) -> Result<(), C::Error> {
-        let (width, shown) = match self.editor.tool {
-            Tool::Eraser => (
-                self.editor.eraser_size * self.zoom_at_pointer(),
-                self.editor.eraser_size,
-            ),
-            Tool::Highlight => (self.editor.style.width * 5., self.editor.style.width * 5.),
-            _ => (self.editor.style.width, self.editor.style.width),
-        };
+        let (width, shown) = self.ring_width();
         let s = self.ui_scale();
         let center = self.pointer;
         let radius = Point {
@@ -300,9 +302,46 @@ impl Capture {
             return Ok(());
         }
         let label = width_label_in(language(), shown);
-        let size = width_label_size(canvas.measure_text(&label, 12. * s)?, s);
+        self.draw_pointer_badge(canvas, &label, width / 2.)
+    }
+    /// "Scroll to resize" beside the pointer of a drawing tool, past the ring when there is
+    /// one, until the user first turns the wheel (issue #2).
+    pub fn draw_wheel_hint<C: Canvas>(&self, canvas: &mut C) -> Result<(), C::Error> {
+        if !self.wheel_hint_visible() {
+            return Ok(());
+        }
+        let reach = if self.width_ring_visible() {
+            self.ring_width().0 / 2.
+        } else {
+            0.
+        };
+        let label = tr(Key::OverlayWheelHint);
+        self.draw_pointer_badge(canvas, label, reach.max(8. * self.ui_scale()))
+    }
+    /// The ring's diameter as the view shows it, and the size its badge names.
+    fn ring_width(&self) -> (f64, f64) {
+        match self.editor.tool {
+            Tool::Eraser => (
+                self.editor.eraser_size * self.zoom_at_pointer(),
+                self.editor.eraser_size,
+            ),
+            Tool::Highlight => (self.editor.style.width * 5., self.editor.style.width * 5.),
+            _ => (self.editor.style.width, self.editor.style.width),
+        }
+    }
+    /// A dark badge holding `label`, below and right of the pointer at `reach` past it, kept
+    /// inside the frame.
+    fn draw_pointer_badge<C: Canvas>(
+        &self,
+        canvas: &mut C,
+        label: &str,
+        reach: f64,
+    ) -> Result<(), C::Error> {
+        let s = self.ui_scale();
+        let center = self.pointer;
+        let size = width_label_size(canvas.measure_text(label, 12. * s)?, s);
         let min = Point {
-            x: (center.x + width / 2. + 10. * s)
+            x: (center.x + reach + 10. * s)
                 .min(self.image.width as f64 - size.x)
                 .max(0.),
             y: (center.y + 10. * s)
@@ -315,7 +354,7 @@ impl Capture {
         };
         canvas.fill_round_rect(bounds, 4. * s, Ink::solid([25, 25, 25]))?;
         canvas.text(
-            &label,
+            label,
             Rect {
                 min: min
                     + Point {

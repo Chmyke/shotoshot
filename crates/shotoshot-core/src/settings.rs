@@ -257,6 +257,8 @@ pub struct Settings {
     pub board_visible: bool,
     /// The interface language: the system's, or one chosen in the menu.
     pub language: LanguageChoice,
+    /// The user has resized a tool with the wheel once: the editor stops hinting at it.
+    pub wheel_learned: bool,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -283,6 +285,7 @@ impl Default for Settings {
             },
             board_visible: false,
             language: LanguageChoice::Auto,
+            wheel_learned: false,
         }
     }
 }
@@ -331,6 +334,7 @@ impl Settings {
             Some("15") => 28,
             Some("16") => 29,
             Some("17") => 30,
+            Some("18") => 31,
             _ => 0,
         };
         if fields.len() != expected_len {
@@ -362,7 +366,7 @@ impl Settings {
             // its users' Alt+F arrow would be migrated away on every load.
             if !matches!(
                 version,
-                Some("11" | "12" | "13" | "14" | "15" | "16" | "17")
+                Some("11" | "12" | "13" | "14" | "15" | "16" | "17" | "18")
             ) && presentation.shape_shortcuts[0] == OLD_ARROW_SHORTCUT
                 && !presentation.shape_shortcuts.contains(&arrow)
             {
@@ -467,6 +471,11 @@ impl Settings {
         let language = fields
             .get(28)
             .map_or(LanguageChoice::Auto, |value| LanguageChoice::decode(value));
+        let wheel_learned = match fields.get(30) {
+            None | Some(&"0") => false,
+            Some(&"1") => true,
+            Some(_) => return Err("Invalid wheel hint setting".into()),
+        };
         Ok(Self {
             instant_shortcut,
             start_with_windows: match fields.get(18) {
@@ -514,6 +523,7 @@ impl Settings {
             board_shortcut,
             board_visible,
             language,
+            wheel_learned,
         })
     }
     /// A board shortcut needs Ctrl or Alt so that typing never toggles the board. A refusal
@@ -538,7 +548,7 @@ impl Settings {
             .join(",");
         let color = |[red, green, blue]: [u8; 3]| format!("{red:02x}{green:02x}{blue:02x}");
         format!(
-            "{HEADER}17\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{},{}\n{},{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n{}\n",
+            "{HEADER}18\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{},{}\n{},{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n{}\n{}\n",
             self.modifiers,
             self.key,
             u8::from(self.legacy_style),
@@ -576,7 +586,8 @@ impl Settings {
             u8::from(self.board_visible),
             self.capture_eraser_size,
             self.language.encode(),
-            self.presentation.pointer.encode()
+            self.presentation.pointer.encode(),
+            u8::from(self.wheel_learned)
         )
     }
     /// Changes only the editor's custom color, preserving the other stored preferences.
@@ -595,6 +606,12 @@ impl Settings {
     ) -> std::result::Result<(), String> {
         let mut current = Self::load_from(path)?;
         current.board_visible = visible;
+        current.write_to(path, replace)
+    }
+    /// Records that the user has resized with the wheel, preserving the other preferences.
+    pub fn save_wheel_learned_to(path: &Path, replace: Replace) -> std::result::Result<(), String> {
+        let mut current = Self::load_from(path)?;
+        current.wheel_learned = true;
         current.write_to(path, replace)
     }
     /// Merges only fields changed by an editor into the latest resident preferences.
@@ -694,13 +711,13 @@ mod tests {
             ..Default::default()
         };
         let encoded = settings.encode();
-        assert!(encoded.starts_with("shotoshot-settings-17\n"));
+        assert!(encoded.starts_with("shotoshot-settings-18\n"));
         let legacy = encoded.replacen("shotoshot-settings-", "shotshot-settings-", 1);
         assert_eq!(Settings::decode(&legacy).unwrap(), settings);
         let oldest = Settings::decode("shotshot-settings-1\n3\n65\n1\n43,3a,2f,e9\n").unwrap();
         assert_eq!((oldest.modifiers, oldest.key), (3, 65));
         assert!(Settings::decode(&encoded.replacen("shotoshot-", "other-", 1)).is_err());
-        assert!(Settings::decode(&encoded.replacen("-17\n", "-18\n", 1)).is_err());
+        assert!(Settings::decode(&encoded.replacen("-18\n", "-19\n", 1)).is_err());
     }
     #[test]
     fn board_fields_roundtrip_and_older_files_get_defaults() {
@@ -709,7 +726,7 @@ mod tests {
             .lines()
             .map(str::to_owned)
             .collect();
-        assert_eq!(fields.len(), 30);
+        assert_eq!(fields.len(), 31);
         assert_eq!(&fields[25..29], &["1,66", "0", "14", "auto"]);
         let mut old = fields[..25].to_vec();
         old[0] = "shotoshot-settings-13".into();
@@ -754,7 +771,7 @@ mod tests {
             ..Default::default()
         };
         let encoded = settings.encode();
-        assert!(encoded.starts_with("shotoshot-settings-17\n"));
+        assert!(encoded.starts_with("shotoshot-settings-18\n"));
         assert_eq!(encoded.lines().nth(28), Some("ja"));
         assert_eq!(
             Settings::decode(&encoded).unwrap().language,
@@ -781,7 +798,7 @@ mod tests {
         .lines()
         .map(str::to_owned)
         .collect();
-        assert_eq!(fields.len(), 30);
+        assert_eq!(fields.len(), 31);
         // Format 14 ends before the eraser size, 15 before the language.
         for (version, len, eraser) in [("14", 27, crate::ERASER_SIZE as u32), ("15", 28, 32)] {
             let mut old = fields[..len].to_vec();
@@ -795,8 +812,8 @@ mod tests {
             let mut too_long = fields[..=len].to_vec();
             too_long[0] = format!("shotoshot-settings-{version}");
             assert!(Settings::decode(&too_long.join("\n")).is_err(), "{version}");
-            // The migrated file is written as version 17.
-            assert!(migrated.encode().starts_with("shotoshot-settings-17\n"));
+            // The migrated file is written as version 18.
+            assert!(migrated.encode().starts_with("shotoshot-settings-18\n"));
         }
     }
     #[test]
@@ -838,6 +855,37 @@ mod tests {
         assert!(read.board_visible);
         assert_eq!(read.capture_stroke_width, 9, "other fields are kept");
         std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn the_learned_wheel_is_saved_alone_and_older_files_still_hint() {
+        let dir =
+            std::env::temp_dir().join(format!("shotoshot-wheel-learned-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.txt");
+        let settings = Settings {
+            capture_stroke_width: 9,
+            ..Default::default()
+        };
+        std::fs::write(&path, settings.encode()).unwrap();
+        assert!(!Settings::load_from(&path).unwrap().wheel_learned);
+        Settings::save_wheel_learned_to(&path, rename).unwrap();
+        let read = Settings::load_from(&path).unwrap();
+        assert!(read.wheel_learned);
+        assert_eq!(read.capture_stroke_width, 9, "other fields are kept");
+        assert_eq!(Settings::decode(&read.encode()).unwrap(), read);
+        std::fs::remove_dir_all(dir).unwrap();
+
+        let mut fields: Vec<_> = settings.encode().lines().map(String::from).collect();
+        fields[0] = "shotoshot-settings-17".into();
+        fields.pop();
+        let older = Settings::decode(&(fields.join("\n") + "\n")).unwrap();
+        assert!(
+            !older.wheel_learned,
+            "a version 17 file has never seen the hint"
+        );
+        fields[0] = "shotoshot-settings-18".into();
+        fields.push("2".into());
+        assert!(Settings::decode(&(fields.join("\n") + "\n")).is_err());
     }
     #[test]
     fn save_format_roundtrips_and_older_files_keep_png() {
@@ -977,7 +1025,7 @@ mod tests {
         old[0] = "shotoshot-settings-9".into();
         let migrated = Settings::decode(&old.join("\n")).unwrap().encode();
         let fields: Vec<_> = migrated.lines().collect();
-        assert_eq!(fields[0], "shotoshot-settings-17");
+        assert_eq!(fields[0], "shotoshot-settings-18");
         assert_eq!(&fields[20..22], &["0,145", "1"]);
         let mut custom: Vec<_> = fields.iter().map(|v| v.to_string()).collect();
         custom[20] = "6,122".into();
@@ -1062,7 +1110,7 @@ mod tests {
             .take(18)
             .collect::<Vec<_>>()
             .join("\n")
-            .replacen("settings-17", "settings-8", 1);
+            .replacen("settings-18", "settings-8", 1);
         assert!(Settings::decode(&old).unwrap().start_with_windows);
     }
     #[test]
@@ -1107,7 +1155,7 @@ mod tests {
         // Older formats have no size: the default.
         let older = Settings::default()
             .encode()
-            .replacen("settings-17", "settings-14", 1);
+            .replacen("settings-18", "settings-14", 1);
         let older = older.lines().take(27).collect::<Vec<_>>().join("\n") + "\n";
         assert_eq!(
             Settings::decode(&older).unwrap().capture_eraser_size,
@@ -1426,7 +1474,7 @@ mod tests {
             assert_eq!(
                 settings.encode(),
                 format!(
-                    "shotoshot-settings-17\n3\n65\n1\n43,3a,2f,e9\n{live_capture}\n3000\nffd340\ned4f5c\n4\n1,65\n1,82\n1,67\n5\n28\n-\n1\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n1,48,100,2,0,0,1,0,ed4f5c,409cff,0,1,-,0,240,60,0,-,0,0,240,2,-,0\n"
+                    "shotoshot-settings-18\n3\n65\n1\n43,3a,2f,e9\n{live_capture}\n3000\nffd340\ned4f5c\n4\n1,65\n1,82\n1,67\n5\n28\n-\n1\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n1,48,100,2,0,0,1,0,ed4f5c,409cff,0,1,-,0,240,60,0,-,0,0,240,2,-,0\n0\n"
                 )
             );
         }
@@ -1441,7 +1489,7 @@ mod tests {
             assert_eq!(
                 settings.encode(),
                 format!(
-                    "shotoshot-settings-17\n3\n65\n0\n43,3a,2f,e9\n1\n{duration}\n00aaff\nff0001\n4\n1,65\n1,82\n1,67\n5\n28\n-\n1\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n1,48,100,2,0,0,1,0,ed4f5c,409cff,0,1,-,0,240,60,0,-,0,0,240,2,-,0\n"
+                    "shotoshot-settings-18\n3\n65\n0\n43,3a,2f,e9\n1\n{duration}\n00aaff\nff0001\n4\n1,65\n1,82\n1,67\n5\n28\n-\n1\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n1,48,100,2,0,0,1,0,ed4f5c,409cff,0,1,-,0,240,60,0,-,0,0,240,2,-,0\n0\n"
                 )
             );
         }
@@ -1521,6 +1569,7 @@ mod tests {
             },
             board_visible: true,
             language: LanguageChoice::Fixed(Language::Ja),
+            wheel_learned: true,
         };
         assert_eq!(Settings::decode(&s.encode()).unwrap(), s);
     }

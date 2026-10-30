@@ -45,6 +45,7 @@ fn live_shapes_have_soft_corners_and_independently_sized_arrowheads() {
             start_attach: None,
             end_attach: None,
             head: true,
+            bend: Default::default(),
         },
     };
     layer.begin(false).unwrap();
@@ -95,6 +96,7 @@ fn fading_arrow_has_no_double_opacity_at_the_head_join() {
                 start_attach: None,
                 end_attach: None,
                 head: true,
+                bend: Default::default(),
             },
         };
         layer.begin(false).unwrap();
@@ -418,11 +420,11 @@ fn capture_restores_keyboard_and_lock_but_explicit_stop_cancels_restore() {
     p.suspend_capture().unwrap();
     p.suspend_capture().unwrap();
     assert!(!p.enabled.any());
-    assert!(p.keys.is_none() && p.lock.is_none());
+    assert!(p.keys.is_none());
     p.resume_capture().unwrap();
     assert!(p.enabled.keys);
     assert!(
-        p.keys.is_some() && p.lock.is_none(),
+        p.keys.as_ref().is_some_and(|keys| !keys.intercepts()),
         "a resumed diagram is a still ghost"
     );
     assert_eq!(p.preferences.input_offset, Some([1000, 2000]));
@@ -702,8 +704,8 @@ fn the_diagram_window_follows_the_shown_devices_and_the_size() {
     .unwrap();
     assert_eq!(shown(&p), (mouse, width_of(mouse, 1.)));
     assert!(
-        p.lock.is_none(),
-        "a still diagram has no lock to catch clicks"
+        !p.keys.as_ref().unwrap().intercepts(),
+        "a still diagram catches no click"
     );
 
     p.set_enabled(both).unwrap();
@@ -714,27 +716,8 @@ fn the_diagram_window_follows_the_shown_devices_and_the_size() {
     p.update_preferences(preferences).unwrap();
     assert_eq!(shown(&p), (full, width_of(full, 1.5)));
 
-    // During a move, the lock stays on its key place of the resized diagram.
-    p.start_move().unwrap();
-    let (mut diagram_at, mut lock_at) = (RECT::default(), RECT::default());
-    unsafe {
-        GetWindowRect(p.keys.as_ref().unwrap().hwnd(), &mut diagram_at).unwrap();
-        GetWindowRect(p.lock.as_ref().unwrap().hwnd(), &mut lock_at).unwrap();
-    }
-    let scale = shown(&p).1 as f64 / full.width() as f64;
-    assert_eq!(
-        (lock_at.left - diagram_at.left, lock_at.top - diagram_at.top),
-        (
-            (full.lock().0 as f64 * scale) as i32,
-            (full.lock().1 as f64 * scale) as i32
-        )
-    );
-    assert_eq!(
-        lock_at.right - lock_at.left,
-        (diagram::LOCK_SIZE as f64 * scale) as i32
-    );
     p.stop().unwrap();
-    assert!(p.keys.is_none() && p.lock.is_none());
+    assert!(p.keys.is_none());
 }
 
 #[test]
@@ -940,7 +923,7 @@ fn a_ghost_mouse_shows_only_the_pressed_button() {
 }
 
 #[test]
-fn moving_shows_the_whole_diagram_until_the_lock_enter_or_esc() {
+fn moving_shows_the_whole_diagram_until_switched_off_enter_or_esc() {
     let _com = crate::ComApartment::new().unwrap();
     let owner = plain_owner(w!("Diagram move test"));
     let state = Presentation::new(owner.0, PresentationSettings::default()).unwrap();
@@ -952,7 +935,6 @@ fn moving_shows_the_whole_diagram_until_the_lock_enter_or_esc() {
         p.keys.as_ref().unwrap().intercepts(),
         "the moved diagram is draggable"
     );
-    assert!(p.lock.is_some(), "its lock ends the move");
 
     let esc = |up| RAWKEYBOARD {
         VKey: VK_ESCAPE.0,
@@ -966,18 +948,16 @@ fn moving_shows_the_whole_diagram_until_the_lock_enter_or_esc() {
         !p.keys.as_ref().unwrap().intercepts(),
         "a still diagram lets every click through"
     );
-    assert!(p.lock.is_none());
     p.key_event(esc(true)).unwrap();
     p.key_event(esc(false)).unwrap();
-    assert!(
-        !p.moving && p.lock.is_none(),
-        "Esc outside a move changes nothing"
-    );
+    assert!(!p.moving, "Esc outside a move changes nothing");
 
+    // The Settings switch asks for the same command again to fix the diagram.
     p.command(106).unwrap();
-    let lock = p.lock.as_ref().unwrap().hwnd();
-    p.input_window_message(lock, WM_LBUTTONDOWN).unwrap();
-    assert!(!p.moving && p.lock.is_none(), "the lock ends the move");
+    assert!(p.moving);
+    p.command(106).unwrap();
+    assert!(!p.moving, "the switch ends the move");
+    assert!(p.enabled.keys, "the diagram stays where it was put");
 
     p.command(106).unwrap();
     p.stop().unwrap();

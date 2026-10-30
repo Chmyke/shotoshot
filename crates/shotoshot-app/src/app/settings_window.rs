@@ -1,30 +1,48 @@
-//! ROLE: The Windows host of the pointer effects window (`shotoshot_ui::pointer_panel`): its
-//! native window, painting, mouse, wheel and keys, and what each change does to the settings.
-//! OWNER: App holds one `PointerWindow` while it is open; closing drops the window, its timer
-//! and its painter, so the resident keeps nothing of it at rest.
-//! INVARIANTS: Every change applies to the live pointer at once; a change is saved when it is
-//! complete (a dragged slider saves on release).
+//! ROLE: The Windows host of the Settings window (`shotoshot_ui::settings_panel`): its native
+//! window, painting, mouse, wheel and keys, what each pointer change does to the settings, and
+//! which menu command each other change runs.
+//! OWNER: App holds one `SettingsUi`; the window lives only while it is open, so the resident
+//! keeps nothing of it at rest but the page it showed last.
+//! INVARIANTS: Every change applies at once; a pointer change is saved when it is complete (a
+//! dragged slider saves on release). The window opens on the screen of the pointer, inside its
+//! work area.
 use super::*;
 use crate::render::{D2dCanvas, Renderer};
 use crate::resources::OwnedWindow;
-use shotoshot_text::{Key, Text, tr_in};
-use shotoshot_ui::pointer_panel::{Action, KeyInput, Panel};
+use shotoshot_text::{Key, Language, tr_in};
+use shotoshot_ui::settings_panel::{
+    Action, Command, KeyInput, Keys, PAGES, Page, Panel, SHORTCUT_ROWS, ShortcutRow, Shown, Values,
+};
 
 /// The preview's frame timer.
 const PREVIEW_TIMER: usize = 1;
-const CLASS: PCWSTR = w!("Shotoshot.Pointer");
+const CLASS: PCWSTR = w!("Shotoshot.Settings");
 
-pub(super) struct PointerWindow {
+/// The Settings window while it is open, and the page it showed last.
+pub(super) struct SettingsUi {
+    window: Option<SettingsWindow>,
+    page: Page,
+}
+impl Default for SettingsUi {
+    fn default() -> Self {
+        Self {
+            window: None,
+            page: Page::General,
+        }
+    }
+}
+
+struct SettingsWindow {
     window: OwnedWindow,
-    pub panel: Panel,
+    panel: Panel,
     painter: Option<Renderer>,
     clock: std::time::Instant,
     /// A dragged slider changed the settings: the live pointer takes them at the next frame,
     /// not at every mouse move.
     pending: bool,
 }
-impl PointerWindow {
-    pub fn hwnd(&self) -> HWND {
+impl SettingsWindow {
+    fn hwnd(&self) -> HWND {
         self.window.0
     }
     fn now(&self) -> u64 {
@@ -48,16 +66,17 @@ impl PointerWindow {
             None => Renderer::software()?,
         };
         let language = self.panel.language;
-        self.panel.fit(|text, size| {
+        self.panel.fit(|text, size, style| {
             renderer
-                .measure_text_in(text, size as f32, language)
+                .measure_styled_text_in(text, size as f32, style, language)
                 .map(|extent| extent.x)
         })?;
         self.painter = Some(renderer);
-        self.place()
+        self.place(false)
     }
-    /// Sizes the window to the layout at its monitor's scale, kept inside the work area.
-    fn place(&self) -> Result<()> {
+    /// Sizes the window to the layout at its monitor's scale, inside that monitor's work area;
+    /// `center` places it in the middle of it, else it keeps its corner where it fits.
+    fn place(&self, center: bool) -> Result<()> {
         unsafe {
             let hwnd = self.hwnd();
             let dpi = GetDpiForWindow(hwnd);
@@ -85,8 +104,19 @@ impl PointerWindow {
             let work = monitor.rcWork;
             let width = bounds.right - bounds.left;
             let height = bounds.bottom - bounds.top;
-            let x = work.left + ((work.right - work.left - width) / 2).max(0);
-            let y = work.top + ((work.bottom - work.top - height) / 2).max(0);
+            let (x, y) = if center {
+                (
+                    work.left + ((work.right - work.left - width) / 2).max(0),
+                    work.top + ((work.bottom - work.top - height) / 2).max(0),
+                )
+            } else {
+                let mut now = RECT::default();
+                GetWindowRect(hwnd, &mut now)?;
+                (
+                    now.left.min(work.right - width).max(work.left),
+                    now.top.min(work.bottom - height).max(work.top),
+                )
+            };
             SetWindowPos(
                 hwnd,
                 None,
@@ -128,37 +158,82 @@ impl PointerWindow {
     }
 }
 
+/// One shortcut as keycaps, in `language`.
+fn keys_in(shortcut: Option<crate::settings::Shortcut>, in_use: bool, language: Language) -> Keys {
+    match shortcut {
+        Some(s) if s.key != 0 => Keys {
+            caps: setup::key_label_in(s.modifiers, s.key, language)
+                .split(" + ")
+                .map(str::to_string)
+                .collect(),
+            in_use,
+        },
+        _ => Keys::default(),
+    }
+}
+
 impl App {
-    /// The three pointer shortcuts as the window writes them, "(in use)" when another program
-    /// holds one.
-    fn pointer_shortcut_labels(&self) -> [String; 3] {
-        let pointer = &self.settings.presentation.pointer;
+    /// What the General, Shortcuts and Presentation pages show now, in `language`.
+    fn settings_values(&self, language: Language) -> Result<Values> {
         let conflicts = self
             .presentation
             .as_ref()
+            .map(|p| p.borrow().shortcut_conflicts())
+            .unwrap_or_default();
+        let pointer_conflicts = self
+            .presentation
+            .as_ref()
             .map_or([false; 3], |p| p.borrow().pointer_conflicts);
-        let language = shotoshot_text::language();
-        pointer
-            .shortcuts()
-            .into_iter()
-            .zip(conflicts)
-            .map(|(shortcut, conflict)| {
-                shortcut.map_or_else(String::new, |s| {
-                    let keys = shortcut_text(s.modifiers, s.key);
-                    if conflict {
-                        Text::with_in(language, Key::MenuShortcutInUse, &[("shortcut", &keys)])
-                            .to_string()
-                    } else {
-                        keys
-                    }
-                })
-            })
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap_or_default()
+        let enabled = self.enabled();
+        let s = &self.settings;
+        let pointer = s.presentation.pointer.shortcuts();
+        let shortcut = |row: ShortcutRow| match row {
+            ShortcutRow::Capture => keys_in(
+                Some(crate::settings::Shortcut {
+                    modifiers: s.modifiers,
+                    key: s.key,
+                }),
+                !self.hotkey.active(),
+                language,
+            ),
+            ShortcutRow::Instant => keys_in(
+                Some(s.instant_shortcut),
+                !self.instant.hotkey.active(),
+                language,
+            ),
+            ShortcutRow::Board => keys_in(
+                Some(s.board_shortcut),
+                !self.board_hotkey.active(),
+                language,
+            ),
+            ShortcutRow::Arrow | ShortcutRow::Rectangle | ShortcutRow::Ellipse => {
+                let index = row as usize - ShortcutRow::Arrow as usize;
+                keys_in(
+                    Some(s.presentation.shape_shortcuts[index]),
+                    conflicts[index],
+                    language,
+                )
+            }
+            ShortcutRow::ShowClick | ShortcutRow::Spotlight | ShortcutRow::Loupe => {
+                let index = row.pointer_index().unwrap_or(0);
+                keys_in(pointer[index], pointer_conflicts[index], language)
+            }
+        };
+        Ok(Values {
+            startup: crate::startup::enabled()?,
+            live: s.live_capture,
+            shortcuts: SHORTCUT_ROWS.map(shortcut),
+            input_scale: s.presentation.input_scale,
+            duration_ms: s.presentation.duration_ms,
+            moving_input: self.moving_input(),
+            board: s.board_visible,
+            keyboard: enabled.keys,
+            mouse: enabled.mouse,
+            temporary_shapes: enabled.shapes,
+        })
     }
-    pub(super) fn open_pointer_window(&mut self, owner: HWND) -> Result<()> {
-        if let Some(window) = &self.pointer_window {
+    pub(super) fn open_settings_window(&mut self, owner: HWND) -> Result<()> {
+        if let Some(window) = &self.settings_ui.window {
             unsafe {
                 let _ = ShowWindow(window.hwnd(), SW_RESTORE);
                 let _ = SetForegroundWindow(window.hwnd());
@@ -173,15 +248,16 @@ impl App {
             self.settings.presentation.pointer.clone(),
             self.settings.presentation.halo_color,
             self.halo_on(),
+            self.settings_values(language)?,
             language,
         );
         panel.loupe_on = self.enabled().loupe;
-        panel.shortcuts = self.pointer_shortcut_labels();
-        let title = format!("{} - Shotoshot", tr_in(language, Key::PointerTitle));
+        panel.page = self.settings_ui.page;
+        panel.focus = shotoshot_ui::settings_panel::Item::Nav(panel.page);
         unsafe {
             let instance = GetModuleHandleW(None)?;
             if RegisterClassW(&WNDCLASSW {
-                lpfnWndProc: Some(pointer_proc),
+                lpfnWndProc: Some(settings_proc),
                 hInstance: instance.into(),
                 lpszClassName: CLASS,
                 hCursor: LoadCursorW(None, IDC_ARROW)?,
@@ -191,12 +267,13 @@ impl App {
             {
                 return Err(Error::from_thread());
             }
+            // Created at the pointer: its monitor is the one the window then centres on.
             let mut cursor = POINT::default();
             let _ = GetCursorPos(&mut cursor);
             let window = OwnedWindow(CreateWindowExW(
                 WS_EX_LEFT,
                 CLASS,
-                &HSTRING::from(title),
+                &HSTRING::from(title(language)),
                 WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
                 cursor.x,
                 cursor.y,
@@ -214,7 +291,7 @@ impl App {
                 (&dark as *const i32).cast(),
                 std::mem::size_of_val(&dark) as u32,
             );
-            let mut opened = PointerWindow {
+            let mut opened = SettingsWindow {
                 window,
                 panel,
                 painter: None,
@@ -222,17 +299,23 @@ impl App {
                 pending: false,
             };
             opened.fit()?;
+            opened.place(true)?;
             if SetTimer(Some(opened.hwnd()), PREVIEW_TIMER, 16, None) == 0 {
                 return Err(Error::from_thread());
             }
             let _ = ShowWindow(opened.hwnd(), SW_SHOW);
             let _ = SetForegroundWindow(opened.hwnd());
-            self.pointer_window = Some(opened);
+            self.settings_ui.window = Some(opened);
         }
         Ok(())
     }
-    pub(super) fn close_pointer_window(&mut self) {
-        if let Some(window) = self.pointer_window.take() {
+    fn close_settings_window(&mut self) {
+        // The switch that fixes the keyboard and the mouse goes with the window.
+        if let Some(presentation) = &self.presentation {
+            let _ = presentation.borrow_mut().end_move();
+        }
+        if let Some(window) = self.settings_ui.window.take() {
+            self.settings_ui.page = window.panel.page;
             unsafe {
                 let _ = KillTimer(Some(window.hwnd()), PREVIEW_TIMER);
             }
@@ -246,15 +329,22 @@ impl App {
             .map(|presentation| presentation.borrow().enabled)
             .unwrap_or_default()
     }
-    /// Whether the halo is on screen now.
+    /// Whether the keyboard and the mouse on screen can be dragged now.
+    fn moving_input(&self) -> bool {
+        self.presentation
+            .as_ref()
+            .is_some_and(|presentation| presentation.borrow().moving)
+    }
+    /// Whether the pointer effects are on screen now.
     fn halo_on(&self) -> bool {
         self.enabled().halo
     }
-    /// Turns the halo and the loupe on or off as the open window shows them, and the menu with
-    /// them.
+    /// Turns the pointer effects and the loupe on or off as the open window shows them, and
+    /// the menu with them.
     fn apply_halo(&mut self) -> Result<()> {
         let Some((halo, loupe)) = self
-            .pointer_window
+            .settings_ui
+            .window
             .as_ref()
             .map(|window| (window.panel.halo_on, window.panel.loupe_on))
         else {
@@ -264,7 +354,7 @@ impl App {
         if (halo, loupe) != (now.halo, now.loupe) {
             if self.worker_busy() {
                 // The menu refuses the same switches now; the window shows what stays.
-                if let Some(window) = &mut self.pointer_window {
+                if let Some(window) = &mut self.settings_ui.window {
                     window.panel.halo_on = now.halo;
                     window.panel.loupe_on = now.loupe;
                 }
@@ -283,22 +373,43 @@ impl App {
         }
         Ok(())
     }
-    /// Shows in the open window whether the halo and the loupe are on, after the menu or a
-    /// shortcut switched them.
+    /// Shows in the open window what is on screen, after the menu or a shortcut switched it,
+    /// and whether the keyboard still moves (Enter or Esc fix it).
     pub(super) fn refresh_pointer_halo(&mut self) {
         let now = self.enabled();
-        if let Some(window) = &mut self.pointer_window
-            && (window.panel.halo_on, window.panel.loupe_on) != (now.halo, now.loupe)
-        {
-            window.panel.halo_on = now.halo;
-            window.panel.loupe_on = now.loupe;
-            invalidate(window.hwnd());
+        let moving = self.moving_input();
+        let board = self.settings.board_visible;
+        if let Some(window) = &mut self.settings_ui.window {
+            let panel = &mut window.panel;
+            let shown = (
+                panel.halo_on,
+                panel.loupe_on,
+                panel.values.moving_input,
+                panel.values.board,
+                panel.values.keyboard,
+                panel.values.mouse,
+                panel.values.temporary_shapes,
+            );
+            if shown
+                != (
+                    now.halo, now.loupe, moving, board, now.keys, now.mouse, now.shapes,
+                )
+            {
+                panel.halo_on = now.halo;
+                panel.loupe_on = now.loupe;
+                panel.values.moving_input = moving;
+                panel.values.board = board;
+                panel.values.keyboard = now.keys;
+                panel.values.mouse = now.mouse;
+                panel.values.temporary_shapes = now.shapes;
+                invalidate(window.hwnd());
+            }
         }
     }
-    /// Applies the panel's settings to the live pointer, and saves them when `save`.
+    /// Applies the panel's pointer settings to the live pointer, and saves them when `save`.
     fn apply_pointer(&mut self, save: bool) -> Result<()> {
         self.apply_halo()?;
-        let Some(window) = &self.pointer_window else {
+        let Some(window) = &self.settings_ui.window else {
             return Ok(());
         };
         let mut next = self.settings.clone();
@@ -313,26 +424,41 @@ impl App {
                 .borrow_mut()
                 .update_preferences(self.settings.presentation.clone())?;
         }
-        self.refresh_pointer_shortcuts();
         Ok(())
     }
-    /// Shows the current pointer shortcuts and their conflicts in the open window.
-    pub(super) fn refresh_pointer_shortcuts(&mut self) {
-        let labels = self.pointer_shortcut_labels();
-        if let Some(window) = &mut self.pointer_window {
-            window.panel.settings.click_shortcut =
-                self.settings.presentation.pointer.click_shortcut;
-            window.panel.settings.spotlight_shortcut =
-                self.settings.presentation.pointer.spotlight_shortcut;
-            window.panel.settings.loupe_shortcut =
-                self.settings.presentation.pointer.loupe_shortcut;
-            if window.panel.shortcuts != labels {
-                window.panel.shortcuts = labels;
-                // A longer shortcut may need a wider field.
-                let _ = window.fit();
+    /// Shows the current settings in the open window: after a command, a recorded shortcut or
+    /// a change of language from the menu.
+    pub(super) fn refresh_settings_window(&mut self) -> Result<()> {
+        let Some(window) = &self.settings_ui.window else {
+            return Ok(());
+        };
+        let hwnd = window.hwnd();
+        let language = shotoshot_text::language();
+        let values = self.settings_values(language)?;
+        let pointer = self.settings.presentation.pointer.clone();
+        let Some(window) = &mut self.settings_ui.window else {
+            return Ok(());
+        };
+        let relabel = window.panel.language != language;
+        // The pointer shortcuts live in the settings, recorded by the shortcut window.
+        window.panel.settings.click_shortcut = pointer.click_shortcut;
+        window.panel.settings.spotlight_shortcut = pointer.spotlight_shortcut;
+        window.panel.settings.loupe_shortcut = pointer.loupe_shortcut;
+        if window.panel.values != values || relabel {
+            window.panel.values = values;
+            window.panel.language = language;
+            // Another language or a longer shortcut may need a wider window.
+            window.fit()?;
+            if relabel {
+                unsafe {
+                    SetWindowTextW(hwnd, &HSTRING::from(title(language)))?;
+                }
             }
-            invalidate(window.hwnd());
+        } else {
+            window.panel.arrange();
         }
+        invalidate(hwnd);
+        Ok(())
     }
     /// Saves the shortcut recorded for pointer row `index` (0 shows a click, 1 holds the
     /// spotlight, 2 shows the loupe). It needs Ctrl or Alt and must not be another Shotoshot
@@ -370,11 +496,6 @@ impl App {
             self.setup_ui.error = self.setup_ui.text(Key::SetupUsedByShotoshot);
             return Ok(());
         }
-        // A shortcut is a change made in the window too: what it sets is meant to be seen.
-        if let Some(window) = &mut self.pointer_window {
-            window.panel.halo_on = true;
-        }
-        self.apply_halo()?;
         let mut next = self.settings.clone();
         *next.presentation.pointer.shortcut_mut(index) = Some(shortcut);
         if self.persist_preferences {
@@ -386,23 +507,96 @@ impl App {
                 .borrow_mut()
                 .update_preferences(self.settings.presentation.clone())?;
         }
-        self.close_setup(hwnd)?;
-        self.refresh_pointer_shortcuts();
-        Ok(())
+        self.close_setup(hwnd)
     }
-    fn pointer_action(&mut self, owner: HWND, action: Action) -> Result<()> {
+    /// Runs a change the window asks for: most are the menu's own commands.
+    fn settings_command(&mut self, owner: HWND, command: Command) -> Result<()> {
+        use crate::presentation::menu as commands;
+        let menu_id = |all: &[u32], value: u32, first: u32| {
+            all.iter()
+                .position(|v| *v == value)
+                .map(|index| first + index as u32)
+        };
+        match command {
+            Command::Startup => self.run_menu_command(owner, 4)?,
+            Command::Live => self.run_menu_command(owner, 5)?,
+            Command::EditShortcut(row) => {
+                let target = match row {
+                    ShortcutRow::Capture => return self.show_setup(owner),
+                    ShortcutRow::Instant => setup::ShortcutTarget::Instant,
+                    ShortcutRow::Board => setup::ShortcutTarget::Board,
+                    ShortcutRow::Arrow => setup::ShortcutTarget::Arrow,
+                    ShortcutRow::Rectangle => setup::ShortcutTarget::Rectangle,
+                    ShortcutRow::Ellipse => setup::ShortcutTarget::Ellipse,
+                    ShortcutRow::ShowClick => setup::ShortcutTarget::ShowClick,
+                    ShortcutRow::Spotlight => setup::ShortcutTarget::Spotlight,
+                    ShortcutRow::Loupe => setup::ShortcutTarget::Loupe,
+                };
+                self.show_shortcut_setup(owner, target)?;
+            }
+            Command::InputScale(value) => {
+                if let Some(id) = menu_id(&crate::settings::INPUT_SCALES, value, 141) {
+                    self.run_menu_command(owner, id)?;
+                }
+            }
+            Command::Duration(ms) => {
+                let durations = [121, 122, 123].map(|id| commands::duration_ms(id).unwrap_or(0));
+                if let Some(id) = menu_id(&durations, ms, 121) {
+                    self.run_menu_command(owner, id)?;
+                }
+            }
+            Command::PresentationDefaults => {
+                let defaults = crate::settings::PresentationSettings::default();
+                for (all, value, first) in [
+                    (
+                        crate::settings::INPUT_SCALES.to_vec(),
+                        defaults.input_scale,
+                        141,
+                    ),
+                    (
+                        [121, 122, 123]
+                            .map(|id| commands::duration_ms(id).unwrap_or(0))
+                            .to_vec(),
+                        defaults.duration_ms,
+                        121,
+                    ),
+                ] {
+                    if let Some(id) = menu_id(&all, value, first) {
+                        self.run_menu_command(owner, id)?;
+                    }
+                }
+            }
+            // The window stays open: its switch fixes the keyboard and the mouse again.
+            Command::MoveInput => self.run_menu_command(owner, 106)?,
+            Command::Show(shown) => {
+                let id = match shown {
+                    Shown::Board => 9,
+                    Shown::PointerEffects => 101,
+                    Shown::Magnifier => 107,
+                    Shown::Keyboard => 103,
+                    Shown::Mouse => 104,
+                    Shown::TemporaryShapes => 102,
+                };
+                self.run_menu_command(owner, id)?;
+            }
+        }
+        if let Some(menu) = &self.menu {
+            menu.update(self.menu_values()?)?;
+        }
+        self.refresh_settings_window()
+    }
+    fn settings_action(&mut self, owner: HWND, action: Action) -> Result<()> {
         match action {
-            Action::None => {}
-            Action::Repaint => {}
+            Action::None | Action::Repaint => {}
             Action::Changed { save: false, .. } => {
                 self.apply_halo()?;
-                if let Some(window) = &mut self.pointer_window {
+                if let Some(window) = &mut self.settings_ui.window {
                     window.pending = true;
                 }
             }
             Action::Changed { save, sound } => {
                 self.apply_pointer(save)?;
-                if let Some(window) = &mut self.pointer_window {
+                if let Some(window) = &mut self.settings_ui.window {
                     window.pending = false;
                 }
                 if sound {
@@ -410,23 +604,16 @@ impl App {
                     crate::presentation::play_click_sound(pointer.sound, pointer.volume);
                 }
             }
-            Action::EditShortcut(index) => {
-                let target = match index {
-                    0 => setup::ShortcutTarget::ShowClick,
-                    1 => setup::ShortcutTarget::Spotlight,
-                    _ => setup::ShortcutTarget::Loupe,
-                };
-                self.show_shortcut_setup(owner, target)?;
-            }
-            Action::Close => self.close_pointer_window(),
+            Action::Command(command) => self.settings_command(owner, command)?,
+            Action::Close => self.close_settings_window(),
         }
-        if let Some(window) = &self.pointer_window {
+        if let Some(window) = &self.settings_ui.window {
             invalidate(window.hwnd());
         }
         Ok(())
     }
-    /// A message of the pointer window; None lets the system handle it.
-    fn pointer_message(
+    /// A message of the Settings window; None lets the system handle it.
+    fn settings_message(
         &mut self,
         owner: HWND,
         hwnd: HWND,
@@ -434,7 +621,7 @@ impl App {
         w: WPARAM,
         l: LPARAM,
     ) -> Result<Option<LRESULT>> {
-        let Some(window) = &mut self.pointer_window else {
+        let Some(window) = &mut self.settings_ui.window else {
             return Ok(None);
         };
         if window.hwnd() != hwnd {
@@ -532,19 +719,24 @@ impl App {
                         SWP_NOZORDER | SWP_NOACTIVATE,
                     );
                 }
-                let _ = window.place();
+                let _ = window.place(false);
                 invalidate(hwnd);
                 return Ok(Some(LRESULT(0)));
             }
             WM_CLOSE => Action::Close,
             _ => return Ok(None),
         };
-        self.pointer_action(owner, action)?;
+        self.settings_action(owner, action)?;
         Ok(Some(LRESULT(0)))
     }
 }
 
-unsafe extern "system" fn pointer_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT {
+/// The window's title in `language`.
+fn title(language: Language) -> String {
+    format!("{} - Shotoshot", tr_in(language, Key::SettingsTitle))
+}
+
+unsafe extern "system" fn settings_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT {
     // PITFALL: No unwind may cross the system callback. The App lives behind the owner window;
     // a message that arrives while App is busy is left to the system.
     let outcome = std::panic::catch_unwind(|| unsafe {
@@ -557,7 +749,7 @@ unsafe extern "system" fn pointer_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARA
         if !app.is_null()
             && let Ok(mut app) = (*app).try_borrow_mut()
         {
-            match app.pointer_message(owner, hwnd, msg, w, l) {
+            match app.settings_message(owner, hwnd, msg, w, l) {
                 Ok(Some(value)) => return value,
                 Ok(None) => {}
                 Err(error) => {
@@ -571,11 +763,33 @@ unsafe extern "system" fn pointer_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARA
     outcome.unwrap_or(LRESULT(0))
 }
 
-/// The window as English shows it with lively choices, for the rendered previews.
+/// The values the rendered previews show: the shortcuts as installed, one held elsewhere.
+fn preview_values(language: Language) -> Values {
+    use crate::settings::Shortcut;
+    let shortcut = |modifiers, key| Some(Shortcut { modifiers, key });
+    let shortcuts = [
+        keys_in(shortcut(0, 0x2c), false, language),
+        keys_in(shortcut(0, 0x91), false, language),
+        keys_in(shortcut(1, 0x42), false, language),
+        keys_in(shortcut(1, 0x41), false, language),
+        keys_in(shortcut(1, 0x52), true, language),
+        keys_in(shortcut(1, 0x43), false, language),
+        keys_in(shortcut(1, 0x4b), false, language),
+        Keys::default(),
+        Keys::default(),
+    ];
+    Values {
+        shortcuts,
+        ..Values::default()
+    }
+}
+
+/// Every page as English shows it with lively choices, for the rendered previews.
 pub(super) fn preview() -> Result<()> {
     use shotoshot_core::pointer::{
         ClickStyle, HaloShape, PointerSettings, SpotlightShape, TrailStyle,
     };
+    let language = Language::En;
     let mut panel = Panel::new(
         PointerSettings {
             halo_shape: HaloShape::Disc,
@@ -589,72 +803,94 @@ pub(super) fn preview() -> Result<()> {
         },
         [255, 211, 64],
         true,
-        shotoshot_text::Language::En,
+        preview_values(language),
+        language,
     );
     let renderer = Renderer::software()?;
-    panel.fit(|text, size| {
+    panel.fit(|text, size, style| {
         renderer
-            .measure_text_in(text, size as f32, shotoshot_text::Language::En)
+            .measure_styled_text_in(text, size as f32, style, language)
             .map(|extent| extent.x)
     })?;
-    // A fixed moment of the preview animation: the same picture on every run.
-    for now in (0..2100).step_by(16) {
-        panel.tick(now);
-    }
-    let size = panel.layout.size;
-    let (width, height) = (size.x as u32, size.y as u32);
-    let image = paint_image(width, height, |dc| unsafe {
-        renderer.dc.BindDC(
-            dc,
-            &RECT {
-                right: width as i32,
-                bottom: height as i32,
-                ..Default::default()
-            },
+    for (page, name) in PAGES
+        .into_iter()
+        .zip(["general", "shortcuts", "presentation", "pointer"])
+    {
+        panel.show_page(page);
+        // A fixed moment of the preview animation: the same picture on every run.
+        for now in (0..2100).step_by(16) {
+            panel.tick(now);
+        }
+        let size = panel.layout.size;
+        let (width, height) = (size.x as u32, size.y as u32);
+        let image = paint_image(width, height, |dc| unsafe {
+            renderer.dc.BindDC(
+                dc,
+                &RECT {
+                    right: width as i32,
+                    bottom: height as i32,
+                    ..Default::default()
+                },
+            )?;
+            renderer.dc.BeginDraw();
+            let painted = D2dCanvas::new(&renderer, &renderer.dc)
+                .and_then(|mut canvas| panel.paint(&mut canvas, 1., 2100));
+            painted.and(renderer.dc.EndDraw(None, None))
+        })?;
+        save_png(
+            &image,
+            &std::path::Path::new("target").join(format!("shotoshot-settings-{name}.png")),
         )?;
-        renderer.dc.BeginDraw();
-        let painted = D2dCanvas::new(&renderer, &renderer.dc)
-            .and_then(|mut canvas| panel.paint(&mut canvas, 1., 2100));
-        painted.and(renderer.dc.EndDraw(None, None))
-    })?;
-    save_png(
-        &image,
-        &std::path::Path::new("target").join("shotoshot-pointer-effects.png"),
-    )
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use shotoshot_core::pointer::PointerSettings;
-    use shotoshot_text::Language;
 
     #[test]
-    fn pointer_panel_fits_every_language() {
+    fn settings_window_fits_every_language() {
         let _com = crate::ComApartment::new().unwrap();
         let renderer = Renderer::software().unwrap();
         for language in Language::ALL {
-            let mut panel = Panel::new(PointerSettings::default(), [255, 211, 64], true, language);
-            // The longest shortcut the field may show.
-            panel.shortcuts = [
-                shortcut_text(15, 0x7b),
-                shortcut_text(15, 0x2e),
-                shortcut_text(15, 0x7b),
-            ];
-            let measure = |text: &str, size: f64| {
+            let mut values = preview_values(language);
+            // The longest shortcuts a row may show.
+            for keys in values.shortcuts.iter_mut() {
+                *keys = keys_in(
+                    Some(crate::settings::Shortcut {
+                        modifiers: 15,
+                        key: 0x7b,
+                    }),
+                    true,
+                    language,
+                );
+            }
+            let mut panel = Panel::new(
+                PointerSettings::default(),
+                [255, 211, 64],
+                true,
+                values,
+                language,
+            );
+            let measure = |text: &str, size: f64, style: shotoshot_ui::TextStyle| {
                 renderer
-                    .measure_text_in(text, size as f32, language)
+                    .measure_styled_text_in(text, size as f32, style, language)
                     .map(|extent| extent.x)
             };
             panel.fit(measure).unwrap();
-            assert_eq!(
-                panel.overflows(measure).unwrap(),
-                Vec::<String>::new(),
-                "{language:?}"
-            );
+            for page in PAGES {
+                panel.show_page(page);
+                assert_eq!(
+                    panel.overflows(measure).unwrap(),
+                    Vec::<String>::new(),
+                    "{language:?} {page:?}"
+                );
+            }
             let size = panel.layout.size;
             // A 1366 x 768 screen at 100 %, or a 1920 x 1080 one at 150 %, keeps it whole.
-            assert!(size.x <= 1280. && size.y <= 640., "{language:?} {size:?}");
+            assert!(size.x <= 1280. && size.y <= 680., "{language:?} {size:?}");
         }
     }
 }

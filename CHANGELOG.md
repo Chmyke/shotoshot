@@ -2,6 +2,18 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.25 · 2026-10-30
+
+- Arrows and lines can now bend: drag the blue dot in their middle, right after drawing or once selected, and they curve through it, head and all. Bring it back near the straight line and it snaps straight again.
+- The tray menu slims down to what you actually click: capture, board and the presentation switches, with every shortcut drawn as real keys.
+- The tray menu now lists the Arrow, Rectangle and Ellipse shortcuts under Temporary shapes: a click lets you pick new keys on the spot, no detour through Settings.
+- Everything you set once moves to a new Settings window: general options, all your shortcuts in one list, presentation sizes and the pointer effects.
+- Pointer effects become tidy cards, one per effect with its own switch, so you only see the settings you are actually tweaking.
+- Moving the on-screen keyboard is a switch in Settings now: no more padlock, and Settings stays open while you place it.
+- Didn't know the mouse wheel sets the thickness of arrows, shapes, pen and text? Neither did one of our testers: a small label next to the pointer now says so, until you've used it once.
+- A shortcut another app has grabbed now turns orange, instead of hiding behind a tiny "(in use)".
+- Settings got a makeover: clearer type, an icon on every row, and short hints where a label was not enough. In the tray menu, Quit is now the power button and Clear board a bin, so nobody mistakes it for a rake anymore.
+
 ## 0.3.24 · 2026-10-29
 
 - On Linux with labwc (Raspberry Pi OS), the Magnifier joins the tray menu: tick it and the screen under your pointer grows, drawn by labwc itself, so recordings see it too.

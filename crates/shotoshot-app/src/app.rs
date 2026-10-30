@@ -9,9 +9,9 @@ mod events;
 mod input;
 mod instant;
 mod notice;
-mod pointer_window;
 mod pulse;
 mod recall;
+mod settings_window;
 mod warm_probe;
 use notice::Notice;
 mod runtime;
@@ -114,8 +114,8 @@ struct App {
     menu: Option<tray_menu::Popup>,
     /// When a press on the notification icon last closed the menu.
     menu_closed_on_icon: Option<std::time::Instant>,
-    /// The pointer effects window, while it is open.
-    pointer_window: Option<pointer_window::PointerWindow>,
+    /// The Settings window, while it is open, and the page it showed last.
+    settings_ui: settings_window::SettingsUi,
     /// The next `BOARD_TIMER` bakes even while every screen shows our pictures: the displays
     /// changed, and the pictures must be baked again for them.
     board_rebake_forced: bool,
@@ -424,7 +424,8 @@ impl App {
                 PostQuitMessage(0);
             }
         }
-        Ok(())
+        // The Settings window shows the shortcut as recorded, or as it stays.
+        self.refresh_settings_window()
     }
     fn save_shape_shortcut(
         &mut self,
@@ -578,6 +579,7 @@ impl App {
         session.capture.custom_color = self.settings.last_custom_color;
         session.capture.editor.style.width = self.settings.capture_stroke_width as f64;
         session.capture.editor.eraser_size = self.settings.capture_eraser_size as f64;
+        session.capture.wheel_hint = !self.settings.wheel_learned;
         let mut pointer = POINT::default();
         if unsafe { GetCursorPos(&mut pointer) }.is_ok() {
             session.capture.pointer = Point {
@@ -704,6 +706,9 @@ impl App {
             let _ = KillTimer(Some(hwnd), BRUSH_TIMER);
         }
         if let Err(error) = self.persist_custom_color() {
+            report(hwnd, &error);
+        }
+        if let Err(error) = self.persist_wheel_learned() {
             report(hwnd, &error);
         }
         if let Some(s) = &mut self.session {
@@ -862,6 +867,18 @@ impl App {
             self.settings.last_custom_color = session.capture.custom_color;
             session.capture.custom_color_changed = false;
         }
+        Ok(())
+    }
+    /// Remembers, once, that the user has turned the wheel, so no editor hints at it again.
+    fn persist_wheel_learned(&mut self) -> Result<()> {
+        if self.settings.wheel_learned || self.session.as_ref().is_none_or(|s| s.capture.wheel_hint)
+        {
+            return Ok(());
+        }
+        if self.persist_preferences {
+            Settings::save_wheel_learned().map_err(crate::settings::unsaved)?;
+        }
+        self.settings.wheel_learned = true;
         Ok(())
     }
 }

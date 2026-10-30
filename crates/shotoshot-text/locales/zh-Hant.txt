@@ -3,6 +3,7 @@
 language.menu = 語言
 
 tooltip.with_shortcut = {label} · {shortcut}
+tooltip.with_shortcut_and_wheel = {label} · {shortcut} · 滾輪調整大小
 
 key.ctrl == Ctrl
 key.shift == Shift
@@ -73,6 +74,7 @@ capture.edit_dimensions = 編輯尺寸 · 運算式：800+20, 1920/2
 overlay.select_area = 選取區域
 overlay.cancel = {shortcut} 取消
 overlay.stroke_width == {width} px
+overlay.wheel_hint = 滾輪調整大小
 magnifier.pick = 按一下取色 · {shortcut}
 picker.apply = 按一下外部套用 · {shortcut} 取消
 
@@ -84,7 +86,7 @@ menu.edit_board = 編輯 Board
 menu.show_board = 顯示 Board
 menu.clear_board = 清除 Board
 menu.presentation = 簡報
-menu.pointer_halo = 指標光暈
+menu.board = ==
 menu.pointer_effects = 指標效果
 menu.magnifier = 放大鏡
 menu.keyboard = 鍵盤
@@ -93,20 +95,13 @@ menu.move_input = 移動鍵盤和滑鼠
 menu.input_size = 鍵盤與滑鼠大小
 menu.temporary_shapes = 暫時圖形
 menu.shape_duration = 圖形顯示時間
-menu.shortcuts = 快速鍵 · 按一下以變更
 menu.capture = 擷取
 menu.instant_screenshot = 即時擷取畫面
-menu.board == Board
-menu.options = 選項
 menu.live_capture_default = 預設即時擷取
 menu.start_with_windows = 隨 Windows 啟動
 menu.quit = 結束 Shotoshot
-menu.duration_1 = 1 秒
-menu.duration_3 = 3 秒
-menu.duration_5 = 5 秒
 menu.seconds = {n} 秒
 menu.percent = {n}%
-menu.shortcut_in_use = {shortcut}（使用中）
 menu.language_auto = Windows 語言
 menu.language_system = 系統語言
 
@@ -154,8 +149,8 @@ notice.saved = 影像已儲存。
 notice.searching = 正在搜尋 Google…
 notice.preferences = 設定已儲存。
 notice.saved_editable = 可編輯影像已儲存，包含整個畫面。
-notice.instant_unavailable = 即時擷取快速鍵無法使用。請在 Shotoshot 選單中變更。
-notice.board_unavailable = Board 快速鍵無法使用。請在 Shotoshot 選單中變更。
+notice.instant_unavailable = 即時擷取快速鍵無法使用。請在 Shotoshot 設定中變更。
+notice.board_unavailable = Board 快速鍵無法使用。請在 Shotoshot 設定中變更。
 notice.shortcuts_unavailable = 快速鍵無法使用：{names}
 notice.names_separator = {before}、{after}
 notice.screenshot_failed = 擷取畫面失敗：檔案未儲存
@@ -226,9 +221,7 @@ installer.language.auto = Windows 語言
 installer.shoto_file = 可編輯的 Shotoshot 影像
 
 # Pointer effects
-pointer.title = 指標效果
 pointer.section_halo = 光暈
-pointer.show_halo = 顯示光暈
 pointer.section_trail = 軌跡
 pointer.section_clicks = 點擊
 pointer.section_spotlight = 聚光燈
@@ -252,10 +245,7 @@ pointer.darkness = 暗度
 pointer.hide_moving = 移動時隱藏
 pointer.hold = 按住時顯示
 pointer.zoom = 放大倍率
-pointer.show_loupe = 顯示放大鏡
-pointer.shortcut = 快速鍵
 pointer.off = 關閉
-pointer.hidden = 隱藏
 pointer.disc = 圓盤
 pointer.ring = 圓環
 pointer.neon = 霓虹
@@ -285,6 +275,13 @@ pointer.zoom_4 == 4×
 pointer.small = 小
 pointer.medium_size = 中
 pointer.large = 大
-pointer.no_shortcut = 無
 pointer.reset = 還原預設值
-pointer.undo = 復原變更
+
+settings.title = 設定
+settings.general = 一般
+settings.shortcuts = 快速鍵
+settings.add = 新增
+settings.in_use = 已被其他應用程式使用
+settings.start_with_windows_note = 登入後即可擷取。
+settings.live_capture_note = 擷取畫面會持續更新，直到你複製或儲存為止。
+settings.shape_duration_note = 暫時圖形在螢幕上停留的時間。

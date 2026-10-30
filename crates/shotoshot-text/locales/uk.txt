@@ -3,6 +3,7 @@
 language.menu = Мова
 
 tooltip.with_shortcut = {label} · {shortcut}
+tooltip.with_shortcut_and_wheel = {label} · {shortcut} · Коліщатко змінює розмір
 
 key.ctrl == Ctrl
 key.shift == Shift
@@ -73,6 +74,7 @@ capture.edit_dimensions = Змінити розміри · вирази: 800+20,
 overlay.select_area = Виділіть область
 overlay.cancel = {shortcut}: скасувати
 overlay.stroke_width == {width} px
+overlay.wheel_hint = Коліщатко змінює розмір
 magnifier.pick = Клік: взяти · {shortcut}
 picker.apply = Клік назовні застосує · {shortcut} скасує
 
@@ -84,7 +86,7 @@ menu.edit_board = Редагувати Board
 menu.show_board = Показувати Board
 menu.clear_board = Очистити Board
 menu.presentation = Презентація
-menu.pointer_halo = Підсвічування вказівника
+menu.board = ==
 menu.pointer_effects = Ефекти вказівника
 menu.magnifier = Лупа
 menu.keyboard = Клавіатура
@@ -93,20 +95,13 @@ menu.move_input = Перемістити клавіатуру й мишу
 menu.input_size = Розмір клавіатури й миші
 menu.temporary_shapes = Тимчасові фігури
 menu.shape_duration = Час показу фігур
-menu.shortcuts = Сполучення клавіш · клацніть, щоб змінити
 menu.capture = Знімок
 menu.instant_screenshot = Миттєвий знімок екрана
-menu.board == Board
-menu.options = Параметри
 menu.live_capture_default = Знімання в реальному часі за замовчуванням
 menu.start_with_windows = Запускати разом з Windows
 menu.quit = Вийти з Shotoshot
-menu.duration_1 = 1 секунда
-menu.duration_3 = 3 секунди
-menu.duration_5 = 5 секунд
 menu.seconds = {n} с
 menu.percent = {n} %
-menu.shortcut_in_use = {shortcut} (зайнято)
 menu.language_auto = Мова Windows
 menu.language_system = Мова системи
 
@@ -154,8 +149,8 @@ notice.saved = Зображення збережено.
 notice.searching = Пошук у Google…
 notice.preferences = Налаштування збережено.
 notice.saved_editable = Зображення для редагування збережено разом з екраном.
-notice.instant_unavailable = Сполучення для миттєвого знімка недоступне. Змініть його в меню Shotoshot.
-notice.board_unavailable = Сполучення для Board недоступне. Змініть його в меню Shotoshot.
+notice.instant_unavailable = Сполучення для миттєвого знімка недоступне. Змініть його в налаштуваннях Shotoshot.
+notice.board_unavailable = Сполучення для Board недоступне. Змініть його в налаштуваннях Shotoshot.
 notice.shortcuts_unavailable = Сполучення недоступне: {names}
 notice.names_separator == {before}, {after}
 notice.screenshot_failed = Не вдалося зробити знімок: файл не збережено
@@ -226,9 +221,7 @@ installer.language.auto = Мова Windows
 installer.shoto_file = Зображення Shotoshot для редагування
 
 # Pointer effects
-pointer.title = Ефекти вказівника
 pointer.section_halo = Підсвічування
-pointer.show_halo = Показувати підсвічування
 pointer.section_trail = Слід
 pointer.section_clicks = Кліки
 pointer.section_spotlight = Прожектор
@@ -252,10 +245,7 @@ pointer.darkness = Затемнення
 pointer.hide_moving = Ховати під час руху
 pointer.hold = Показувати під час утримання
 pointer.zoom = Збільшення
-pointer.show_loupe = Показати лупу
-pointer.shortcut = Сполучення клавіш
 pointer.off = Вимк.
-pointer.hidden = Приховано
 pointer.disc = Диск
 pointer.ring = Кільце
 pointer.neon = Неон
@@ -285,6 +275,13 @@ pointer.zoom_4 == 4×
 pointer.small = Мала
 pointer.medium_size = Середня
 pointer.large = Велика
-pointer.no_shortcut = Немає
 pointer.reset = Відновити типові
-pointer.undo = Скасувати зміни
+
+settings.title = Налаштування
+settings.general = Загальні
+settings.shortcuts = Сполучення клавіш
+settings.add = Додати
+settings.in_use = Зайнято іншою програмою
+settings.start_with_windows_note = Готовий до знімання одразу після входу.
+settings.live_capture_note = Знімок оновлюється, доки ви його не скопіюєте або не збережете.
+settings.shape_duration_note = Скільки часу тимчасові фігури залишаються на екрані.

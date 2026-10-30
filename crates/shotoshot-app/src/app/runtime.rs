@@ -293,7 +293,7 @@ pub fn run() -> Result<()> {
             board_rebake_forced: false,
             menu: None,
             menu_closed_on_icon: None,
-            pointer_window: None,
+            settings_ui: Default::default(),
             setup_ui: setup::Setup::default(),
         }));
         let hwnd = CreateWindowExW(

@@ -3,6 +3,7 @@
 language.menu = 语言
 
 tooltip.with_shortcut = {label} · {shortcut}
+tooltip.with_shortcut_and_wheel = {label} · {shortcut} · 滚轮调整大小
 
 key.ctrl == Ctrl
 key.shift == Shift
@@ -73,6 +74,7 @@ capture.edit_dimensions = 编辑尺寸 · 表达式：800+20, 1920/2
 overlay.select_area = 选择区域
 overlay.cancel = {shortcut} 取消
 overlay.stroke_width == {width} px
+overlay.wheel_hint = 滚轮调整大小
 magnifier.pick = 单击取色 · {shortcut}
 picker.apply = 单击外部应用 · {shortcut} 取消
 
@@ -84,7 +86,7 @@ menu.edit_board = 编辑 Board
 menu.show_board = 显示 Board
 menu.clear_board = 清空 Board
 menu.presentation = 演示
-menu.pointer_halo = 指针光圈
+menu.board = ==
 menu.pointer_effects = 指针效果
 menu.magnifier = 放大镜
 menu.keyboard = 键盘
@@ -93,20 +95,13 @@ menu.move_input = 移动键盘和鼠标
 menu.input_size = 键盘和鼠标大小
 menu.temporary_shapes = 临时图形
 menu.shape_duration = 图形显示时长
-menu.shortcuts = 快捷键 · 单击更改
 menu.capture = 截图
 menu.instant_screenshot = 即时截图
-menu.board == Board
-menu.options = 选项
 menu.live_capture_default = 默认实时截图
 menu.start_with_windows = 随 Windows 启动
 menu.quit = 退出 Shotoshot
-menu.duration_1 = 1 秒
-menu.duration_3 = 3 秒
-menu.duration_5 = 5 秒
 menu.seconds = {n} 秒
 menu.percent = {n}%
-menu.shortcut_in_use = {shortcut}（已占用）
 menu.language_auto = Windows 语言
 menu.language_system = 系统语言
 
@@ -154,8 +149,8 @@ notice.saved = 图像已保存。
 notice.searching = 正在搜索 Google…
 notice.preferences = 设置已保存。
 notice.saved_editable = 可编辑图像已保存，包含整个屏幕。
-notice.instant_unavailable = 即时截图快捷键不可用。请在 Shotoshot 菜单中更改。
-notice.board_unavailable = Board 快捷键不可用。请在 Shotoshot 菜单中更改。
+notice.instant_unavailable = 即时截图快捷键不可用。请在 Shotoshot 设置中更改。
+notice.board_unavailable = Board 快捷键不可用。请在 Shotoshot 设置中更改。
 notice.shortcuts_unavailable = 快捷键不可用：{names}
 notice.names_separator = {before}、{after}
 notice.screenshot_failed = 截图失败：文件未保存
@@ -226,9 +221,7 @@ installer.language.auto = Windows 语言
 installer.shoto_file = 可编辑的 Shotoshot 图像
 
 # Pointer effects
-pointer.title = 指针效果
 pointer.section_halo = 光圈
-pointer.show_halo = 显示光圈
 pointer.section_trail = 拖尾
 pointer.section_clicks = 点击
 pointer.section_spotlight = 聚光灯
@@ -252,10 +245,7 @@ pointer.darkness = 暗度
 pointer.hide_moving = 移动时隐藏
 pointer.hold = 按住时显示
 pointer.zoom = 放大倍数
-pointer.show_loupe = 显示放大镜
-pointer.shortcut = 快捷键
 pointer.off = 关闭
-pointer.hidden = 隐藏
 pointer.disc = 圆盘
 pointer.ring = 圆环
 pointer.neon = 霓虹
@@ -285,6 +275,13 @@ pointer.zoom_4 == 4×
 pointer.small = 小
 pointer.medium_size = 中
 pointer.large = 大
-pointer.no_shortcut = 无
 pointer.reset = 恢复默认
-pointer.undo = 撤销更改
+
+settings.title = 设置
+settings.general = 常规
+settings.shortcuts = 快捷键
+settings.add = 添加
+settings.in_use = 已被其他应用占用
+settings.start_with_windows_note = 登录后即可截图。
+settings.live_capture_note = 截图会持续更新，直到你复制或保存它。
+settings.shape_duration_note = 临时图形在屏幕上停留的时间。

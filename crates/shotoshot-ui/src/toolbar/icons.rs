@@ -235,6 +235,7 @@ fn paint<C: Canvas>(
                     start_attach: None,
                     end_attach: None,
                     head: true,
+                    bend: Default::default(),
                 },
             };
             g.canvas.annotations(&[arrow], None)?;
@@ -391,13 +392,14 @@ fn paint<C: Canvas>(
             g.line((4., 4.), (16., 16.))?;
             g.line((16., 4.), (4., 16.))?;
         }
-        // A broom: the handle, the band that holds the bristles, three bristles.
+        // A bin: the whole board goes, unlike the eraser's one object (Mickaël, 2026-10-30;
+        // the broom read as a rake).
         Action::ClearBoard => {
-            g.line((17., 3.), (9., 11.))?;
-            g.line((6., 10.), (12., 16.))?;
-            g.path(&[(7., 12.), (2., 15.), (3., 18.)])?;
-            g.path(&[(9., 13.), (5., 18.), (7., 19.)])?;
-            g.path(&[(11., 15.), (9., 19.), (11., 19.)])?;
+            g.line((3., 5.5), (17., 5.5))?;
+            g.path(&[(7.5, 5.5), (7.5, 2.8), (12.5, 2.8), (12.5, 5.5)])?;
+            g.path(&[(4.8, 5.5), (5.8, 17.8), (14.2, 17.8), (15.2, 5.5)])?;
+            g.line((8.3, 9.), (8.3, 14.5))?;
+            g.line((11.7, 9.), (11.7, 14.5))?;
         }
     }
     Ok(())

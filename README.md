@@ -30,7 +30,7 @@ report from yours is welcome.
 
 On first launch the proposed shortcut is **Print Screen**: **Save** confirms it. Otherwise click
 the displayed key and press the global shortcut you want (for example **Pause**, a single letter
-or Ctrl+Shift+F8), then click **Save**. Opened from the menu, the window listens right away; the
+or Ctrl+Shift+F8), then click **Save**. Opened from **Settings**, the window listens right away; the
 shortcut is shown as keys, and a click on it starts listening again. While listening, Esc and
 Enter are assignable keys too; **Cancel** cancels with the mouse. After entry, Tab moves between
 the field and the buttons and Enter activates the selected control.
@@ -42,17 +42,31 @@ Snipping Tool, Shotoshot turns off your account's "Use the Print screen key to o
 capture" option (`HKCU\Control Panel\Keyboard`), only when you save Print Screen. It restores the
 option when no shortcut uses the key any more, and on uninstall.
 
-The icon lives in the notification area. Left click and right click open the same menu, in titled
-groups: capture and **Board** first, then **Presentation**, **Shortcuts** (the six shortcuts, one
-click to change one) and **Options**, and finally the exit. Every row has its icon; what can be
-turned on carries a switch. **Start with Windows** is on by default and can be unchecked; the
-choice is remembered.
+The icon lives in the notification area. Left click and right click open the same short menu,
+made to act: capture and instant screenshot with their keys, the **Board**, then the
+**Presentation** switches, **Settings**, **Language** and the exit. Every row has its icon; what
+can be turned on carries a switch, and a shortcut shows as keys, orange when another program
+holds it.
+
+**Settings** opens one window for what you set once, on the screen of the pointer:
+
+- **General**: **Start with Windows** (on by default) and **Live capture by default**.
+- **Shortcuts**: every Shotoshot shortcut in one place; click the keys to change one. A shortcut
+  another program holds turns orange, with a note under its name. The three pointer shortcuts
+  can be left unset (**Add**) or cleared with their cross.
+- **Presentation**: keyboard and mouse size, how long temporary shapes stay, and **Move keyboard
+  and mouse**.
+- **Pointer effects**: one card per effect (halo, trail, clicks, spotlight, magnifier), each with
+  its own switch and a one-line summary; one card opens at a time, beside a live demonstration of the pointer.
+
+Everything applies at once; **Restore defaults** resets the page it sits on.
 
 ## Instant screenshot
 
 **Scroll Lock** saves the screen of the active application straight to the Desktop, with no
 selection, no editor and no focus change. Files are named `001.png`, `002.png` and so
-on, never replacing an existing capture. The **Instant screenshot** menu row changes this
+on, never replacing an existing capture. The **Instant screenshot** menu row takes one; its row
+in **Settings**, **Shortcuts** changes this
 shortcut, and the setting is remembered.
 
 A short confirmation click always plays; the menu has no switch for it. The built-in sound is an
@@ -218,7 +232,7 @@ The **Live capture** button (a screen with a play symbol, bottom bar) switches b
   already taken.
 
 Turning live capture off while editing freezes the image at that instant. To choose the initial
-behaviour, check **Live capture by default** in the notification-area menu.
+behaviour, turn on **Live capture by default** in **Settings**, **General**.
 
 ### Google Lens
 
@@ -313,8 +327,9 @@ copy or save the picture and also end the session.
 
 ![Presentation mode over a slide: the shortcuts light up on the mini keyboard, the click shows under the pointer halo, and a rectangle, an arrow and a circle are drawn then fade away.](https://shotoshot.com/assets/presentation.gif)
 
-Left or right click the Shotoshot icon: every control is in the menu. Turn on **Pointer halo**,
-**Temporary shapes**, **Keyboard** and **Mouse** separately. Halo, keyboard and mouse are off at
+Left or right click the Shotoshot icon: the switches are in the menu. Turn on **Pointer effects**,
+**Magnifier**, **Temporary shapes**, **Keyboard** and **Mouse** separately; **Settings** holds
+how each one looks. Halo, keyboard and mouse are off at
 launch; the shape shortcuts are available.
 
 | Command | Action |
@@ -326,12 +341,12 @@ launch; the shape shortcuts are available.
 | Ctrl+Alt+Esc | Hide everything and turn the three features off |
 
 Each shape keeps its letter from the capture editor (A, R, C), preceded by Alt. The drawing
-shortcuts work while **Temporary shapes** is on. The **Arrow**, **Rectangle** and **Ellipse** menu
-commands change each of the three combinations directly (Ctrl or Alt required). If another
+shortcuts work while **Temporary shapes** is on. **Settings**, **Shortcuts** changes each of the
+three combinations (Ctrl or Alt required). If another
 application reserves a shape shortcut, Shotoshot takes priority while shapes are on. After each
 release you get clicks and scrolling back in your applications at once; press the shortcut again
 for a new shape. Each shape disappears after **3 seconds**, with a final fade; **Shape duration**
-sets it to 1, 3 or 5 seconds and shows the current value.
+in **Settings**, **Presentation** sets it to 1, 3 or 5 seconds.
 
 The stroke is **5 px by default**, adjustable with the wheel while drawing (1–40 px, same steps
 as the capture editor). The last thickness is remembered, like the one used in the capture editor.
@@ -421,7 +436,7 @@ the test. The presentation probe verifies, in a fresh process, the Raw Input reg
 conflicts and the release of shortcuts, with no simulated keystroke and no visible window.
 
 Check outputs: `target/shotoshot-demo.png`, `target/shotoshot-interface.png`,
-`target/shotoshot-presentation.png`, `target/shotoshot-menu.png`,
+`target/shotoshot-presentation.png`, `target/shotoshot-menu.png`, `target/shotoshot-settings-*.png`,
 `target/presentation-diagnostics.txt`, `target/board-diagnostics.txt` and
 `target/diagnostics.json`. The last one measures the
 idle state and five captures with creation and destruction of the editor; it does not measure the

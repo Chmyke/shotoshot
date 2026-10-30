@@ -513,7 +513,7 @@ mod tests {
     use super::*;
     #[test]
     fn listed_names_are_joined_the_way_each_language_writes_a_list() {
-        let names = [Key::MenuKeyboard, Key::MenuMouse, Key::MenuPointerHalo];
+        let names = [Key::MenuKeyboard, Key::MenuMouse, Key::MenuPointerEffects];
         let english: Vec<&str> = names.iter().map(|&k| tr_in(Language::En, k)).collect();
         assert_eq!(names_in(&names, Language::En), english.join(", "));
         let japanese: Vec<&str> = names.iter().map(|&k| tr_in(Language::Ja, k)).collect();
@@ -737,7 +737,7 @@ mod tests {
                 board_rebake_forced: false,
                 menu: None,
                 menu_closed_on_icon: None,
-                pointer_window: None,
+                settings_ui: Default::default(),
             };
             app.notify(Notice::Copied);
             let mut message = MSG::default();

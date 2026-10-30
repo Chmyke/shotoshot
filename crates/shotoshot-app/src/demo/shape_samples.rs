@@ -94,6 +94,7 @@ pub(super) fn render(path: &std::path::Path) -> Result<()> {
                             start_attach: None,
                             end_attach: None,
                             head: true,
+                            bend: Default::default(),
                         },
                         style,
                     });
@@ -106,7 +107,64 @@ pub(super) fn render(path: &std::path::Path) -> Result<()> {
         end
     })?;
     save_png(&preview, path)?;
-    thick_samples(&path.with_file_name("shotoshot-thick-strokes.png"))
+    thick_samples(&path.with_file_name("shotoshot-thick-strokes.png"))?;
+    bent_samples(&path.with_file_name("shotoshot-bent-arrows.png"))
+}
+
+/// Arrows and lines bent by their middle handle: thin to thick, gentle to tight, both sides.
+fn bent_samples(path: &std::path::Path) -> Result<()> {
+    let mut renderer = Renderer::new()?;
+    renderer.set_image(&Image::solid(900, 520, [25, 25, 25, 255]))?;
+    let p = |x: f64, y: f64| Point { x, y };
+    let samples = [
+        (p(40., 140.), p(240., 140.), 2., p(0., -0.25), true),
+        (p(300., 140.), p(500., 140.), 4., p(0.15, 0.3), true),
+        (p(560., 160.), p(860., 100.), 8., p(-0.2, -0.35), true),
+        (p(60., 420.), p(260., 300.), 16., p(0., 0.45), true),
+        (p(330., 300.), p(420., 330.), 6., p(0., -0.6), true),
+        (p(500., 420.), p(840., 420.), 6., p(0., -0.3), false),
+    ];
+    let objects: Vec<Object> = samples
+        .into_iter()
+        .enumerate()
+        .map(|(i, (start, end, width, bend, head))| Object {
+            rotation: 0.,
+            fill: Vec::new(),
+            id: i as u64 + 1,
+            style: Style {
+                width,
+                color: [237, 79, 92],
+            },
+            shape: Shape::Arrow {
+                start,
+                end,
+                start_attach: None,
+                end_attach: None,
+                head,
+                bend,
+            },
+        })
+        .collect();
+    let preview = paint_image(900, 520, |dc| {
+        renderer.begin(dc, 900, 520)?;
+        let result = (|| -> Result<()> {
+            renderer.annotations(&renderer.dc, &objects)?;
+            renderer.text(
+                &renderer.dc,
+                "Bent arrows 2 / 4 / 8 / 16 / 6 px · bent line",
+                Rect {
+                    min: Point { x: 30., y: 25. },
+                    max: Point { x: 860., y: 65. },
+                },
+                22.,
+                [240, 240, 240],
+            )
+        })();
+        let end = renderer.end();
+        result?;
+        end
+    })?;
+    save_png(&preview, path)
 }
 
 fn thick_samples(path: &std::path::Path) -> Result<()> {
@@ -137,6 +195,7 @@ fn thick_samples(path: &std::path::Path) -> Result<()> {
                 start_attach: None,
                 end_attach: None,
                 head: true,
+                bend: Default::default(),
             },
         },
         Object {

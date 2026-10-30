@@ -2,7 +2,7 @@
 //! OWNER: Each capture owns one renderer; no rendering exists while resident.
 use crate::{Image, ImageExt};
 use shotoshot_core::{Label, Object, Paint, Point, Rect, Shape, paths};
-use shotoshot_ui::{Canvas, Ink, View};
+use shotoshot_ui::{Canvas, Ink, TextStyle, View};
 use windows::{
     Win32::{
         Graphics::{
@@ -143,6 +143,92 @@ impl Renderer {
                 &HSTRING::from(language.locale_name()),
             )
         }
+    }
+    /// The typeface of interface text at `size` in `style`: Segoe UI Variable where Windows
+    /// has it (Windows 11), Segoe UI in the same weight otherwise.
+    fn styled_format(&self, size: f32, style: TextStyle) -> Result<IDWriteTextFormat> {
+        self.styled_format_in(size, style, shotoshot_text::language())
+    }
+    /// `styled_format`, shaped for `language`.
+    fn styled_format_in(
+        &self,
+        size: f32,
+        style: TextStyle,
+        language: shotoshot_text::Language,
+    ) -> Result<IDWriteTextFormat> {
+        let variable = self.has_variable_family();
+        let (family, weight) = match style {
+            TextStyle::Body if variable => {
+                (w!("Segoe UI Variable Text"), DWRITE_FONT_WEIGHT_NORMAL)
+            }
+            TextStyle::Strong if variable => {
+                (w!("Segoe UI Variable Text"), DWRITE_FONT_WEIGHT_SEMI_BOLD)
+            }
+            TextStyle::Title if variable => (
+                w!("Segoe UI Variable Display"),
+                DWRITE_FONT_WEIGHT_SEMI_BOLD,
+            ),
+            TextStyle::Caption if variable => {
+                (w!("Segoe UI Variable Small"), DWRITE_FONT_WEIGHT_NORMAL)
+            }
+            TextStyle::Body | TextStyle::Caption => (w!("Segoe UI"), DWRITE_FONT_WEIGHT_NORMAL),
+            TextStyle::Strong | TextStyle::Title => (w!("Segoe UI"), DWRITE_FONT_WEIGHT_SEMI_BOLD),
+        };
+        unsafe {
+            self.write.CreateTextFormat(
+                family,
+                None,
+                weight,
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                size,
+                &HSTRING::from(language.locale_name()),
+            )
+        }
+    }
+    /// Whether the system fonts include Segoe UI Variable, asked once per process.
+    fn has_variable_family(&self) -> bool {
+        static VARIABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *VARIABLE.get_or_init(|| unsafe {
+            let mut fonts = None;
+            if self
+                .write
+                .GetSystemFontCollection(&mut fonts, false)
+                .is_err()
+            {
+                return false;
+            }
+            let Some(fonts) = fonts else { return false };
+            let (mut index, mut exists) = (0, BOOL(0));
+            fonts
+                .FindFamilyName(w!("Segoe UI Variable Text"), &mut index, &mut exists)
+                .is_ok()
+                && exists.as_bool()
+        })
+    }
+    pub fn measure_styled_text(&self, text: &str, size: f32, style: TextStyle) -> Result<Point> {
+        self.measure(text, &self.styled_format(size, style)?, None)
+    }
+    /// Extent of interface `text` at `size` in `style` as it is drawn in `language`.
+    pub fn measure_styled_text_in(
+        &self,
+        text: &str,
+        size: f32,
+        style: TextStyle,
+        language: shotoshot_text::Language,
+    ) -> Result<Point> {
+        self.measure(text, &self.styled_format_in(size, style, language)?, None)
+    }
+    pub fn styled_text(
+        &self,
+        target: &ID2D1RenderTarget,
+        text: &str,
+        r: Rect,
+        size: f32,
+        ink: ([u8; 3], f32),
+        style: TextStyle,
+    ) -> Result<()> {
+        self.draw_text(target, text, r, &self.styled_format(size, style)?, ink)
     }
     pub fn measure_text(&self, text: &str, size: f32) -> Result<Point> {
         self.measure_text_in(text, size, shotoshot_text::language())
@@ -952,6 +1038,27 @@ impl Canvas for D2dCanvas<'_> {
     fn measure_annotation_text(&mut self, text: &str, size: f64) -> Result<Point> {
         self.renderer.measure_annotation_text(text, size as f32)
     }
+    fn styled_text(
+        &mut self,
+        text: &str,
+        r: Rect,
+        size: f64,
+        ink: Ink,
+        style: TextStyle,
+    ) -> Result<()> {
+        self.underlay = None;
+        self.renderer.styled_text(
+            self.target,
+            text,
+            r,
+            size as f32,
+            (ink.rgb, ink.alpha),
+            style,
+        )
+    }
+    fn measure_styled_text(&mut self, text: &str, size: f64, style: TextStyle) -> Result<Point> {
+        self.renderer.measure_styled_text(text, size as f32, style)
+    }
     fn raster(
         &mut self,
         key: &'static str,
@@ -1132,6 +1239,7 @@ mod arrow_tests {
                 start_attach: None,
                 end_attach: None,
                 head: true,
+                bend: Default::default(),
             },
         };
         let output = renderer

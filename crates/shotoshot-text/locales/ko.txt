@@ -3,6 +3,7 @@
 language.menu = 언어
 
 tooltip.with_shortcut = {label} · {shortcut}
+tooltip.with_shortcut_and_wheel = {label} · {shortcut} · 휠로 크기 조절
 
 key.ctrl == Ctrl
 key.shift == Shift
@@ -73,6 +74,7 @@ capture.edit_dimensions = 크기 편집 · 수식: 800+20, 1920/2
 overlay.select_area = 영역 선택
 overlay.cancel = 취소: {shortcut}
 overlay.stroke_width == {width} px
+overlay.wheel_hint = 휠로 크기 조절
 magnifier.pick = 클릭하여 선택 · {shortcut}
 picker.apply = 바깥 클릭: 적용 · 취소: {shortcut}
 
@@ -84,7 +86,7 @@ menu.edit_board = Board 편집
 menu.show_board = Board 표시
 menu.clear_board = Board 지우기
 menu.presentation = 프레젠테이션
-menu.pointer_halo = 포인터 강조
+menu.board = ==
 menu.pointer_effects = 포인터 효과
 menu.magnifier = 돋보기
 menu.keyboard = 키보드
@@ -93,20 +95,13 @@ menu.move_input = 키보드와 마우스 이동
 menu.input_size = 키보드 및 마우스 크기
 menu.temporary_shapes = 임시 도형
 menu.shape_duration = 도형 표시 시간
-menu.shortcuts = 바로 가기 키 · 클릭하여 변경
 menu.capture = 캡처
 menu.instant_screenshot = 즉시 스크린샷
-menu.board == Board
-menu.options = 옵션
 menu.live_capture_default = 기본으로 실시간 캡처
 menu.start_with_windows = Windows 시작 시 실행
 menu.quit = Shotoshot 종료
-menu.duration_1 = 1초
-menu.duration_3 = 3초
-menu.duration_5 = 5초
 menu.seconds = {n}초
 menu.percent = {n}%
-menu.shortcut_in_use = {shortcut} (사용 중)
 menu.language_auto = Windows 언어
 menu.language_system = 시스템 언어
 
@@ -154,8 +149,8 @@ notice.saved = 이미지를 저장했습니다.
 notice.searching = Google 검색 중…
 notice.preferences = 설정을 저장했습니다.
 notice.saved_editable = 화면을 포함해 편집 가능한 이미지를 저장했습니다.
-notice.instant_unavailable = 즉시 스크린샷 바로 가기 키를 쓸 수 없습니다. Shotoshot 메뉴에서 변경하세요.
-notice.board_unavailable = Board 바로 가기 키를 쓸 수 없습니다. Shotoshot 메뉴에서 변경하세요.
+notice.instant_unavailable = 즉시 스크린샷 바로 가기 키를 쓸 수 없습니다. Shotoshot 설정에서 변경하세요.
+notice.board_unavailable = Board 바로 가기 키를 쓸 수 없습니다. Shotoshot 설정에서 변경하세요.
 notice.shortcuts_unavailable = 바로 가기 키를 사용할 수 없음: {names}
 notice.names_separator == {before}, {after}
 notice.screenshot_failed = 스크린샷 실패: 파일이 저장되지 않음
@@ -226,9 +221,7 @@ installer.language.auto = Windows 언어
 installer.shoto_file = 편집 가능한 Shotoshot 이미지
 
 # Pointer effects
-pointer.title = 포인터 효과
 pointer.section_halo = 강조
-pointer.show_halo = 강조 표시
 pointer.section_trail = 자취
 pointer.section_clicks = 클릭
 pointer.section_spotlight = 스포트라이트
@@ -252,10 +245,7 @@ pointer.darkness = 어둡기
 pointer.hide_moving = 움직일 때 숨기기
 pointer.hold = 누르는 동안 표시
 pointer.zoom = 배율
-pointer.show_loupe = 돋보기 표시
-pointer.shortcut = 바로 가기 키
 pointer.off = 끔
-pointer.hidden = 숨김
 pointer.disc = 원판
 pointer.ring = 고리
 pointer.neon = 네온
@@ -285,6 +275,13 @@ pointer.zoom_4 == 4×
 pointer.small = 작게
 pointer.medium_size = 보통
 pointer.large = 크게
-pointer.no_shortcut = 없음
 pointer.reset = 기본값 복원
-pointer.undo = 변경 취소
+
+settings.title = 설정
+settings.general = 일반
+settings.shortcuts = 바로 가기 키
+settings.add = 추가
+settings.in_use = 다른 앱에서 사용 중
+settings.start_with_windows_note = 로그인하자마자 캡처할 수 있습니다.
+settings.live_capture_note = 복사하거나 저장할 때까지 캡처가 계속 업데이트됩니다.
+settings.shape_duration_note = 임시 도형이 화면에 표시되는 시간입니다.

@@ -12,6 +12,7 @@ language.menu = Language
 
 # Hints: a label, then the keys it answers to (`{shortcut}`, assembled by the code).
 tooltip.with_shortcut = {label} · {shortcut}
+tooltip.with_shortcut_and_wheel = {label} · {shortcut} · Scroll to resize
 
 # Key names, as printed on keyboards of the language. Letters, digits and F1-F24 stay as is;
 # keys Windows names (letters, punctuation) follow the keyboard layout. `{key}` is a digit or
@@ -91,6 +92,7 @@ capture.edit_dimensions = Edit dimensions · expressions: 800+20, 1920/2
 overlay.select_area = Select an area
 overlay.cancel = {shortcut} to cancel
 overlay.stroke_width = {width} px
+overlay.wheel_hint = Scroll to resize
 magnifier.pick = Click to pick · {shortcut}
 picker.apply = Click outside to apply · {shortcut} to cancel
 
@@ -105,7 +107,7 @@ menu.edit_board = Edit board
 menu.show_board = Show board
 menu.clear_board = Clear board
 menu.presentation = Presentation
-menu.pointer_halo = Pointer halo
+menu.board = Board
 menu.pointer_effects = Pointer effects
 menu.magnifier = Magnifier
 menu.keyboard = Keyboard
@@ -114,20 +116,13 @@ menu.move_input = Move keyboard and mouse
 menu.input_size = Keyboard and mouse size
 menu.temporary_shapes = Temporary shapes
 menu.shape_duration = Shape duration
-menu.shortcuts = Shortcuts · click to change
 menu.capture = Capture
 menu.instant_screenshot = Instant screenshot
-menu.board = Board
-menu.options = Options
 menu.live_capture_default = Live capture by default
 menu.start_with_windows = Start with Windows
 menu.quit = Quit Shotoshot
-menu.duration_1 = 1 second
-menu.duration_3 = 3 seconds
-menu.duration_5 = 5 seconds
 menu.seconds = {n} s
 menu.percent = {n}%
-menu.shortcut_in_use = {shortcut} (in use)
 menu.language_auto = Windows language
 menu.language_system = System language
 
@@ -183,8 +178,8 @@ notice.saved = Image saved.
 notice.searching = Searching Google…
 notice.preferences = Settings saved.
 notice.saved_editable = Editable image saved, screen included.
-notice.instant_unavailable = Instant screenshot shortcut unavailable. Change it in the Shotoshot menu.
-notice.board_unavailable = Board shortcut unavailable. Change it in the Shotoshot menu.
+notice.instant_unavailable = Instant screenshot shortcut unavailable. Change it in Shotoshot settings.
+notice.board_unavailable = Board shortcut unavailable. Change it in Shotoshot settings.
 notice.shortcuts_unavailable = Shortcut unavailable: {names}
 # How the names of a list are joined, two at a time: what stands between `{before}` and
 # `{after}` (a separator alone would lose its space).
@@ -263,11 +258,10 @@ installer.language.description = You can change it later from the Shotoshot icon
 installer.language.auto = Windows language
 installer.shoto_file = Shotoshot editable image
 
-# Pointer effects window. Labels at 13 px, choices at 12 px, section titles at 12 px: the window
-# grows with the longest text of the language (`pointer_panel_fits_every_language`).
-pointer.title = Pointer effects
+# Pointer effects page of the Settings window: card titles and labels at 13 px, values and
+# summaries at 12 px. The window grows with the longest text of the language
+# (`settings_window_fits_every_language`).
 pointer.section_halo = Halo
-pointer.show_halo = Show the halo
 pointer.section_trail = Trail
 pointer.section_clicks = Clicks
 pointer.section_spotlight = Spotlight
@@ -291,11 +285,8 @@ pointer.darkness = Darkness
 pointer.hide_moving = Hide while moving
 pointer.hold = Show while held
 pointer.zoom = Zoom
-pointer.show_loupe = Show the magnifier
-pointer.shortcut = Shortcut
 # Choices: one word or two, shown one at a time between two arrows.
 pointer.off = Off
-pointer.hidden = Hidden
 pointer.disc = Disc
 pointer.ring = Ring
 pointer.neon = Neon
@@ -326,6 +317,16 @@ pointer.small = Small
 pointer.medium_size = Medium
 pointer.large = Large
 # A shortcut that is not set.
-pointer.no_shortcut = None
 pointer.reset = Restore defaults
-pointer.undo = Undo changes
+
+# Settings window: page names at 14 px in the navigation and 28 px as the page title, the
+# note under a shortcut and the explanations under a setting at 12 px, on one line
+# (`settings_window_fits_every_language`).
+settings.title = Settings
+settings.general = General
+settings.shortcuts = Shortcuts
+settings.add = Add
+settings.in_use = Used by another app
+settings.start_with_windows_note = Ready to capture as soon as you sign in.
+settings.live_capture_note = The capture keeps updating until you copy or save it.
+settings.shape_duration_note = How long temporary shapes stay on screen.

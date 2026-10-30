@@ -3,6 +3,7 @@
 language.menu = Dil
 
 tooltip.with_shortcut = {label} · {shortcut}
+tooltip.with_shortcut_and_wheel = {label} · {shortcut} · Boyut için tekerleği çevirin
 
 key.ctrl == Ctrl
 key.shift == Shift
@@ -73,6 +74,7 @@ capture.edit_dimensions = Boyutları düzenle · ifadeler: 800+20, 1920/2
 overlay.select_area = Bir alan seçin
 overlay.cancel = İptal için {shortcut}
 overlay.stroke_width == {width} px
+overlay.wheel_hint = Boyut için tekerleği çevirin
 magnifier.pick = Tıklayıp alın · {shortcut}
 picker.apply = Dışarı tıklayın: uygula · İptal: {shortcut}
 
@@ -84,7 +86,7 @@ menu.edit_board = Board’u düzenle
 menu.show_board = Board’u göster
 menu.clear_board = Board’u temizle
 menu.presentation = Sunum
-menu.pointer_halo = İşaretçi halesi
+menu.board = ==
 menu.pointer_effects = İşaretçi efektleri
 menu.magnifier = Büyüteç
 menu.keyboard = Klavye
@@ -93,20 +95,13 @@ menu.move_input = Klavyeyi ve fareyi taşı
 menu.input_size = Klavye ve fare boyutu
 menu.temporary_shapes = Geçici şekiller
 menu.shape_duration = Şekil süresi
-menu.shortcuts = Kısayollar · değiştirmek için tıklayın
 menu.capture = Yakalama
 menu.instant_screenshot = Anında ekran görüntüsü
-menu.board == Board
-menu.options = Seçenekler
 menu.live_capture_default = Varsayılan olarak canlı yakalama
 menu.start_with_windows = Windows ile başlat
 menu.quit = Shotoshot’tan çık
-menu.duration_1 = 1 saniye
-menu.duration_3 = 3 saniye
-menu.duration_5 = 5 saniye
 menu.seconds = {n} sn
 menu.percent = %{n}
-menu.shortcut_in_use = {shortcut} (kullanımda)
 menu.language_auto = Windows dili
 menu.language_system = Sistem dili
 
@@ -154,8 +149,8 @@ notice.saved = Görüntü kaydedildi.
 notice.searching = Google’da aranıyor…
 notice.preferences = Ayarlar kaydedildi.
 notice.saved_editable = Düzenlenebilir görüntü ekranla birlikte kaydedildi.
-notice.instant_unavailable = Anında ekran görüntüsü kısayolu kullanılamıyor. Shotoshot menüsünden değiştirin.
-notice.board_unavailable = Board kısayolu kullanılamıyor. Shotoshot menüsünden değiştirin.
+notice.instant_unavailable = Anında ekran görüntüsü kısayolu kullanılamıyor. Shotoshot ayarlarından değiştirin.
+notice.board_unavailable = Board kısayolu kullanılamıyor. Shotoshot ayarlarından değiştirin.
 notice.shortcuts_unavailable = Kısayol kullanılamıyor: {names}
 notice.names_separator == {before}, {after}
 notice.screenshot_failed = Ekran görüntüsü alınamadı: dosya kaydedilmedi
@@ -226,9 +221,7 @@ installer.language.auto = Windows dili
 installer.shoto_file = Düzenlenebilir Shotoshot görüntüsü
 
 # Pointer effects
-pointer.title = İşaretçi efektleri
 pointer.section_halo = Hale
-pointer.show_halo = Haleyi göster
 pointer.section_trail = İz
 pointer.section_clicks = Tıklamalar
 pointer.section_spotlight = Spot ışığı
@@ -252,10 +245,7 @@ pointer.darkness = Karartma
 pointer.hide_moving = Hareket ederken gizle
 pointer.hold = Basılı tutunca göster
 pointer.zoom = Büyütme
-pointer.show_loupe = Büyüteci göster
-pointer.shortcut = Kısayol
 pointer.off = Kapalı
-pointer.hidden = Gizli
 pointer.disc = Disk
 pointer.ring = Halka
 pointer.neon == Neon
@@ -285,6 +275,13 @@ pointer.zoom_4 == 4×
 pointer.small = Küçük
 pointer.medium_size = Orta
 pointer.large = Büyük
-pointer.no_shortcut = Yok
 pointer.reset = Varsayılanlara dön
-pointer.undo = Değişiklikleri geri al
+
+settings.title = Ayarlar
+settings.general = Genel
+settings.shortcuts = Kısayollar
+settings.add = Ekle
+settings.in_use = Başka bir uygulama kullanıyor
+settings.start_with_windows_note = Oturum açar açmaz yakalamaya hazır.
+settings.live_capture_note = Yakalama, kopyalayana veya kaydedene kadar güncellenir.
+settings.shape_duration_note = Geçici şekillerin ekranda ne kadar kalacağı.

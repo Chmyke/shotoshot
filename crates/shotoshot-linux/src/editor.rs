@@ -380,8 +380,8 @@ impl Editor {
         self.notice = Some(error.to_string());
         self.redraw();
     }
-    /// Stores a changed stroke width, eraser size or custom colour, keeping every other
-    /// preference.
+    /// Stores a changed stroke width, eraser size or custom colour, and a first turn of the
+    /// wheel, keeping every other preference.
     fn persist_preferences(&mut self) {
         if !self.persist {
             return;
@@ -394,7 +394,12 @@ impl Editor {
             .capture
             .custom_color_changed
             .then_some(self.capture.custom_color);
-        if let Err(error) = settings::save_editor(width, eraser, color) {
+        let mut saved = settings::save_editor(width, eraser, color);
+        if saved.is_ok() && !self.settings.wheel_learned && !self.capture.wheel_hint {
+            saved = settings::save_wheel_learned();
+            self.settings.wheel_learned = saved.is_ok();
+        }
+        if let Err(error) = saved {
             let message = Text::with(Key::ErrorSettingsUnsaved, &[("detail", &error)]);
             notice::report(&format!("Shotoshot: {message}"));
         }
@@ -404,6 +409,7 @@ impl Editor {
         self.capture.custom_color = self.settings.last_custom_color;
         self.capture.editor.style.width = self.settings.capture_stroke_width as f64;
         self.capture.editor.eraser_size = self.settings.capture_eraser_size as f64;
+        self.capture.wheel_hint = !self.settings.wheel_learned;
     }
     /// Replaces the capture being edited, and the frozen frame behind it.
     fn show(&mut self, capture: Capture) -> Result<(), Box<dyn Error>> {
@@ -514,8 +520,11 @@ impl Editor {
                     && (!over_toolbar || capture.eyedropper);
                 if feedback && capture.eyedropper {
                     capture.draw_magnifier(&mut canvas).map_err(|e| e.0)?;
-                } else if feedback && capture.width_ring_visible() {
-                    capture.draw_width_ring(&mut canvas).map_err(|e| e.0)?;
+                } else if feedback {
+                    if capture.width_ring_visible() {
+                        capture.draw_width_ring(&mut canvas).map_err(|e| e.0)?;
+                    }
+                    capture.draw_wheel_hint(&mut canvas).map_err(|e| e.0)?;
                 }
                 if let Some(picker) = &capture.picker {
                     picker.draw(&mut canvas).map_err(|e| e.0)?;
