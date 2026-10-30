@@ -1,7 +1,7 @@
 //! ROLE: The drawing surface portable UI code paints on.
 //! OWNER: Each platform implements it over its native renderer for one frame.
 //! INVARIANTS: Coordinates are device pixels; lines use flat caps unless stated.
-use shotoshot_core::{Object, Point, Rect};
+use shotoshot_core::{BlurPatch, Object, Point, Rect};
 
 /// Weight and optical size of interface text, in the system family where the platform has
 /// one (Segoe UI Variable on Windows 11); other platforms draw plain interface text.
@@ -137,6 +137,15 @@ pub trait Canvas {
         size: (u32, u32),
         pixels: &mut dyn FnMut() -> Vec<u8>,
         dst: Rect,
+    ) -> Result<(), Self::Error>;
+    /// What the blurs make of the capture, bottom first: each patch's opaque top-down BGRA
+    /// pixels (`pixels(i)` for `patches[i]`) laid pixel for pixel over its zone of the frame.
+    /// The canvas may keep a patch under its id until its version changes, so `pixels` runs
+    /// only for a patch it has no current copy of.
+    fn blurs(
+        &mut self,
+        patches: &[BlurPatch],
+        pixels: &mut dyn FnMut(usize) -> Vec<u8>,
     ) -> Result<(), Self::Error>;
     /// Annotation objects exactly as they appear in the exported image, except `skip`
     /// (an object whose text is being edited in place).

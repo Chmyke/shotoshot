@@ -123,6 +123,10 @@ impl Editor {
     fn ink_at(&self, p: Point) -> Option<usize> {
         let reach = INK_REACH * self.ui_scale;
         for (index, o) in self.objects.iter().enumerate().rev() {
+            // A blur has no ink: the bucket colours what lies under it.
+            if o.is_blur() {
+                continue;
+            }
             // `on_ink` measures a rectangle from its centre line, not from its drawn edge.
             let half = match o.shape {
                 Shape::Rectangle(_) => o.style.width * 0.5,

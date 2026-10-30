@@ -434,19 +434,26 @@ impl Editor {
         self.commit(before);
         true
     }
+    /// The current style onto the shape being drawn or the selection; a blur takes the
+    /// blur strength instead (`blur_radius`) while drawn, and keeps its own once set down.
     pub fn apply_style(&mut self) {
         if self.drawing() {
             // Keep the drawing transaction open: all live style changes belong to
             // the same undo entry as the stroke, committed only on pointer release.
             if let Some(object) = self.objects.last_mut() {
-                object.style = self.style;
+                object.style.width = if object.is_blur() {
+                    self.blur_radius
+                } else {
+                    object.style.color = self.style.color;
+                    self.style.width
+                };
             }
             return;
         }
         self.cancel();
         let before = self.objects.clone();
         for o in &mut self.objects {
-            if self.selected.contains(&o.id) {
+            if self.selected.contains(&o.id) && !o.is_blur() {
                 o.style = self.style;
                 if let Shape::Stroke { widths, .. } = &mut o.shape {
                     widths.fill(self.style.width);
@@ -460,11 +467,12 @@ impl Editor {
             .as_ref()
             .is_some_and(|g| matches!(g.kind, GestureKind::Draw))
     }
-    /// The current colour onto the shape being drawn or the selection; widths stay.
+    /// The current colour onto the shape being drawn or the selection; widths stay. A blur
+    /// has no colour: it is left alone.
     pub fn apply_color(&mut self) {
         let color = self.style.color;
         if self.drawing() {
-            if let Some(object) = self.objects.last_mut() {
+            if let Some(object) = self.objects.last_mut().filter(|o| !o.is_blur()) {
                 object.style.color = color;
             }
             return;
@@ -472,7 +480,7 @@ impl Editor {
         self.cancel();
         let before = self.objects.clone();
         for o in &mut self.objects {
-            if self.selected.contains(&o.id) {
+            if self.selected.contains(&o.id) && !o.is_blur() {
                 o.style.color = color;
             }
         }
@@ -501,9 +509,11 @@ impl Editor {
         self.commit(before);
         changed
     }
-    /// Each selected shape's own width through `step`, colours untouched, as one undo step.
-    /// Returns the first one's new width; None while drawing or with nothing selected.
-    pub fn step_selected_widths(&mut self, step: impl Fn(f64) -> f64) -> Option<f64> {
+    /// Each selected shape's own width through `step`, colours untouched, as one undo step;
+    /// `step` is told whether the shape is a blur, whose width is its strength. Returns the
+    /// first one's new width and whether it is a blur; None while drawing or with nothing
+    /// selected.
+    pub fn step_selected_widths(&mut self, step: impl Fn(f64, bool) -> f64) -> Option<(f64, bool)> {
         if self.drawing() || self.selected.is_empty() {
             return None;
         }
@@ -512,12 +522,13 @@ impl Editor {
         let mut first = None;
         for o in &mut self.objects {
             if self.selected.contains(&o.id) {
-                let width = step(o.style.width);
+                let blur = o.is_blur();
+                let width = step(o.style.width, blur);
                 o.style.width = width;
                 if let Shape::Stroke { widths, .. } = &mut o.shape {
                     widths.fill(width);
                 }
-                first.get_or_insert(width);
+                first.get_or_insert((width, blur));
             }
         }
         self.commit(before);

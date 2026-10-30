@@ -49,8 +49,9 @@ impl Session {
         }
         self.capture.paste_count = self.capture.paste_count.saturating_add(1);
         let offset = 16. * self.capture.paste_count as f64;
+        let clipboard = self.capture.clipboard();
         if self.capture.editor.paste_objects(
-            &self.capture.copied_objects,
+            &clipboard,
             Point {
                 x: offset,
                 y: offset,

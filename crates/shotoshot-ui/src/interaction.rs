@@ -370,6 +370,8 @@ impl Capture {
             Action::Eyedropper => {
                 self.eyedropper = true;
             }
+            // A board has no capture under its notes to blur: no button, and X does nothing.
+            Action::Tool(Tool::Blur) if self.board => {}
             Action::Tool(t) => {
                 self.editor.tool = t;
                 self.editor.selected.clear();
@@ -392,12 +394,24 @@ impl Capture {
                     // The eraser has a size of its own: the pen keeps its width.
                     self.editor.eraser_size =
                         wheel::eraser_size_after(self.editor.eraser_size, notch);
-                } else if let Some(width) = self
-                    .editor
-                    .step_selected_widths(|w| wheel::stroke_width_after(w, notch))
-                {
+                } else if let Some((width, blur)) = self.editor.step_selected_widths(|w, blur| {
+                    if blur {
+                        wheel::blur_radius_after(w, notch)
+                    } else {
+                        wheel::stroke_width_after(w, notch)
+                    }
+                }) {
                     // A selection grows from its own widths and keeps its colours.
-                    self.editor.style.width = width;
+                    if blur {
+                        self.editor.blur_radius = width;
+                    } else {
+                        self.editor.style.width = width;
+                    }
+                } else if self.editor.tool == Tool::Blur {
+                    // So does the blur's strength, the one being drawn included.
+                    self.editor.blur_radius =
+                        wheel::blur_radius_after(self.editor.blur_radius, notch);
+                    self.editor.apply_style();
                 } else {
                     self.editor.style.width =
                         wheel::stroke_width_after(self.editor.style.width, notch);
@@ -1003,6 +1017,96 @@ mod tests {
         c.wheel(&mut host, 120).unwrap();
         assert_eq!(c.editor.style.width, width);
         assert!(c.bucket);
+    }
+    /// A blur dragged from `from` to `to` with the blur tool: its id.
+    fn blur(c: &mut Capture, host: &mut FakeHost, from: Point, to: Point) -> u64 {
+        let m = Modifiers::default();
+        c.action(host, Action::Tool(Tool::Blur));
+        c.pointer_down(host, from, m).unwrap();
+        c.pointer_move(host, to, m);
+        c.pointer_up(host, to, m);
+        c.editor.objects().last().unwrap().id
+    }
+    #[test]
+    fn the_blur_tool_drags_a_zone_at_the_strength_the_wheel_set() {
+        let (mut c, mut host) = selected();
+        c.action(&mut host, Action::Tool(Tool::Blur));
+        let pen = c.editor.style.width;
+        c.wheel(&mut host, 120).unwrap();
+        assert_eq!(c.editor.blur_radius, 8., "one rung up from 7");
+        assert_eq!(c.editor.style.width, pen, "the pen keeps its width");
+        blur(&mut c, &mut host, p(150., 150.), p(350., 220.));
+        let o = &c.editor.objects()[0];
+        assert_eq!(
+            o.shape,
+            Shape::Blur(Rect::new(p(150., 150.), p(350., 220.)).unwrap())
+        );
+        assert_eq!(o.style.width, 8.);
+        assert!(!host.captured, "the pointer is let go");
+        // The wheel while dragging sets the strength of the blur being drawn.
+        let m = Modifiers::default();
+        c.pointer_down(&mut host, p(400., 150.), m).unwrap();
+        c.pointer_move(&mut host, p(500., 250.), m);
+        c.wheel(&mut host, 240).unwrap();
+        c.pointer_up(&mut host, p(500., 250.), m);
+        assert_eq!(c.editor.objects()[1].style.width, 12.);
+        c.action(&mut host, Action::Undo);
+        assert_eq!(
+            c.editor.objects().len(),
+            1,
+            "drawn and strengthened: one step"
+        );
+    }
+    #[test]
+    fn the_wheel_strengthens_the_selected_blurs_in_one_step() {
+        let (mut c, mut host) = selected();
+        let id = blur(&mut c, &mut host, p(150., 150.), p(350., 220.));
+        c.action(&mut host, Action::Tool(Tool::Select));
+        c.editor.select_only(id);
+        c.wheel(&mut host, -120).unwrap();
+        assert_eq!(c.editor.objects()[0].style.width, 6.);
+        assert_eq!(c.editor.blur_radius, 6., "the next blur follows");
+        assert_eq!(c.editor.style.width, Style::default().width);
+        c.action(&mut host, Action::Undo);
+        assert_eq!(c.editor.objects()[0].style.width, 7.);
+        assert_eq!(c.editor.objects().len(), 1);
+    }
+    #[test]
+    fn the_palette_and_the_bucket_leave_a_blur_alone() {
+        let (mut c, mut host) = selected();
+        let id = blur(&mut c, &mut host, p(150., 150.), p(350., 220.));
+        c.action(&mut host, Action::Tool(Tool::Select));
+        c.editor.select_only(id);
+        let before = c.editor.objects().to_vec();
+        c.action(&mut host, Action::Color(crate::toolbar::COLORS[3]));
+        assert_eq!(c.editor.objects(), before);
+        c.action(&mut host, Action::Fill);
+        c.pointer_down(&mut host, p(250., 180.), Modifiers::default())
+            .unwrap();
+        assert_eq!(c.editor.objects(), before, "the bucket colours the capture");
+        assert_eq!(c.editor.background().len(), 1);
+    }
+    #[test]
+    fn a_board_has_no_blur_tool_and_pastes_no_blur() {
+        let (mut c, mut host) = selected();
+        let id = blur(&mut c, &mut host, p(150., 150.), p(350., 220.));
+        c.editor.select_only(id);
+        c.copied_objects = c.editor.copy_selected();
+        assert_eq!(c.clipboard().len(), 1);
+        c.board = true;
+        assert!(c.clipboard().is_empty());
+        c.action(&mut host, Action::Tool(Tool::Pen));
+        c.action(&mut host, Action::Tool(Tool::Blur));
+        assert_eq!(c.editor.tool, Tool::Pen);
+        assert_eq!(
+            c.key(&mut host, 88, Modifiers::default()),
+            crate::keys::KeyOutcome::Handled
+        );
+        assert!(
+            c.buttons()
+                .iter()
+                .all(|b| b.action != Action::Tool(Tool::Blur))
+        );
     }
     #[test]
     fn escape_puts_the_bucket_down_first() {

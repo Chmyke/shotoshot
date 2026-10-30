@@ -40,6 +40,7 @@ toolbar.line = Çizgi
 toolbar.arrow = Ok
 toolbar.pen = Kalem
 toolbar.highlighter = Vurgulayıcı
+toolbar.blur = Bulanıklık
 toolbar.label = Metin kutusu
 toolbar.text = Metin
 toolbar.eraser = Silgi

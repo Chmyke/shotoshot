@@ -227,6 +227,103 @@ fn portable_renderer_matches_direct2d_annotations() {
 }
 
 #[test]
+fn both_renderers_blur_the_same_pixels_on_screen_and_in_the_export() {
+    use shotoshot_ui::Capture;
+    let _com = ComApartment::new().unwrap();
+    // A capture whose every pixel differs from its neighbours.
+    let mut image = Image::solid(320, 200, [0, 0, 0, 255]);
+    for (i, p) in image.pixels.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+        let noise = (i as u32).wrapping_mul(2_654_435_761);
+        p[..3].copy_from_slice(&[(noise >> 24) as u8, (noise >> 16) as u8, (noise >> 8) as u8]);
+    }
+    let blur = |id, r: Rect, width| Object {
+        id,
+        rotation: 0.,
+        fill: Vec::new(),
+        style: Style {
+            color: [0; 3],
+            width,
+        },
+        shape: Shape::Blur(r),
+    };
+    let r = |x0, y0, x1, y1| Rect::new(Point { x: x0, y: y0 }, Point { x: x1, y: y1 }).unwrap();
+    // Two that overlap, one past the frame's edge, and an arrow over them all.
+    let mut objects = vec![
+        blur(1, r(20.4, 30., 180., 120.), 7.),
+        blur(2, r(140., 90., 260., 170.), 12.),
+        blur(3, r(250., -40., 360., 60.), 3.),
+    ];
+    objects.push(Object {
+        id: 4,
+        rotation: 0.,
+        fill: Vec::new(),
+        style: Style {
+            color: [237, 79, 92],
+            width: 4.,
+        },
+        shape: Shape::Arrow {
+            start: Point { x: 30., y: 180. },
+            end: Point { x: 290., y: 20. },
+            start_attach: None,
+            end_attach: None,
+            head: true,
+            bend: Default::default(),
+            elbow: false,
+        },
+    });
+    let mut shown = image.clone();
+    assert!(shotoshot_core::blur::flatten(
+        &mut shown.pixels,
+        320,
+        200,
+        &objects
+    ));
+    let crop = r(0., 0., 320., 200.);
+    let native = Renderer::new()
+        .unwrap()
+        .export(&image, &[], &objects, crop)
+        .unwrap();
+    let portable = Raster::new().export(&image, &[], &objects, crop).unwrap();
+    // Off the arrow, both exports hold exactly the shared blur of the capture.
+    let ink =
+        |image: &Image, i: usize| image.pixels[i * 4..i * 4 + 3] != shown.pixels[i * 4..i * 4 + 3];
+    let (mut same, mut inked) = (0, 0);
+    for i in 0..320 * 200 {
+        if ink(&native, i) || ink(&portable, i) {
+            inked += 1;
+            continue;
+        }
+        same += 1;
+    }
+    assert!(
+        inked < 4000,
+        "{inked} pixels differ from the blurred capture"
+    );
+    assert!(same > 60_000);
+    // On screen, the portable canvas lays the same patches (Direct2D: `scene_tests`).
+    let mut capture = Capture::new(image.clone());
+    capture.region = Some(crop);
+    capture.selecting = false;
+    capture.editor = Editor::restore(objects.clone(), 4, Vec::new());
+    let mut raster = Raster::new();
+    let mut frame = shotoshot_raster::pixmap_from_bgra(&capture.image).unwrap();
+    capture
+        .draw_underlay(&mut raster.canvas(&mut frame))
+        .unwrap();
+    let screen = shotoshot_raster::image_from_pixmap(&frame, 0, 0);
+    assert_eq!(screen.pixels, shown.pixels, "under the annotations");
+    // And the arrow over them stays sharp: its red is the annotation's own.
+    let red = native
+        .pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter(|p| p[..3] == [92, 79, 237])
+        .count();
+    assert!(red > 300, "the arrow is not blurred ({red} pure pixels)");
+}
+
+#[test]
 fn portable_renderer_paints_the_whole_capture_overlay() {
     use shotoshot_ui::{Canvas, Capture};
     let _com = ComApartment::new().unwrap();

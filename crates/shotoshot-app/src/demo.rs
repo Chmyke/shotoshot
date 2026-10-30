@@ -181,6 +181,7 @@ pub fn render_demo() -> Result<()> {
         &renderer,
         &path.with_file_name("shotoshot-elbow-arrows.png"),
     )?;
+    blurred_text(&renderer, &path.with_file_name("shotoshot-blur.png"))?;
     crate::presentation::demo::render()
 }
 
@@ -236,6 +237,54 @@ fn elbows(renderer: &Renderer, path: &std::path::Path) -> Result<()> {
     let pointer = editor.anchors(hovered).map_or(at(0., 0.), |a| a[3]);
     session.capture.pointer = pointer;
     let preview = paint_image(1100, 680, |hdc| session.paint(hdc))?;
+    save_png(&preview, path)
+}
+
+/// A page of 20 px text whose private lines are blurred at the default strength, with an
+/// arrow drawn across the blur that stays sharp, as the editor shows it with the blur tool in
+/// hand.
+fn blurred_text(renderer: &Renderer, path: &std::path::Path) -> Result<()> {
+    let at = |x: f64, y: f64| Point { x, y };
+    let (width, height) = (1100u32, 680u32);
+    let lines = [
+        "Order 48213 shipped on 30 October",
+        "Jane Doe, 12 rue des Lilas, 69003 Lyon",
+        "Card 4921 7730 1184 0062, expires 09/28",
+        "Phone +33 6 12 34 56 78",
+        "Thank you for your order!",
+    ];
+    // The screenshot: the lines set on a light page, then captured as pixels.
+    let mut page = Editor::default();
+    for (row, line) in lines.iter().enumerate() {
+        let extent = renderer.measure_annotation_text(line, 20.)?;
+        let corner = at(140., 170. + 48. * row as f64);
+        page.add_text_measured_sized_colored(corner, (*line).into(), extent, [40, 44, 52], 20.);
+    }
+    let whole = Rect {
+        min: Point::default(),
+        max: at(width as f64, height as f64),
+    };
+    let screenshot = renderer.export(
+        &Image::solid(width, height, [248, 245, 242, 255]),
+        &[],
+        page.objects(),
+        whole,
+    )?;
+    let mut session = crate::session::Session::new(screenshot)?;
+    session.capture.region = Rect::new(at(70., 100.), at(1030., 600.));
+    session.capture.selecting = false;
+    let editor = &mut session.capture.editor;
+    editor.tool = Tool::Blur;
+    editor.begin(at(130., 212.), Modifiers::default());
+    editor.update(at(640., 362.));
+    editor.finish();
+    editor.tool = Tool::Arrow;
+    editor.begin(at(820., 470.), Modifiers::default());
+    editor.update(at(560., 300.));
+    editor.finish();
+    editor.tool = Tool::Blur;
+    session.capture.pointer = at(760., 520.);
+    let preview = paint_image(width, height, |hdc| session.paint(hdc))?;
     save_png(&preview, path)
 }
 

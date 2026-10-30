@@ -2,6 +2,11 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.29 · 2026-10-30
+
+- New Blur tool (X): drag a rectangle over a password, an address or a face and it becomes unreadable for good, scrambled before being blurred; the mouse wheel sets how strong.
+- Saved as an editable image, the hidden zone is destroyed in the file too, so nobody can dig the original back out.
+
 ## 0.3.28 · 2026-10-30
 
 - Text boxes sprout four little dots when you hover them: pull one and out comes an arrow, leaving the box square-on and turning neat rounded corners. Drop it on another box or shape and it stays hooked on, wherever you move either one.

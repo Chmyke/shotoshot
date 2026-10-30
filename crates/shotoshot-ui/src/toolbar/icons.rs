@@ -274,6 +274,23 @@ fn paint<C: Canvas>(
                 .stroke_round_rect(barrel, 1.6 * scale, g.ink, 1.6 * scale)?;
             g.outline(&[(3., 4.5), (10., 4.5)], false)?;
         }
+        // Text that fades away (Mickaël's design 6, 2026-10-30): three lines, each solid on
+        // its left and broken on its right into blocks of alternating strength, the
+        // alternation shifted one block from line to line. Drawn on the 18 px board grid,
+        // one pixel in from the 20 px glyph's edge.
+        Action::Tool(Tool::Blur) => {
+            for (row, y) in [5.5, 10., 14.5].into_iter().enumerate() {
+                g.band((3., y), (8.5, y), g.ink, 1.6)?;
+                for block in 0..4 {
+                    let strong = (block + row) % 2 == 0;
+                    let alpha = if strong { 0.9 } else { 0.55 };
+                    let x = 9.5 + 2. * block as f64;
+                    let cell = g.rect(x, y - 0.875, x + 1.25, y + 0.875);
+                    g.canvas
+                        .fill_rect(cell, Ink::with_alpha(foreground, alpha))?;
+                }
+            }
+        }
         // A panel of the tint with a letter on it, in the ink a label gives that panel.
         Action::Tool(Tool::Label) => {
             let panel = g.rect(1.5, 4., 18.5, 16.);
@@ -547,6 +564,26 @@ mod tests {
         };
         assert!(rim(true), "on the chosen fill");
         assert!(!rim(false), "on the panel");
+    }
+
+    #[test]
+    fn the_blur_is_three_lines_of_text_fading_into_blocks_of_the_glyph_ink() {
+        let ops = record(Action::Tool(Tool::Blur), ([237, 79, 92], [1, 2, 3])).ops;
+        let solid = format!("{:?}", Ink::solid([235; 3]));
+        let lines: Vec<_> = ops.iter().filter(|op| op.name == "line").collect();
+        assert_eq!(lines.len(), 3, "a solid start to each line");
+        assert!(lines.iter().all(|op| op.fixed == solid));
+        let blocks: Vec<_> = ops.iter().filter(|op| op.name == "fill_rect").collect();
+        assert_eq!(blocks.len(), 12, "four blocks after each");
+        let shade = |i: usize| blocks[i].fixed.clone();
+        assert_ne!(shade(0), shade(1), "strong and weak alternate");
+        assert_eq!(shade(0), shade(5), "shifted by one on the next line");
+        assert!(
+            blocks.iter().all(|op| op.fixed.contains("[235, 235, 235]")),
+            "the glyph's ink, not the tint"
+        );
+        // Each block starts right of its line's solid part.
+        assert!(blocks.iter().all(|op| op.lengths[0] > lines[0].lengths[2]));
     }
 
     #[test]

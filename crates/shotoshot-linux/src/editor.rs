@@ -746,7 +746,7 @@ impl Editor {
             KeyOutcome::PasteAnnotations => {
                 self.capture.paste_count = self.capture.paste_count.saturating_add(1);
                 let offset = 16. * self.capture.paste_count as f64;
-                let objects = self.capture.copied_objects.clone();
+                let objects = self.capture.clipboard();
                 self.capture.editor.paste_objects(
                     &objects,
                     Point {

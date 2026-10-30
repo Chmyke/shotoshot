@@ -54,6 +54,7 @@ toolbar.line = Line
 toolbar.arrow = Arrow
 toolbar.pen = Pen
 toolbar.highlighter = Highlighter
+toolbar.blur = Blur
 toolbar.label = Text box
 toolbar.text = Text
 toolbar.eraser = Eraser

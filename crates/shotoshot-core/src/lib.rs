@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod bend;
+pub mod blur;
 pub mod board;
 mod document;
 mod editor;
@@ -16,6 +17,7 @@ pub mod rename_migration;
 pub mod settings;
 pub mod shoto;
 pub use bend::*;
+pub use blur::{BLUR_RADIUS, BlurPatch};
 pub use document::*;
 pub use editor::*;
 pub use elbow::*;

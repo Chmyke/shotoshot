@@ -107,7 +107,7 @@ pub const COLORS: [[u8; 3]; 6] = [
     [28, 31, 40],
 ];
 // One source for toolbar hints and keyboard dispatch. Native text fields handle their own keys.
-const SHORTCUTS: [(Key, Action, u32, bool, bool); 26] = [
+const SHORTCUTS: [(Key, Action, u32, bool, bool); 27] = [
     (
         Key::ToolbarSelect,
         Action::Tool(Tool::Select),
@@ -145,6 +145,7 @@ const SHORTCUTS: [(Key, Action, u32, bool, bool); 26] = [
         false,
         false,
     ),
+    (Key::ToolbarBlur, Action::Tool(Tool::Blur), 88, false, false),
     (
         Key::ToolbarLabel,
         Action::Tool(Tool::Label),
@@ -401,10 +402,11 @@ fn layout(
     let cell = 32.;
     let entries = SHORTCUTS.map(|(label, action, _, _, _)| (label, action));
     let is_tool = |a: Action| matches!(a, Action::Tool(_));
+    // A board has no capture under its notes to blur.
     let tools: Vec<_> = entries
         .iter()
         .copied()
-        .filter(|(_, a)| is_tool(*a))
+        .filter(|(_, a)| is_tool(*a) && !(board && *a == Action::Tool(Tool::Blur)))
         .collect();
     let mut actions: Vec<_> = entries
         .iter()
@@ -719,7 +721,7 @@ mod tests {
     use shotoshot_text::Language;
 
     /// The English hints as they were written before translation, in listing order.
-    const ENGLISH_HINTS: [&str; 38] = [
+    const ENGLISH_HINTS: [&str; 39] = [
         "Select · V · Page Up/Down forward or back",
         "Rectangle · R · Scroll to resize",
         "Ellipse · C · Scroll to resize",
@@ -727,6 +729,7 @@ mod tests {
         "Arrow · A · Scroll to resize",
         "Pen · P · Scroll to resize",
         "Highlighter · H · Scroll to resize",
+        "Blur · X · Scroll to resize",
         "Text box · B · Scroll to resize",
         "Text · T · Scroll to resize",
         "Eraser · E · Scroll to resize",
@@ -866,6 +869,44 @@ mod tests {
                 "Eraser · E · Scroll to resize"
             );
         }
+    }
+    #[test]
+    fn x_selects_the_blur_just_after_the_highlighter_except_on_a_board() {
+        assert_eq!(
+            shortcut_action(88, false, false, false),
+            Some(Action::Tool(Tool::Blur))
+        );
+        assert_eq!(shortcut_action(88, true, false, false), None, "Ctrl+X");
+        let region = Rect::new(Point { x: 100., y: 100. }, Point { x: 400., y: 300. }).unwrap();
+        let screen = Rect::new(Point::default(), Point { x: 1920., y: 1080. }).unwrap();
+        let tools = |board| {
+            buttons_in(region, None, screen, 1., board, false)
+                .into_iter()
+                .filter_map(|b| match b.action {
+                    Action::Tool(t) => Some((t, b)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let capture = tools(false);
+        let highlight = capture
+            .iter()
+            .position(|(t, _)| *t == Tool::Highlight)
+            .unwrap();
+        let (tool, blur) = &capture[highlight + 1];
+        assert_eq!(*tool, Tool::Blur);
+        assert_eq!(blur.panel, 0, "among the drawing tools");
+        assert_eq!(
+            tooltip_in(blur, Language::En),
+            "Blur · X · Scroll to resize"
+        );
+        assert_eq!(
+            tooltip_in(blur, Language::Fr),
+            "Flou · X · Molette pour la taille"
+        );
+        let board = tools(true);
+        assert!(board.iter().all(|(t, _)| *t != Tool::Blur));
+        assert_eq!(board.len() + 1, capture.len());
     }
     #[test]
     fn hover_delay_fade_and_timer_stop() {
@@ -1079,7 +1120,7 @@ mod tests {
                 .unwrap(),
             ] {
                 let buttons = buttons(r, w, h);
-                assert_eq!(buttons.len(), 26);
+                assert_eq!(buttons.len(), 27);
                 let panels = panels(&buttons, 1.);
                 let screen = Rect {
                     min: Point::default(),

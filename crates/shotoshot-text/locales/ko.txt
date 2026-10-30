@@ -40,6 +40,7 @@ toolbar.line = 선
 toolbar.arrow = 화살표
 toolbar.pen = 펜
 toolbar.highlighter = 형광펜
+toolbar.blur = 흐림
 toolbar.label = 텍스트 상자
 toolbar.text = 텍스트
 toolbar.eraser = 지우개

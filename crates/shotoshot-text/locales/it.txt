@@ -40,6 +40,7 @@ toolbar.line = Linea
 toolbar.arrow = Freccia
 toolbar.pen = Penna
 toolbar.highlighter = Evidenziatore
+toolbar.blur = Sfocatura
 toolbar.label = Casella di testo
 toolbar.text = Testo
 toolbar.eraser = Gomma

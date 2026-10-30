@@ -3,7 +3,7 @@
 //! INVARIANTS: Interface sizes are 96-DPI logical pixels times `Capture::ui_scale`;
 //! only the capture and its annotations are in raw pixels (`scale_tests`).
 use crate::{Canvas, Capture, Ink, region_handles, toolbar};
-use shotoshot_core::{FillChange, Object, Paint, Point, Rect, Tool, paths};
+use shotoshot_core::{BlurPatch, FillChange, Object, Paint, Point, Rect, Tool, paths};
 use shotoshot_text::{Key, Language, Text, language, tr, tr_in};
 
 const ACCENT: Ink = Ink::solid([100, 170, 255]);
@@ -29,9 +29,17 @@ impl Capture {
             },
         }
     }
-    /// All that lies under the annotations: the shade outside the region (the whole
-    /// frame before a selection) and, inside it, the background's coats when there are any.
+    /// All that lies under the annotations: the blurred zones of the capture, the shade
+    /// outside the region (the whole frame before a selection) and, inside it, the
+    /// background's coats when there are any.
     pub fn draw_underlay<C: Canvas>(&self, canvas: &mut C) -> Result<(), C::Error> {
+        let image = &self.image;
+        let patches = BlurPatch::all(self.editor.objects(), image.width, image.height);
+        if !patches.is_empty() {
+            canvas.blurs(&patches, &mut |i| {
+                patches[i].pixels(&image.pixels, image.width)
+            })?;
+        }
         let screen = self.screen();
         let Some(r) = self.region else {
             return canvas.fill_rect(screen, SHADE);
@@ -376,6 +384,8 @@ impl Capture {
                 self.editor.eraser_size,
             ),
             Tool::Highlight => (self.editor.style.width * 5., self.editor.style.width * 5.),
+            // How far a pixel may land: the shuffle's reach either side.
+            Tool::Blur => (self.editor.blur_radius * 2., self.editor.blur_radius),
             _ => (self.editor.style.width, self.editor.style.width),
         }
     }

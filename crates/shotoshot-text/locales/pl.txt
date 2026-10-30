@@ -40,6 +40,7 @@ toolbar.line = Linia
 toolbar.arrow = Strzałka
 toolbar.pen = Pióro
 toolbar.highlighter = Zakreślacz
+toolbar.blur = Rozmycie
 toolbar.label = Pole tekstowe
 toolbar.text = Tekst
 toolbar.eraser = Gumka

@@ -5,7 +5,9 @@
 use cosmic_text::{
     Attrs, Buffer, Color, Family, FontSystem, Metrics, Shaping, SwashCache, Weight, fontdb,
 };
-use shotoshot_core::{Label, Object, Point, Rect, Shape, paths, stroke_runs, text_lines};
+use shotoshot_core::{
+    BlurPatch, Label, Object, Point, Rect, Shape, paths, stroke_runs, text_lines,
+};
 use shotoshot_ui::{Canvas, Face, Image, Ink, annotation_font};
 use std::sync::Arc;
 use tiny_skia::{
@@ -41,6 +43,8 @@ pub struct Raster {
     fonts: FontSystem,
     glyphs: SwashCache,
     rasters: Vec<(&'static str, u64, Pixmap)>,
+    /// What each blur makes of the capture, by object id with its version.
+    blurs: Vec<(u64, u64, Pixmap)>,
 }
 impl Default for Raster {
     fn default() -> Self {
@@ -56,6 +60,7 @@ impl Raster {
             fonts,
             glyphs: SwashCache::new(),
             rasters: Vec::new(),
+            blurs: Vec::new(),
         }
     }
     /// Extent of interface `text` laid out at `size`, exactly as `Canvas::text` draws it.
@@ -112,7 +117,7 @@ impl Raster {
         }
     }
     /// The capture flattened with its annotations, cropped to `crop`, the `background`'s
-    /// coats laid over the captured pixels.
+    /// coats laid over the captured pixels, the blurred zones blurred.
     pub fn export(
         &mut self,
         image: &Image,
@@ -121,6 +126,8 @@ impl Raster {
         crop: Rect,
     ) -> Result<Image, RasterError> {
         image.check().map_err(RasterError)?;
+        let blurred = image.blurred(objects);
+        let image = &*blurred;
         let left = crop.min.x.floor().clamp(0., image.width as f64) as u32;
         let top = crop.min.y.floor().clamp(0., image.height as f64) as u32;
         let right = crop.max.x.ceil().clamp(0., image.width as f64) as u32;
@@ -534,6 +541,56 @@ impl Canvas for SkiaCanvas<'_> {
             .draw_pixmap(0, 0, source.as_ref(), &paint, scale, None);
         Ok(())
     }
+    fn blurs(
+        &mut self,
+        patches: &[BlurPatch],
+        pixels: &mut dyn FnMut(usize) -> Vec<u8>,
+    ) -> Result<(), RasterError> {
+        self.raster
+            .blurs
+            .retain(|(id, _, _)| patches.iter().any(|p| p.id == *id));
+        for (i, patch) in patches.iter().enumerate() {
+            let cache = &mut self.raster.blurs;
+            let version = patch.version();
+            let index = match cache.iter().position(|(id, _, _)| *id == patch.id) {
+                Some(at) if cache[at].1 == version => at,
+                found => {
+                    let zone = patch.zone;
+                    let mut pixmap =
+                        Pixmap::new(zone.width, zone.height).ok_or(RasterError("Empty blur"))?;
+                    let bgra = pixels(i);
+                    if bgra.len() != pixmap.data().len() {
+                        return Err(RasterError("Blur buffer length"));
+                    }
+                    for (to, from) in pixmap
+                        .data_mut()
+                        .as_chunks_mut::<4>()
+                        .0
+                        .iter_mut()
+                        .zip(bgra.as_chunks::<4>().0)
+                    {
+                        *to = [from[2], from[1], from[0], 255];
+                    }
+                    match found {
+                        Some(at) => {
+                            cache[at] = (patch.id, version, pixmap);
+                            at
+                        }
+                        None => {
+                            cache.push((patch.id, version, pixmap));
+                            cache.len() - 1
+                        }
+                    }
+                }
+            };
+            let at = Transform::from_translate(patch.zone.x as f32, patch.zone.y as f32)
+                .post_concat(self.transform);
+            let source = &self.raster.blurs[index].2;
+            self.target
+                .draw_pixmap(0, 0, source.as_ref(), &PixmapPaint::default(), at, None);
+        }
+        Ok(())
+    }
     fn annotations(&mut self, objects: &[Object], skip: Option<u64>) -> Result<(), RasterError> {
         for (index, o) in objects.iter().enumerate() {
             if Some(o.id) == skip {
@@ -585,6 +642,8 @@ impl Canvas for SkiaCanvas<'_> {
                         self.text_at(line, r, (Face::Annotation, *size), ink, transform, false);
                     }
                 }
+                // A blur belongs to the capture: `blurs` drew it under everything.
+                Shape::Blur(_) => {}
                 Shape::Stroke { highlight, .. } => {
                     // Fill the union once, so translucent highlighter runs do not
                     // become darker where two thicknesses meet.
@@ -914,6 +973,75 @@ mod tests {
         let horizontal_band = inked(&frame, 0..400, 90..120);
         assert!(tall > 80);
         assert!(horizontal_band * 2 < tall, "text was not rotated");
+    }
+
+    /// Real text of 20 px, set in the annotation face, loses what makes it readable under a
+    /// blur of the default strength: the fine contrast of its strokes, and what tells two
+    /// different lines apart. Same measures as `shotoshot-core/tests/blur.rs`.
+    #[test]
+    fn twenty_pixel_text_is_unreadable_under_a_default_blur() {
+        let (width, height) = (400u32, 60u32);
+        let page = |line: &str| {
+            let mut frame = pixmap_from_bgra(&Image::solid(width, height, [255; 4])).unwrap();
+            let mut raster = Raster::new();
+            let r = Rect::new(at(10., 15.), at(390., 50.)).unwrap();
+            raster
+                .canvas(&mut frame)
+                .annotation_text(line, r, 20., Ink::solid([20, 20, 20]))
+                .unwrap();
+            image_from_pixmap(&frame, 0, 0).pixels
+        };
+        let luma = |pixels: &[u8]| -> Vec<f64> {
+            let chunks = pixels.as_chunks::<4>().0;
+            chunks.iter().map(|p| p[1] as f64).collect()
+        };
+        let (w, h) = (width as usize, height as usize);
+        let detail = |l: &[f64]| -> f64 {
+            let mut energy = 0.;
+            for y in 2..h - 2 {
+                for x in 2..w - 2 {
+                    let mean = (y - 2..=y + 2)
+                        .flat_map(|yy| (x - 2..=x + 2).map(move |xx| (xx, yy)))
+                        .map(|(xx, yy)| l[yy * w + xx])
+                        .sum::<f64>()
+                        / 25.;
+                    energy += (l[y * w + x] - mean).powi(2);
+                }
+            }
+            energy
+        };
+        let zone = shotoshot_core::blur::Zone {
+            x: 0,
+            y: 0,
+            width,
+            height,
+        };
+        let blur = |pixels: &[u8]| {
+            let radius = shotoshot_core::BLUR_RADIUS as u32;
+            shotoshot_core::blur::patch(pixels, width, zone, radius, 1)
+        };
+        let (a, b) = (
+            page("Invoice 4921 7730 jane@mail.com"),
+            page("Account 8156 2047 marc@site.org"),
+        );
+        let (blur_a, blur_b) = (blur(&a), blur(&b));
+        let kept = detail(&luma(&blur_a)) / detail(&luma(&a));
+        assert!(
+            kept < 0.01,
+            "{kept:.4} of the strokes' fine contrast survives"
+        );
+        let difference = |x: &[u8], y: &[u8]| {
+            luma(x)
+                .iter()
+                .zip(luma(y))
+                .map(|(p, q)| (p - q).powi(2))
+                .sum::<f64>()
+        };
+        let apart = difference(&blur_a, &blur_b) / difference(&a, &b);
+        assert!(
+            apart < 0.1,
+            "{apart:.4} of what tells the lines apart survives"
+        );
     }
 
     /// The Windows bound of every hint (`every_tooltip_fits`), measured by this renderer and

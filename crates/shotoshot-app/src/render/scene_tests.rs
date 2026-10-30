@@ -434,6 +434,87 @@ fn flattened_ellipse_miter_tips_fit_inside_the_checkpoint() {
 }
 
 #[test]
+fn a_blur_shows_its_patch_under_the_ink_and_a_moved_blur_never_shows_a_stale_checkpoint() {
+    let _com = crate::ComApartment::new().unwrap();
+    // The capture of `renderer()`: every pixel unlike its neighbours.
+    let mut capture = shotoshot_ui::Capture::new(Image::solid(240, 180, [255; 4]));
+    for (i, pixel) in capture
+        .image
+        .pixels
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .enumerate()
+    {
+        pixel[..3].copy_from_slice(&[
+            (i % 256) as u8,
+            ((i * 13) % 256) as u8,
+            ((i * 29) % 256) as u8,
+        ]);
+    }
+    capture.region = Some(Rect {
+        min: p(0., 0.),
+        max: p(240., 180.),
+    });
+    capture.selecting = false;
+    let blur = Object {
+        id: 1,
+        rotation: 0.,
+        fill: Vec::new(),
+        style: Style {
+            color: [0; 3],
+            width: 7.,
+        },
+        shape: Shape::Blur(Rect {
+            min: p(20., 30.),
+            max: p(140., 110.),
+        }),
+    };
+    let draw = |renderer: &Renderer, capture: &shotoshot_ui::Capture| {
+        crate::paint_image(240, 180, |dc| {
+            renderer.begin(dc, 240, 180)?;
+            let mut canvas = D2dCanvas::new(renderer, &renderer.dc)?;
+            capture.draw_underlay(&mut canvas)?;
+            canvas.annotations(capture.editor.objects(), None)?;
+            renderer.end()
+        })
+        .unwrap()
+    };
+    let renderer = renderer();
+    capture.editor = shotoshot_core::Editor::restore(vec![blur.clone(), stroke(2)], 2, vec![]);
+    let shown = draw(&renderer, &capture);
+    // Exactly the shared patch, where the stroke leaves it uncovered.
+    let patch = BlurPatch::of(&blur, 240, 180).unwrap();
+    let expected = patch.pixels(&capture.image.pixels, 240);
+    for (x, y) in [(20, 30), (139, 109), (100, 100), (30, 90)] {
+        let at = (y * 240 + x) * 4;
+        let from = ((y - 30) * 120 + x - 20) * 4;
+        assert_eq!(
+            shown.pixels[at..at + 3],
+            expected[from..from + 3],
+            "{x},{y}"
+        );
+    }
+    assert_eq!(
+        shown.pixels[(150 * 240 + 200) * 4..][..3],
+        capture.image.pixels[(150 * 240 + 200) * 4..][..3],
+        "the capture beside it"
+    );
+    // Moved under the same stroke: the warm render equals a fresh one.
+    draw(&renderer, &capture);
+    let mut moved = blur.clone();
+    moved.translate(p(50., 40.));
+    capture.editor = shotoshot_core::Editor::restore(vec![moved, stroke(2)], 2, vec![]);
+    let warm = draw(&renderer, &capture);
+    let fresh = draw(&self::renderer(), &capture);
+    assert!(
+        warm.pixels == fresh.pixels,
+        "a checkpoint kept the old blur"
+    );
+    assert!(warm.pixels != shown.pixels);
+}
+
+#[test]
 fn cached_prefix_retains_unchanged_outlines_when_an_earlier_object_is_edited() {
     let _com = crate::ComApartment::new().unwrap();
     let renderer = renderer();

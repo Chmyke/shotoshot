@@ -1,5 +1,8 @@
 //! ROLE: A captured frame in memory, shared by every platform.
 //! INVARIANTS: Top-down BGRA rows, 4 bytes per pixel; `left`/`top` place it on the desktop.
+use shotoshot_core::Object;
+use std::borrow::Cow;
+
 #[derive(Clone)]
 pub struct Image {
     pub width: u32,
@@ -32,6 +35,17 @@ impl Image {
             left: 0,
             top: 0,
         }
+    }
+    /// This frame with the capture under every blur of `objects` replaced, for good, by what
+    /// the blur shows on screen: what exports and saved documents hold. Borrowed unchanged
+    /// when no blur covers it.
+    pub fn blurred(&self, objects: &[Object]) -> Cow<'_, Image> {
+        if !objects.iter().any(Object::is_blur) || self.check().is_err() {
+            return Cow::Borrowed(self);
+        }
+        let mut blurred = self.clone();
+        shotoshot_core::blur::flatten(&mut blurred.pixels, self.width, self.height, objects);
+        Cow::Owned(blurred)
     }
 }
 

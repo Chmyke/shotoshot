@@ -58,6 +58,10 @@ pub enum Shape {
         /// with the panel (`label_ink`). Meaningless without a panel.
         ink: Option<[u8; 3]>,
     },
+    /// A zone of the capture made unreadable (`blur`): its strength, the shuffle radius in
+    /// pixels, is `style.width`; its colour means nothing. Never turned: it covers whole
+    /// pixels of the capture, which stay square.
+    Blur(Rect),
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct Object {
@@ -74,6 +78,10 @@ impl Object {
     /// A rectangle or an ellipse: the shapes the bucket fills and whose outline stops it.
     pub fn closed(&self) -> bool {
         matches!(self.shape, Shape::Rectangle(_) | Shape::Ellipse(_))
+    }
+    /// A blur: it changes the capture, not what is drawn, so colours and the bucket pass it by.
+    pub fn is_blur(&self) -> bool {
+        matches!(self.shape, Shape::Blur(_))
     }
     /// The coat of this shape's fill seen at `p`, if any; `objects` is the pile it is in.
     pub fn coat_seen(&self, p: Point, objects: &[Object]) -> Option<usize> {
@@ -187,6 +195,8 @@ impl Object {
                     *p = rotate_point(*p, center, angle);
                 }
             }
+            // Carried round with the others, never turned itself.
+            Shape::Blur(_) => self.translate(new_center - old_center),
             _ => {
                 self.translate(new_center - old_center);
                 self.rotation = (self.rotation + angle).rem_euclid(std::f64::consts::TAU);
@@ -195,7 +205,7 @@ impl Object {
     }
     pub fn local_bounds(&self) -> Rect {
         match &self.shape {
-            Shape::Rectangle(r) | Shape::Ellipse(r) => *r,
+            Shape::Rectangle(r) | Shape::Ellipse(r) | Shape::Blur(r) => *r,
             Shape::Arrow {
                 start,
                 end,
@@ -281,7 +291,7 @@ impl Object {
                     },
         };
         match &mut self.shape {
-            Shape::Rectangle(r) | Shape::Ellipse(r) => {
+            Shape::Rectangle(r) | Shape::Ellipse(r) | Shape::Blur(r) => {
                 *r = Rect::new(map(r.min), map(r.max)).unwrap_or(*r);
             }
             // The bend is relative to the ends, so the curve follows them.
@@ -391,6 +401,8 @@ impl Object {
                     .any(|w| segment_distance(p, w[0], w[1]) <= tolerance + width * 0.5)
             }),
             Shape::Text { .. } => self.local_bounds().contains(self.world_to_local(p)),
+            // The blurred zone is solid to the eye.
+            Shape::Blur(r) => r.expanded(tolerance).contains(p),
         }
     }
 }

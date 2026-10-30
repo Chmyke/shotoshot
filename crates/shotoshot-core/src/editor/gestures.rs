@@ -57,17 +57,25 @@ impl Editor {
                     widths: Vec::new(),
                     highlight: self.tool == Tool::Highlight,
                 },
+                Tool::Blur => Shape::Blur(Rect { min: p, max: p }),
                 _ => Shape::Rectangle(Rect { min: p, max: p }),
             };
             if matches!(self.tool, Tool::Text | Tool::Label) {
                 return;
             }
+            let style = match shape {
+                Shape::Blur(_) => Style {
+                    width: self.blur_radius,
+                    ..self.style
+                },
+                _ => self.style,
+            };
             self.objects.push(Object {
                 rotation: 0.,
                 fill: Vec::new(),
                 id: self.next_id,
                 shape,
-                style: self.style,
+                style,
             });
             self.selected.clear();
             GestureKind::Draw
@@ -385,7 +393,7 @@ impl Editor {
                 let origin_attachment = attaches.then(|| attach_at(g.origin, prior)).flatten();
                 if let Some(o) = self.objects.last_mut() {
                     match &mut o.shape {
-                        Shape::Rectangle(r) => {
+                        Shape::Rectangle(r) | Shape::Blur(r) => {
                             let mut d = p - g.origin;
                             if g.modifiers.shift {
                                 let size = d.x.abs().max(d.y.abs());

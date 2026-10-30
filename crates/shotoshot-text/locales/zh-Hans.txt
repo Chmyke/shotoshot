@@ -40,6 +40,7 @@ toolbar.line = 直线
 toolbar.arrow = 箭头
 toolbar.pen = 画笔
 toolbar.highlighter = 荧光笔
+toolbar.blur = 模糊
 toolbar.label = 文本框
 toolbar.text = 文本
 toolbar.eraser = 橡皮擦

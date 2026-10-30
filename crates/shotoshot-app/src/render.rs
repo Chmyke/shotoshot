@@ -1,7 +1,7 @@
 //! ROLE: Shared Direct2D drawing for the overlay and flattened output.
 //! OWNER: Each capture owns one renderer; no rendering exists while resident.
 use crate::{Image, ImageExt};
-use shotoshot_core::{Label, Object, Paint, Point, Rect, Shape, paths};
+use shotoshot_core::{BlurPatch, Label, Object, Paint, Point, Rect, Shape, paths};
 use shotoshot_ui::{Canvas, Ink, TextStyle, View};
 use windows::{
     Win32::{
@@ -41,6 +41,9 @@ pub struct Renderer {
     rasters: std::cell::RefCell<Vec<(&'static str, u64, ID2D1Bitmap)>>,
     strokes: std::cell::RefCell<strokes::StrokeCache>,
     scene: std::cell::RefCell<scene::SceneCache>,
+    // What each blur makes of the capture, by object id with its version; they die with this
+    // render target and with the capture they were cut from (`set_image`).
+    blurs: std::cell::RefCell<Vec<(u64, u64, ID2D1Bitmap)>>,
     backend: Backend,
     transparent: bool,
 }
@@ -354,6 +357,7 @@ impl Renderer {
                 rasters: Default::default(),
                 strokes: Default::default(),
                 scene: Default::default(),
+                blurs: Default::default(),
                 backend,
                 transparent,
             })
@@ -368,6 +372,7 @@ impl Renderer {
     pub fn set_image(&mut self, image: &Image) -> Result<()> {
         self.backdrop = Some(self.bitmap(&self.dc, image)?);
         self.scene.get_mut().invalidate();
+        self.blurs.get_mut().clear();
         Ok(())
     }
     fn bitmap(&self, target: &ID2D1RenderTarget, image: &Image) -> Result<ID2D1Bitmap> {
@@ -580,7 +585,8 @@ impl Renderer {
         unsafe {
             for index in range {
                 let o = &objects[index];
-                if Some(o.id) == skip {
+                // A blur belongs to the capture: `Canvas::blurs` drew it under everything.
+                if Some(o.id) == skip || o.is_blur() {
                     continue;
                 }
                 if let Shape::Text {
@@ -746,7 +752,7 @@ impl Renderer {
         unsafe { self.dc.EndDraw(None, None) }
     }
     /// The capture flattened with its annotations, cropped to `crop`, the `background`'s
-    /// coats laid over the captured pixels.
+    /// coats laid over the captured pixels, the blurred zones blurred.
     pub fn export(
         &self,
         image: &Image,
@@ -754,6 +760,8 @@ impl Renderer {
         objects: &[Object],
         crop: Rect,
     ) -> Result<Image> {
+        let blurred = image.blurred(objects);
+        let image = &*blurred;
         unsafe {
             let left = crop.min.x.floor().clamp(0., image.width as f64) as u32;
             let top = crop.min.y.floor().clamp(0., image.height as f64) as u32;
@@ -851,6 +859,8 @@ pub struct D2dCanvas<'a> {
     // annotations. Other drawing before annotations opts out: unknown pixels must never
     // enter a reusable checkpoint.
     underlay: Option<Vec<Underlay>>,
+    // The blurs drawn under the annotations, by id and version: a checkpoint holds them too.
+    blurs: Vec<(u64, u64)>,
 }
 impl<'a> D2dCanvas<'a> {
     pub fn new(renderer: &'a Renderer, target: &'a ID2D1RenderTarget) -> Result<Self> {
@@ -860,6 +870,7 @@ impl<'a> D2dCanvas<'a> {
             target,
             brush,
             underlay: Some(Vec::new()),
+            blurs: Vec::new(),
         })
     }
     /// A direct canvas recolouring `brush`: a surface painted every frame keeps one brush.
@@ -873,6 +884,7 @@ impl<'a> D2dCanvas<'a> {
             target,
             brush,
             underlay: None,
+            blurs: Vec::new(),
         }
     }
     /// A canvas that never records a checkpoint: for drawing under a transform, where the
@@ -1115,6 +1127,73 @@ impl Canvas for D2dCanvas<'_> {
         };
         Ok(())
     }
+    fn blurs(
+        &mut self,
+        patches: &[BlurPatch],
+        pixels: &mut dyn FnMut(usize) -> Vec<u8>,
+    ) -> Result<()> {
+        let mut cache = self.renderer.blurs.borrow_mut();
+        cache.retain(|(id, _, _)| patches.iter().any(|p| p.id == *id));
+        self.blurs.clear();
+        for (i, patch) in patches.iter().enumerate() {
+            let version = patch.version();
+            self.blurs.push((patch.id, version));
+            let zone = patch.zone;
+            let index = match cache.iter().position(|(id, _, _)| *id == patch.id) {
+                Some(at) if cache[at].1 == version => at,
+                found => {
+                    let pixels = pixels(i);
+                    if pixels.len() != zone.width as usize * zone.height as usize * 4 {
+                        return Err(Error::new(
+                            windows::Win32::Foundation::E_INVALIDARG,
+                            "Blur buffer length",
+                        ));
+                    }
+                    let bitmap = unsafe {
+                        self.target.CreateBitmap(
+                            D2D_SIZE_U {
+                                width: zone.width,
+                                height: zone.height,
+                            },
+                            Some(pixels.as_ptr().cast()),
+                            zone.width * 4,
+                            &D2D1_BITMAP_PROPERTIES {
+                                pixelFormat: properties().pixelFormat,
+                                dpiX: 96.,
+                                dpiY: 96.,
+                            },
+                        )?
+                    };
+                    match found {
+                        Some(at) => {
+                            cache[at] = (patch.id, version, bitmap);
+                            at
+                        }
+                        None => {
+                            cache.push((patch.id, version, bitmap));
+                            cache.len() - 1
+                        }
+                    }
+                }
+            };
+            let (x, y) = (zone.x as f32, zone.y as f32);
+            unsafe {
+                self.target.DrawBitmap(
+                    &cache[index].2,
+                    Some(&D2D_RECT_F {
+                        left: x,
+                        top: y,
+                        right: x + zone.width as f32,
+                        bottom: y + zone.height as f32,
+                    }),
+                    1.,
+                    D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
+                    None,
+                )
+            };
+        }
+        Ok(())
+    }
     fn annotations_fading(
         &mut self,
         objects: &[Object],
@@ -1160,7 +1239,7 @@ impl Canvas for D2dCanvas<'_> {
                     &context,
                     objects,
                     skip,
-                    &underlay,
+                    (&underlay, &self.blurs),
                 );
             }
         }

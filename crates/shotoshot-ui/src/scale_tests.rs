@@ -7,7 +7,7 @@ use crate::{
     toolbar::{Action, HINT_DELAY_MS},
     top_center,
 };
-use shotoshot_core::{Modifiers, Object, Point, Rect, Tool};
+use shotoshot_core::{BlurPatch, Modifiers, Object, Point, Rect, Tool};
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -122,6 +122,14 @@ impl Canvas for Recorder {
         dst: Rect,
     ) -> Result<(), ()> {
         self.push("raster", &rect(dst), format!("{key} {version} {size:?}"))
+    }
+    // Zones are capture pixels: they follow the frame, not the interface scale.
+    fn blurs(
+        &mut self,
+        patches: &[BlurPatch],
+        _: &mut dyn FnMut(usize) -> Vec<u8>,
+    ) -> Result<(), ()> {
+        self.push("blurs", &[], format!("{patches:?}"))
     }
     fn annotations(&mut self, objects: &[Object], _: Option<u64>) -> Result<(), ()> {
         self.push("annotations", &[], objects.len().to_string())

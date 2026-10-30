@@ -1,6 +1,7 @@
 //! ROLE: The scene text inside a `.shoto` file: frame, region and objects. Version 2 adds
 //! stacked coats and the shapes each spares (`Paint`); version 1 has one plain coat at most.
-//! Version 3 adds the panel of a text (`Label`).
+//! Version 3 adds the panel of a text (`Label`), 4 bends, 5 the ink of a panel's text, 6 elbow
+//! arrows and 7 blurred zones (`Shape::Blur`).
 //! INVARIANTS: `decode` gives back the scene `encode` wrote, and accepts nothing it does not
 //! fully understand: skipping an unknown field could drop a mask at the next save.
 use crate::{Attachment, Label, Object, Paint, Point, Rect, Shape, Style, bent};
@@ -61,14 +62,16 @@ impl Scene {
     }
     /// The lowest format version that holds this scene: 2 once a zone has more than one coat
     /// or a coat spares a shape, 3 once a text sits on a panel, 4 once an arrow or a line
-    /// bends, 5 once a panel's text has an ink of its own, 6 once an arrow is an elbow, so
-    /// simpler files still open in an earlier Shotoshot.
+    /// bends, 5 once a panel's text has an ink of its own, 6 once an arrow is an elbow, 7 once
+    /// a zone is blurred, so simpler files still open in an earlier Shotoshot.
     pub fn version(&self) -> u32 {
         let plain = |coats: &[Paint]| coats.len() <= 1 && coats.iter().all(|c| c.walls.is_empty());
         let labelled = |o: &Object| matches!(o.shape, Shape::Text { label: Some(_), .. });
         let inked = |o: &Object| matches!(o.shape, Shape::Text { ink: Some(_), .. });
         let elbow = |o: &Object| matches!(o.shape, Shape::Arrow { elbow: true, .. });
-        if self.objects.iter().any(elbow) {
+        if self.objects.iter().any(Object::is_blur) {
+            7
+        } else if self.objects.iter().any(elbow) {
             6
         } else if self.objects.iter().any(inked) {
             5
@@ -129,13 +132,20 @@ fn object_valid(object: &Object, points: &mut usize) -> bool {
         id: _,
         shape,
         style: Style { color: _, width },
-        fill: _,
+        fill,
     } = object;
     let measure = |n: &f64| n.is_finite() && *n >= 0.;
     rotation.is_finite()
         && measure(width)
         && match shape {
             Shape::Rectangle(r) | Shape::Ellipse(r) => finite(*r),
+            // Never turned, never filled, a strength the effect knows.
+            Shape::Blur(r) => {
+                finite(*r)
+                    && *rotation == 0.
+                    && fill.is_empty()
+                    && (crate::blur::MIN_BLUR_RADIUS..=crate::blur::MAX_BLUR_RADIUS).contains(width)
+            }
             Shape::Arrow {
                 start,
                 end,
@@ -205,6 +215,7 @@ fn encode_object(out: &mut String, object: &Object) -> std::fmt::Result {
         Shape::Arrow { .. } => "arrow",
         Shape::Stroke { .. } => "stroke",
         Shape::Text { .. } => "text",
+        Shape::Blur(_) => "blur",
     };
     write!(
         out,
@@ -215,7 +226,7 @@ fn encode_object(out: &mut String, object: &Object) -> std::fmt::Result {
         write_coats(out, fill)?;
     }
     match shape {
-        Shape::Rectangle(r) | Shape::Ellipse(r) => {
+        Shape::Rectangle(r) | Shape::Ellipse(r) | Shape::Blur(r) => {
             write!(out, " rect={},{},{},{}", r.min.x, r.min.y, r.max.x, r.max.y)?;
         }
         Shape::Arrow {
@@ -454,6 +465,7 @@ fn decode_object(line: &str, version: u32, points: &mut usize) -> Option<Object>
     let shape = match f.take("kind")? {
         "rectangle" => Shape::Rectangle(rect(f.take("rect")?)?),
         "ellipse" => Shape::Ellipse(rect(f.take("rect")?)?),
+        "blur" if version >= 7 => Shape::Blur(rect(f.take("rect")?)?),
         "arrow" => {
             let start = point(f.take("from")?)?;
             let end = point(f.take("to")?)?;
@@ -1167,6 +1179,108 @@ object id=4 kind=arrow color=fac042 width=4 rotation=0 from=120,100 to=300,250 h
             assert!(VERSION_6.contains(from), "{from:?} is not in the reference");
             let text = VERSION_6.replacen(from, to, 1);
             assert_eq!(decode(&text, 6), None, "{from:?} replaced by {to:?}");
+        }
+    }
+    /// Version 7 as it was first written: a blurred zone at the default strength under an
+    /// arrow, and a stronger one. Files with this text exist: it never changes.
+    const VERSION_7: &str = "frame 1920 1080
+origin -1920 0
+region 100.5 200 900 700.25
+last 3
+object id=1 kind=blur color=ed4f5c width=7 rotation=0 rect=120,220.5,480,260
+object id=2 kind=arrow color=ed4f5c width=3 rotation=0 from=10,20 to=210,20 head=1
+object id=3 kind=blur color=000000 width=14 rotation=0 rect=500,300,640,420
+";
+    fn blurred() -> Scene {
+        Scene {
+            background: Vec::new(),
+            objects: vec![
+                object(
+                    1,
+                    0.,
+                    [237, 79, 92],
+                    7.,
+                    Shape::Blur(rect(120., 220.5, 480., 260.)),
+                ),
+                object(
+                    2,
+                    0.,
+                    [237, 79, 92],
+                    3.,
+                    Shape::Arrow {
+                        start: pair(10., 20.),
+                        end: pair(210., 20.),
+                        start_attach: None,
+                        end_attach: None,
+                        head: true,
+                        bend: Point::default(),
+                        elbow: false,
+                    },
+                ),
+                object(
+                    3,
+                    0.,
+                    [0; 3],
+                    14.,
+                    Shape::Blur(rect(500., 300., 640., 420.)),
+                ),
+            ],
+            last_id: 3,
+            ..sample()
+        }
+    }
+    #[test]
+    fn version_7_text_is_frozen() {
+        assert_eq!(blurred().version(), 7);
+        assert_eq!(blurred().encode(), VERSION_7);
+        assert_eq!(decode(VERSION_7, 7), Some(blurred()));
+        assert_eq!(decode(VERSION_1, 7), Some(sample()), "version 7 reads 1");
+        assert_eq!(decode(VERSION_2, 7), Some(layered()), "and 2");
+        assert_eq!(decode(VERSION_3, 7), Some(labelled()), "and 3");
+        assert_eq!(decode(VERSION_4, 7), Some(bent()), "and 4");
+        assert_eq!(decode(VERSION_5, 7), Some(inked()), "and 5");
+        assert_eq!(decode(VERSION_6, 7), Some(elbowed()), "and 6");
+        let mut inked_and_blurred = inked();
+        inked_and_blurred.objects.push(Object {
+            id: 4,
+            ..blurred().objects[0].clone()
+        });
+        inked_and_blurred.last_id = 4;
+        assert_eq!(inked_and_blurred.version(), 7, "a blur outranks an ink");
+    }
+    #[test]
+    fn earlier_versions_know_no_blur() {
+        for version in 1..7 {
+            assert_eq!(decode(VERSION_7, version), None, "version {version}");
+        }
+        let without = VERSION_7
+            .lines()
+            .filter(|line| !line.contains("kind=blur"))
+            .map(|line| format!("{line}\n"))
+            .collect::<String>()
+            .replacen("object id=2", "object id=1", 1)
+            .replacen("last 3", "last 1", 1);
+        assert!(decode(&without, 1).is_some(), "the same arrow alone");
+    }
+    #[test]
+    fn blurs_not_fully_understood_are_refused() {
+        for (from, to) in [
+            ("width=7 ", "width=0.5 "),
+            ("width=7 ", "width=65 "),
+            ("width=7 rotation=0 ", "width=7 rotation=0.5 "),
+            ("rect=120,220.5,480,260", "rect=120,220.5,480"),
+            ("rect=120,220.5,480,260", "rect=120,220.5,480,inf"),
+            ("rect=120,220.5,480,260", ""),
+            (
+                "rect=120,220.5,480,260",
+                "rect=120,220.5,480,260 fill=102030",
+            ),
+            ("rect=120,220.5,480,260", "rect=120,220.5,480,260 head=1"),
+            ("kind=blur", "kind=blurred"),
+        ] {
+            assert!(VERSION_7.contains(from), "{from:?} is not in the reference");
+            let text = VERSION_7.replacen(from, to, 1);
+            assert_eq!(decode(&text, 7), None, "{from:?} replaced by {to:?}");
         }
     }
     #[test]

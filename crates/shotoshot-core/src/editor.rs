@@ -25,6 +25,8 @@ pub enum Tool {
     Label,
     /// A disc that removes the freehand ink it passes over and whole other objects.
     Eraser,
+    /// A dragged zone of the capture made unreadable (`Shape::Blur`).
+    Blur,
 }
 /// The eraser's diameter at 100 % until the wheel changes it, in pixels.
 pub const ERASER_SIZE: f64 = 14.;
@@ -142,6 +144,8 @@ pub struct Editor {
     pub ui_scale: f64,
     /// Diameter of the eraser's disc, in frame pixels.
     pub eraser_size: f64,
+    /// Strength of the next blur: its shuffle radius in frame pixels.
+    pub blur_radius: f64,
     objects: Vec<Object>,
     /// Coats over the captured pixels of the region, bottom first, under every object.
     background: Vec<Paint>,
@@ -163,6 +167,7 @@ impl Default for Editor {
             selected: Vec::new(),
             ui_scale: 1.,
             eraser_size: ERASER_SIZE,
+            blur_radius: BLUR_RADIUS,
             objects: Vec::new(),
             background: Vec::new(),
             undo: Vec::new(),
@@ -238,8 +243,15 @@ impl Editor {
     pub fn held(&self) -> Modifiers {
         self.held
     }
+    /// None when only blurs are selected: they never turn.
     pub fn rotation_handle(&self) -> Option<Point> {
-        self.selection_frame().map(|f| f.handle(self.ui_scale))
+        let turns = self
+            .objects
+            .iter()
+            .any(|o| self.selected.contains(&o.id) && !o.is_blur());
+        self.selection_frame()
+            .filter(|_| turns)
+            .map(|f| f.handle(self.ui_scale))
     }
     pub fn begin_rotation(&mut self, p: Point) -> bool {
         if !p.finite() {

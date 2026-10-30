@@ -46,6 +46,9 @@ impl Capture {
     }
     /// What a document keeps of this capture: its scene, and the screens under the region
     /// cut out of `image`, which is the frame or the desktop grabbed for a live capture.
+    /// Under every blur the kept screens hold the blurred pixels, never the captured ones
+    /// (Mickaël, 2026-10-30): a document cannot give back what a blur hides. The blurs stay
+    /// in the scene and blur again on reopening.
     pub fn document(&self, image: &Image) -> Option<(Scene, Image)> {
         let region = self.region?;
         if image.check().is_err()
@@ -53,6 +56,8 @@ impl Capture {
         {
             return None;
         }
+        let blurred = image.blurred(self.editor.objects());
+        let image = &*blurred;
         let kept = self.document_frame(region);
         let (left, top) = (kept.min.x as usize, kept.min.y as usize);
         let (width, height) = (kept.size().x as usize, kept.size().y as usize);
@@ -437,6 +442,66 @@ mod tests {
         let wrong = Image::solid(41, 20, [0, 0, 0, 255]);
         assert!(Capture::reopen(scene.clone(), wrong, screens.clone(), measure).is_none());
         assert!(Capture::reopen(scene, frame, screens, |_, _, _| None).is_none());
+    }
+    #[test]
+    fn a_document_never_holds_what_a_blur_hides() {
+        // Every pixel unlike its neighbours, as on a page of small text: a blur changes them.
+        let mut c = two_screens();
+        for (i, p) in c.image.pixels.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+            let noise = (i as u32).wrapping_mul(2_654_435_761) >> 24;
+            p[0] = if noise & 1 == 0 { 20 } else { 230 };
+            p[1] = noise as u8;
+        }
+        let image = c.image.clone();
+        c.region = Some(rect(42., 1., 78., 19.));
+        let zone = rect(50., 4., 70., 14.);
+        c.editor.blur_radius = 3.;
+        let id = draw(&mut c, Tool::Blur, zone.min, zone.max, none());
+        let (scene, frame) = c.document(&c.image).unwrap();
+        // The kept screen is the right one, from x = 40 of the frame.
+        let kept = |frame: &Image, x: u32, y: u32| {
+            let i = ((y * frame.width + x - 40) * 4) as usize;
+            [frame.pixels[i], frame.pixels[i + 1]]
+        };
+        let captured = |x: u32, y: u32| {
+            let i = ((y * 80 + x) * 4) as usize;
+            [image.pixels[i], image.pixels[i + 1]]
+        };
+        let mut hidden = 0;
+        for y in 4..14 {
+            for x in 50..70 {
+                hidden += usize::from(kept(&frame, x, y) != captured(x, y));
+            }
+        }
+        assert!(
+            hidden > 150,
+            "only {hidden} of 200 pixels were blurred away"
+        );
+        // Exactly what the screen showed: the blur of the captured pixels.
+        let mut shown = c.image.clone();
+        shotoshot_core::blur::flatten(&mut shown.pixels, 80, 20, c.editor.objects());
+        for y in 0..20 {
+            for x in 40..80 {
+                let i = ((y * 80 + x) * 4) as usize;
+                assert_eq!(kept(&frame, x, y), [shown.pixels[i], shown.pixels[i + 1]]);
+            }
+        }
+        // Around it the capture is untouched.
+        assert_eq!(kept(&frame, 45, 2), captured(45, 2));
+        assert_eq!(kept(&frame, 75, 17), captured(75, 17));
+        // The blur stays, still a blur, and blurs again once reopened.
+        assert_eq!(scene.version(), 7);
+        assert!(matches!(scene.objects[0].shape, Shape::Blur(_)));
+        assert_eq!(scene.objects[0].style.width, 3.);
+        let screens = vec![rect(0., 0., 40., 20.).into()];
+        let reopened =
+            Capture::reopen(scene, frame.clone(), screens, |_, _, _| Some(point(1., 1.))).unwrap();
+        assert!(reopened.editor.objects()[0].is_blur());
+        assert_ne!(id, 0);
+        // Written again, the hidden pixels are blurred once more: never the captured ones.
+        let (_, again) = reopened.document(&reopened.image).unwrap();
+        assert_ne!(again.pixels, frame.pixels);
+        assert_ne!(kept(&again, 60, 9), captured(60, 9));
     }
     #[test]
     fn live_capture_is_not_offered_on_a_reopened_document() {

@@ -132,7 +132,7 @@ pub fn paths(object: &Object, objects: &[Object]) -> Vec<Vec<Point>> {
             .into_iter()
             .map(|(points, _)| points)
             .collect(),
-        Shape::Text { .. } => vec![],
+        Shape::Text { .. } | Shape::Blur(_) => vec![],
     }
 }
 

@@ -40,6 +40,7 @@ toolbar.line = Линия
 toolbar.arrow = Стрелка
 toolbar.pen = Перо
 toolbar.highlighter = Маркер
+toolbar.blur = Размытие
 toolbar.label = Текстовое поле
 toolbar.text = Текст
 toolbar.eraser = Ластик

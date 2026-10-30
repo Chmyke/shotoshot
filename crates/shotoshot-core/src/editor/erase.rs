@@ -6,17 +6,22 @@ use super::*;
 
 /// Objects other than freehand strokes within `reach` of the segment `from`–`to`, sampled
 /// every reach length so a fast sweep still catches what lies between two pointer positions.
-/// In pile order, no repeat.
+/// A blur is caught by its edge only: rubbing out ink drawn over it must not uncover what it
+/// hides. In pile order, no repeat.
 pub(super) fn touched(objects: &[Object], reach: f64, from: Point, to: Point) -> Vec<u64> {
     let steps = ((to - from).length() / reach).ceil().max(1.) as usize;
     let mut ids = Vec::new();
+    let caught = |o: &Object, p: Point| match o.shape {
+        Shape::Blur(r) => {
+            let c = r.corners();
+            (0..4).any(|i| segment_distance(p, c[i], c[(i + 1) % 4]) <= reach)
+        }
+        _ => o.hit(p, reach, objects),
+    };
     for i in 0..=steps {
         let p = from + (to - from) * (i as f64 / steps as f64);
         for o in objects {
-            if !matches!(o.shape, Shape::Stroke { .. })
-                && !ids.contains(&o.id)
-                && o.hit(p, reach, objects)
-            {
+            if !matches!(o.shape, Shape::Stroke { .. }) && !ids.contains(&o.id) && caught(o, p) {
                 ids.push(o.id);
             }
         }

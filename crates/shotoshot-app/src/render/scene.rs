@@ -15,6 +15,8 @@ struct Context {
     size: (u32, u32),
     skip: Option<u64>,
     underlay: Vec<Underlay>,
+    /// The blurs under the objects, by id and version: a checkpoint holds their pixels.
+    blurs: Vec<(u64, u64)>,
 }
 
 struct Checkpoint {
@@ -35,17 +37,21 @@ impl SceneCache {
         device: &ID2D1DeviceContext,
         objects: &[Object],
         skip: Option<u64>,
-        underlay: &[Underlay],
+        (underlay, blurs): (&[Underlay], &[(u64, u64)]),
     ) -> Result<()> {
         let size = unsafe { target.GetPixelSize() };
         if !self.context.as_ref().is_some_and(|c| {
-            c.size == (size.width, size.height) && c.skip == skip && c.underlay == underlay
+            c.size == (size.width, size.height)
+                && c.skip == skip
+                && c.underlay == underlay
+                && c.blurs == blurs
         }) {
             self.invalidate();
             self.context = Some(Context {
                 size: (size.width, size.height),
                 skip,
                 underlay: underlay.to_vec(),
+                blurs: blurs.to_vec(),
             });
         }
         if objects.is_empty() {
@@ -210,9 +216,10 @@ fn bounds(
     skip: Option<u64>,
     size: D2D_SIZE_U,
 ) -> Result<Option<D2D_RECT_U>> {
+    // A blur draws nothing over the capture here: `Canvas::blurs` laid it under.
     let bounds = prefix
         .iter()
-        .filter(|o| Some(o.id) != skip)
+        .filter(|o| Some(o.id) != skip && !o.is_blur())
         .map(|object| {
             if matches!(object.shape, Shape::Ellipse(_)) {
                 // Ellipses are rendered as polygons: a flat ellipse can have sharp

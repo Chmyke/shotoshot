@@ -2,7 +2,7 @@
 //! INVARIANTS: Key codes are Windows virtual-key codes, the canonical format across
 //! platforms; each platform translates its own key events into them.
 use crate::{Capture, Host, toolbar::Action};
-use shotoshot_core::{Modifiers, Point};
+use shotoshot_core::{Modifiers, Point, Tool};
 
 pub const KEY_TAB: u32 = 9;
 pub const KEY_SPACE: u32 = 32;
@@ -105,7 +105,9 @@ impl Capture {
             };
         }
         if let Some(a) = crate::toolbar::shortcut_action(key, false, m.shift, m.alt) {
-            if a == Action::Live && self.reopened {
+            // A reopened file has no live desktop, a board no capture to blur.
+            if (a == Action::Live && self.reopened) || (a == Action::Tool(Tool::Blur) && self.board)
+            {
                 return KeyOutcome::Handled;
             }
             return KeyOutcome::Action(a);
@@ -136,7 +138,7 @@ impl Capture {
 mod tests {
     use super::*;
     use crate::{Image, test_host::FakeHost};
-    use shotoshot_core::{Rect, Tool};
+    use shotoshot_core::Rect;
 
     fn capture() -> Capture {
         let mut c = Capture::new(Image::solid(900, 600, [0, 0, 0, 255]));

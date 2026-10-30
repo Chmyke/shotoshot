@@ -223,7 +223,8 @@ impl Capture {
         }
     }
     /// Brings the editor in line with the screen under the region: handle sizes, and the
-    /// current stroke width and text size, so an annotation looks the same at every scale.
+    /// current stroke width, eraser, blur strength and text size, so an annotation looks the
+    /// same at every scale.
     pub(crate) fn adopt_scale(&mut self) {
         let scale = self.ui_scale();
         self.editor.ui_scale = scale / self.zoom_at_pointer();
@@ -233,6 +234,7 @@ impl Capture {
         let factor = scale / self.style_scale;
         self.editor.style.width = wheel::stroke_width_scaled(self.editor.style.width, factor);
         self.editor.eraser_size = wheel::eraser_size_scaled(self.editor.eraser_size, factor);
+        self.editor.blur_radius = wheel::blur_radius_scaled(self.editor.blur_radius, factor);
         self.text_size = wheel::text_size_scaled(self.text_size.into(), factor) as f32;
         self.style_scale = scale;
     }
@@ -458,6 +460,15 @@ impl Capture {
             (None, Some(o)) => (o.style.color, o.text_ink()),
             (None, None) => (current, ink(self.label_ink)),
         }
+    }
+    /// The annotations Ctrl+V lays down here: those copied, without blurs on a board, which
+    /// has no capture under it to blur.
+    pub fn clipboard(&self) -> Vec<Object> {
+        self.copied_objects
+            .iter()
+            .filter(|o| !(self.board && o.is_blur()))
+            .cloned()
+            .collect()
     }
     pub fn rotation_handle(&self) -> Option<Point> {
         let margin = 8. * self.ui_scale();
@@ -1066,7 +1077,7 @@ mod tests {
             c.region = Rect::new(point(800., 600.), point(2400., 1500.));
             let region = c.region.unwrap();
             let buttons = c.buttons();
-            assert_eq!(buttons.len(), 26);
+            assert_eq!(buttons.len(), 27);
             for b in &buttons {
                 let size = b.bounds.size();
                 assert!(

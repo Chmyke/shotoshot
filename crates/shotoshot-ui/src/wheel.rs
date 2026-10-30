@@ -15,6 +15,10 @@ const ERASER_SIZES: [f64; 21] = [
     4., 5., 6., 7., 8., 10., 12., 14., 16., 20., 24., 28., 32., 40., 48., 56., 64., 80., 96., 112.,
     128.,
 ];
+// A blur's strength, its shuffle radius: from barely veiled to a cloud, 7 at 100 % between.
+const BLUR_RADII: [f64; 14] = [
+    3., 4., 5., 6., 7., 8., 10., 12., 14., 16., 20., 24., 28., 32.,
+];
 const TEXT_SIZES: [f64; 31] = [
     8., 10., 12., 14., 16., 18., 20., 22., 24., 28., 32., 36., 40., 44., 48., 56., 64., 72., 80.,
     88., 96., 112., 128., 144., 160., 176., 192., 224., 256., 288., 300.,
@@ -49,6 +53,16 @@ pub fn eraser_size_after(size: f64, notches: i32) -> f64 {
 /// Text size after `notches` (positive: larger).
 pub fn text_size_after(size: f64, notches: i32) -> f64 {
     walk(&TEXT_SIZES, size, notches)
+}
+/// Blur strength after `notches` (positive: stronger).
+pub fn blur_radius_after(radius: f64, notches: i32) -> f64 {
+    walk(&BLUR_RADII, radius, notches)
+}
+/// Blur strength re-proportioned by `factor`, as `stroke_width_scaled`.
+pub fn blur_radius_scaled(radius: f64, factor: f64) -> f64 {
+    (radius * factor)
+        .round()
+        .clamp(BLUR_RADII[0], BLUR_RADII[BLUR_RADII.len() - 1])
 }
 
 /// Stroke width re-proportioned by `factor` for a screen of another scale: whole pixels,
@@ -94,11 +108,26 @@ mod tests {
 
     #[test]
     fn ladders_increase_and_keep_the_documented_bounds() {
-        for ladder in [&STROKE_WIDTHS[..], &TEXT_SIZES[..]] {
+        for ladder in [&STROKE_WIDTHS[..], &TEXT_SIZES[..], &BLUR_RADII[..]] {
             assert!(ladder.windows(2).all(|pair| pair[0] < pair[1]));
         }
         assert_eq!((STROKE_WIDTHS[0], STROKE_WIDTHS[17]), (1., 40.));
         assert_eq!((TEXT_SIZES[0], TEXT_SIZES[30]), (8., 300.));
+        assert_eq!((BLUR_RADII[0], BLUR_RADII[13]), (3., 32.));
+        assert!(BLUR_RADII.contains(&shotoshot_core::BLUR_RADIUS));
+        // Every rung is a strength a saved document can hold.
+        let accepted =
+            shotoshot_core::blur::MIN_BLUR_RADIUS..=shotoshot_core::blur::MAX_BLUR_RADIUS;
+        assert!(BLUR_RADII.iter().all(|r| accepted.contains(r)));
+    }
+    #[test]
+    fn the_blur_strength_walks_its_own_ladder() {
+        assert_eq!(blur_radius_after(7., 1), 8.);
+        assert_eq!(blur_radius_after(7., -2), 5.);
+        assert_eq!(blur_radius_after(32., 1), 32.);
+        assert_eq!(blur_radius_after(3., -1), 3.);
+        assert_eq!(blur_radius_scaled(7., 2.), 14.);
+        assert_eq!(blur_radius_scaled(7., 0.25), 3.);
     }
     #[test]
     fn a_notch_changes_more_as_the_size_grows() {

@@ -22,6 +22,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use windows::Win32::{
     Graphics::{
+        Direct2D::Common::D2D_MATRIX_5X4_F,
         Direct3D11::{ID3D11Device, ID3D11DeviceContext},
         DirectComposition::*,
         Dwm::*,
@@ -416,6 +417,9 @@ struct Composed {
 /// (so windows inside it never show through one another), and a shared thumbnail visual per
 /// window.
 struct Disc {
+    /// The rounded clip's visual, holding `visual`.
+    rounded: IDCompositionVisual2,
+    /// The disc's windows, rendered as one surface by its effect (the opaque disc has none).
     visual: IDCompositionVisual2,
     clip: IDCompositionRectangleClip,
     /// Bottom first, as they are stacked under the disc.
@@ -442,6 +446,24 @@ enum Content {
     /// Shown neither way: left out.
     Missing,
 }
+/// An effect that shows what it is given at `opacity`, rendered as one surface first.
+fn faded(
+    device: &IDCompositionDesktopDevice,
+    opacity: f32,
+) -> Result<IDCompositionColorMatrixEffect> {
+    let mut matrix = D2D_MATRIX_5X4_F::default();
+    // Rows of 4: red, green and blue kept, alpha scaled, nothing added.
+    for (at, value) in [(0, 1.), (5, 1.), (10, 1.), (15, opacity)] {
+        unsafe { matrix.Anonymous.m[at] = value };
+    }
+    unsafe {
+        let effect = device
+            .cast::<IDCompositionDevice3>()?
+            .CreateColorMatrixEffect()?;
+        effect.SetMatrix(&matrix)?;
+        Ok(effect)
+    }
+}
 impl Composed {
     fn new(hwnd: HWND, create: CreateSharedThumbnailVisual) -> Result<Self> {
         unsafe {
@@ -459,20 +481,28 @@ impl Composed {
             let mut discs = Vec::new();
             for ring in geometry::feathered(1., 1., FEATHER_STEPS) {
                 let visual = device.CreateVisual()?;
+                // The clip hangs on a visual of its own, around the disc's windows rendered
+                // into one surface by an effect: clipped as they are, each window is cut apart,
+                // and where the soft edge covers part of a pixel the windows hidden under the top
+                // one show through it. An opacity layer does not prevent it; an effect does
+                // (2026-10-30: a dark window under the probe's pattern left 460 pixels of 2 520
+                // in the fading edge no blend of the enlargement and the screen; none since).
+                let rounded = device.CreateVisual()?;
                 if ring.opacity < 1. {
-                    visual.SetOpacityMode(DCOMPOSITION_OPACITY_MODE_LAYER)?;
                     visual
                         .cast::<IDCompositionVisual3>()?
-                        .SetOpacity2(ring.opacity as f32)?;
+                        .SetEffect(&faded(&device, ring.opacity as f32)?)?;
                 } else {
                     // Its edge lies where the faint discs under it already show 99 % of the
                     // enlargement: a hard edge there differs by a level or two, while a soft
                     // one blends neighbouring source pixels into a faint circle.
-                    visual.SetBorderMode(DCOMPOSITION_BORDER_MODE_HARD)?;
+                    rounded.SetBorderMode(DCOMPOSITION_BORDER_MODE_HARD)?;
                 }
                 let clip = device.CreateRectangleClip()?;
-                visual.SetClip(&clip)?;
+                rounded.SetClip(&clip)?;
+                rounded.AddVisual(&visual, false, None::<&IDCompositionVisual>)?;
                 discs.push(Disc {
+                    rounded,
                     visual,
                     clip,
                     shared: Vec::new(),
@@ -486,7 +516,7 @@ impl Composed {
             // pile of blends that rounds each pixel eight times.
             // PITFALL: With no reference visual, insertAbove = false stacks each child on top.
             for disc in discs[1..].iter().chain(&discs[..1]) {
-                root.AddVisual(&disc.visual, false, None::<&IDCompositionVisual>)?;
+                root.AddVisual(&disc.rounded, false, None::<&IDCompositionVisual>)?;
             }
             target.SetRoot(&root)?;
             device.Commit()?;

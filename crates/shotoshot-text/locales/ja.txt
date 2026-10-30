@@ -40,6 +40,7 @@ toolbar.line = 直線
 toolbar.arrow = 矢印
 toolbar.pen = ペン
 toolbar.highlighter = 蛍光ペン
+toolbar.blur = ぼかし
 toolbar.label = テキストボックス
 toolbar.text = テキスト
 toolbar.eraser = 消しゴム
