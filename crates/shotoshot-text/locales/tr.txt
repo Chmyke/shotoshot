@@ -50,6 +50,8 @@ toolbar.green = Yeşil
 toolbar.blue = Mavi
 toolbar.white = Beyaz
 toolbar.black = Siyah
+toolbar.box_color = Kutu rengi
+toolbar.text_color = Metin rengi · Sağ tıklama otomatik siyah veya beyaza döndürür
 toolbar.custom_color = Özel renk
 toolbar.eyedropper = Damlalık
 toolbar.fill = Çizgiyi, şekli veya arka planı boya · {shortcut} · Sağ tıklama veya Alt+tıklama rengi kaldırır
@@ -269,12 +271,8 @@ pointer.high = Yüksek
 pointer.circle = Daire
 pointer.horizontal = Yatay şerit
 pointer.vertical = Dikey şerit
-pointer.zoom_2 == 2×
-pointer.zoom_3 == 3×
-pointer.zoom_4 == 4×
-pointer.small = Küçük
-pointer.medium_size = Orta
-pointer.large = Büyük
+pointer.zoom_value == {zoom}×
+pointer.size_value == {size} px
 pointer.reset = Varsayılanlara dön
 
 settings.title = Ayarlar

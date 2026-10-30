@@ -50,6 +50,8 @@ toolbar.green = Grün
 toolbar.blue = Blau
 toolbar.white = Weiß
 toolbar.black = Schwarz
+toolbar.box_color = Farbe des Textfelds
+toolbar.text_color = Textfarbe · Rechtsklick für automatisch Schwarz oder Weiß
 toolbar.custom_color = Eigene Farbe
 toolbar.eyedropper = Pipette
 toolbar.fill = Strich, Form oder Hintergrund färben · {shortcut} · Rechtsklick oder Alt+Klick entfernt die Farbe
@@ -269,12 +271,8 @@ pointer.high = Laut
 pointer.circle = Kreis
 pointer.horizontal = Horizontaler Streifen
 pointer.vertical = Vertikaler Streifen
-pointer.zoom_2 == 2×
-pointer.zoom_3 == 3×
-pointer.zoom_4 == 4×
-pointer.small = Klein
-pointer.medium_size = Mittel
-pointer.large = Groß
+pointer.zoom_value == {zoom}×
+pointer.size_value == {size} px
 pointer.reset = Standard wiederherstellen
 
 settings.title = Einstellungen

@@ -2,6 +2,11 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.27 · 2026-10-30
+
+- The loupe's size and zoom are now sliders: from a modest 120 px to a generous 480 px, and from 2× all the way up to 8× for the tiniest print.
+- Text boxes can have their own text colour: pick Text color next to Box color and the palette paints the letters instead of the box. Right-click it to go back to automatic black or white.
+
 ## 0.3.26 · 2026-10-30
 
 - The Click sound of the pointer effects actually clicks now: it was so short that speakers waking up swallowed it whole.

@@ -12,6 +12,7 @@ fn label(e: &mut Editor, label: Label) -> u64 {
         [250, 192, 66],
         20.,
         Some(label),
+        None,
     )
     .unwrap()
 }
@@ -58,8 +59,16 @@ fn the_panel_wraps_the_text_with_its_margins() {
 #[test]
 fn a_plain_text_is_unchanged() {
     let mut e = Editor::default();
-    e.add_label(p(10., 10.), "x".into(), p(20., 30.), [9; 3], 24., None)
-        .unwrap();
+    e.add_label(
+        p(10., 10.),
+        "x".into(),
+        p(20., 30.),
+        [9; 3],
+        24.,
+        None,
+        Some([1; 3]),
+    )
+    .unwrap();
     let o = &e.objects()[0];
     assert_eq!(
         o.local_bounds(),
@@ -68,7 +77,11 @@ fn a_plain_text_is_unchanged() {
             max: p(30., 40.)
         }
     );
-    assert_eq!(o.text_ink(), [9; 3]);
+    assert_eq!(o.text_ink(), [9; 3], "its own colour");
+    assert!(
+        matches!(o.shape, Shape::Text { ink: None, .. }),
+        "no ink is kept without a panel"
+    );
 }
 
 #[test]
@@ -82,6 +95,7 @@ fn a_bad_wrap_width_is_refused() {
             [0; 3],
             24.,
             Some(Label::Wrap(width)),
+            None,
         );
         assert_eq!(added, None, "{width}");
     }
@@ -190,4 +204,76 @@ fn copies_and_colours_keep_the_panel() {
         [255; 3],
         "and the ink turns light"
     );
+}
+
+fn ink(e: &Editor, index: usize) -> Option<[u8; 3]> {
+    match e.objects()[index].shape {
+        Shape::Text { ink, .. } => ink,
+        _ => panic!("text expected"),
+    }
+}
+
+#[test]
+fn a_given_ink_outlives_panel_colours_until_it_goes_back_to_automatic() {
+    let mut e = Editor::default();
+    let id = label(&mut e, Label::Fit);
+    let plain = e
+        .add_label(
+            p(10., 10.),
+            "x".into(),
+            p(20., 30.),
+            [9; 3],
+            24.,
+            None,
+            None,
+        )
+        .unwrap();
+    e.selected = vec![id, plain];
+    assert!(e.apply_ink(Some([237, 79, 92])));
+    assert_eq!(e.objects()[0].text_ink(), [237, 79, 92]);
+    assert_eq!(ink(&e, 1), None, "a plain text keeps its own colour");
+    assert_eq!(e.objects()[1].text_ink(), [9; 3]);
+    e.style.color = [28, 31, 40];
+    e.apply_color();
+    assert_eq!(
+        e.objects()[0].text_ink(),
+        [237, 79, 92],
+        "a new panel colour keeps the given ink"
+    );
+    let copied = e.copy_selected();
+    assert!(e.paste_objects(&copied, p(16., 16.)));
+    assert_eq!(ink(&e, 2), Some([237, 79, 92]), "a copy keeps it");
+    e.selected = vec![id];
+    assert!(e.apply_ink(None));
+    assert_eq!(e.objects()[0].text_ink(), [255; 3], "automatic again");
+    assert!(!e.apply_ink(None), "nothing left to change");
+    e.undo();
+    assert_eq!(ink(&e, 0), Some([237, 79, 92]), "one step back");
+    e.undo();
+    e.undo();
+    assert_eq!(ink(&e, 0), Some([237, 79, 92]));
+    e.undo();
+    assert_eq!(ink(&e, 0), None, "the ink was one undo step");
+}
+
+#[test]
+fn an_edited_panel_keeps_its_ink_or_takes_the_new_one() {
+    let mut e = Editor::default();
+    let id = e
+        .add_label(
+            p(100., 100.),
+            "Note".into(),
+            p(60., 30.),
+            [250, 192, 66],
+            20.,
+            Some(Label::Fit),
+            Some([1, 2, 3]),
+        )
+        .unwrap();
+    e.update_text_measured_sized_colored(id, "Notes".into(), p(70., 30.), [0; 3], 20.);
+    assert_eq!(ink(&e, 0), Some([1, 2, 3]));
+    e.update_text_inked(id, "Notes".into(), p(70., 30.), [0; 3], 20., None);
+    assert_eq!(ink(&e, 0), None);
+    e.undo();
+    assert_eq!(ink(&e, 0), Some([1, 2, 3]), "one undo step");
 }

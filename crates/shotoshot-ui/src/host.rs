@@ -15,6 +15,8 @@ pub trait Host {
     /// Whether an in-place text field is open.
     fn text_active(&self) -> bool;
     fn set_text_color(&mut self, rgb: [u8; 3]);
+    /// The ink of the open field's text on its panel; `None` is the automatic black or white.
+    fn set_text_ink(&mut self, ink: Option<[u8; 3]>);
     /// Abandons a selection drag inside the text field; true if one was in progress.
     fn cancel_text_drag(&mut self) -> bool;
     fn begin_text(&mut self, capture: &mut Capture, p: Point) -> Result<(), Self::Error>;

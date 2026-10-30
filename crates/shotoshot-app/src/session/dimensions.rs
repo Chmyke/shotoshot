@@ -57,6 +57,7 @@ impl Native {
                 SendMessageW(window, EM_SETLIMITTEXT, Some(WPARAM(128)), None);
                 Ok(TextInput {
                     label: None,
+                    ink: None,
                     window,
                     position: Point::default(),
                     object: None,

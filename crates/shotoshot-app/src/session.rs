@@ -44,6 +44,8 @@ pub struct TextInput {
     pub color: [u8; 3],
     /// The panel the text sits on; a wrapped one breaks the lines at its width.
     pub label: Option<Label>,
+    /// The ink of the text on its panel; `None` is the black or white that contrasts with it.
+    pub ink: Option<[u8; 3]>,
     pub font: HFONT,
     pub drag_anchor: Option<u32>,
     /// What a one-line field shows of a text wider than itself; a text with no field
@@ -194,6 +196,11 @@ impl Session {
         let (capture, mut host) = self.host(hwnd);
         capture.action(&mut host, a);
     }
+    /// A right press; true when it changed what is shown (`Capture::secondary_down`).
+    pub fn secondary_down(&mut self, hwnd: HWND, p: Point) -> bool {
+        let (capture, mut host) = self.host(hwnd);
+        capture.secondary_down(&mut host, p)
+    }
     pub fn cancel_gesture(&mut self, hwnd: HWND) -> bool {
         let (capture, mut host) = self.host(hwnd);
         capture.cancel_gesture(&mut host)
@@ -339,6 +346,11 @@ impl Host for WinHost<'_> {
     fn set_text_color(&mut self, rgb: [u8; 3]) {
         if let Some(text) = &mut self.native.text {
             text.color = rgb;
+        }
+    }
+    fn set_text_ink(&mut self, ink: Option<[u8; 3]>) {
+        if let Some(text) = &mut self.native.text {
+            text.ink = ink;
         }
     }
     fn cancel_text_drag(&mut self) -> bool {

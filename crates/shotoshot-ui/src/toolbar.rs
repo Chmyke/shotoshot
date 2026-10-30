@@ -16,6 +16,11 @@ const HOVER: [u8; 3] = [55, 55, 55];
 pub enum Action {
     Tool(Tool),
     Color([u8; 3]),
+    /// Text box context only: the palette colours the box's panel (`Capture::ink_target`).
+    BoxColor,
+    /// Text box context only: the palette colours the box's text; a right-click on it gives
+    /// the text back its automatic black or white.
+    TextColor,
     CopyColor([u8; 3]),
     CustomColor,
     Eyedropper,
@@ -319,6 +324,7 @@ fn all_hints() -> impl Iterator<Item = (Key, Action)> {
     SHORTCUTS
         .iter()
         .map(|&(label, action, ..)| (label, action))
+        .chain(LABEL_ACTIONS)
         .chain(BOARD_ACTIONS)
         .chain(STATE_HINTS)
 }
@@ -343,21 +349,30 @@ pub fn buttons(region: Rect, width: u32, height: u32) -> Vec<Button> {
         },
         1.,
         false,
+        false,
     )
 }
 
 /// Buttons a board session adds to the action panel, before Close. They have no key.
 const BOARD_ACTIONS: [(Key, Action); 1] = [(Key::ToolbarClearBoard, Action::ClearBoard)];
+/// What the palette colours, box or text: buttons the action panel shows just before the
+/// swatches while a text box is in hand or selected. They have no key.
+const LABEL_ACTIONS: [(Key, Action); 2] = [
+    (Key::ToolbarBoxColor, Action::BoxColor),
+    (Key::ToolbarTextColor, Action::TextColor),
+];
 
 /// Both panels beside `region`, clear of `badge` (the size badge and its button) and kept on
-/// `screen`, with the board's own buttons when `board`. The layout is in 96-DPI logical pixels
-/// and scaled once here, so buttons keep their apparent size on every screen.
+/// `screen`, with the board's own buttons when `board` and the box and text colour buttons
+/// when `label_colors`. The layout is in 96-DPI logical pixels and scaled once here, so
+/// buttons keep their apparent size on every screen.
 pub(crate) fn buttons_in(
     region: Rect,
     badge: Option<Rect>,
     screen: Rect,
     scale: f64,
     board: bool,
+    label_colors: bool,
 ) -> Vec<Button> {
     let resized = |r: Rect, factor: f64| Rect {
         min: r.min * factor,
@@ -368,6 +383,7 @@ pub(crate) fn buttons_in(
         badge.map(|b| resized(b, 1. / scale)),
         resized(screen, 1. / scale),
         board,
+        label_colors,
     );
     for b in &mut buttons {
         b.bounds = resized(b.bounds, scale);
@@ -375,7 +391,13 @@ pub(crate) fn buttons_in(
     buttons
 }
 
-fn layout(region: Rect, badge: Option<Rect>, screen: Rect, board: bool) -> Vec<Button> {
+fn layout(
+    region: Rect,
+    badge: Option<Rect>,
+    screen: Rect,
+    board: bool,
+    label_colors: bool,
+) -> Vec<Button> {
     let cell = 32.;
     let entries = SHORTCUTS.map(|(label, action, _, _, _)| (label, action));
     let is_tool = |a: Action| matches!(a, Action::Tool(_));
@@ -392,6 +414,13 @@ fn layout(region: Rect, badge: Option<Rect>, screen: Rect, board: bool) -> Vec<B
     if board {
         let close = actions.len().saturating_sub(1);
         actions.splice(close..close, BOARD_ACTIONS);
+    }
+    if label_colors
+        && let Some(swatches) = actions
+            .iter()
+            .position(|(_, a)| matches!(a, Action::Color(_)))
+    {
+        actions.splice(swatches..swatches, LABEL_ACTIONS);
     }
     let columns = ((screen.size().x - 36.) / cell)
         .floor()
@@ -676,6 +705,7 @@ fn draw_panel<C: Canvas>(
             canvas,
             &button,
             (state.current, tint),
+            state.label,
             (selected, look),
             scale * k,
         )?;
@@ -689,7 +719,7 @@ mod tests {
     use shotoshot_text::Language;
 
     /// The English hints as they were written before translation, in listing order.
-    const ENGLISH_HINTS: [&str; 36] = [
+    const ENGLISH_HINTS: [&str; 38] = [
         "Select · V · Page Up/Down forward or back",
         "Rectangle · R · Scroll to resize",
         "Ellipse · C · Scroll to resize",
@@ -716,6 +746,8 @@ mod tests {
         "Copy image · Ctrl+C",
         "Save · Ctrl+S",
         "Close · Esc",
+        "Box color",
+        "Text color · Right-click for automatic black or white",
         "Clear board · Ctrl+Z restores",
         "Nothing to undo · Ctrl+Z",
         "Nothing to redo · Ctrl+Y / Ctrl+Shift+Z",
@@ -734,7 +766,7 @@ mod tests {
         let region = Rect::new(Point { x: 100., y: 100. }, Point { x: 400., y: 300. }).unwrap();
         let screen = Rect::new(Point::default(), Point { x: 1920., y: 1080. }).unwrap();
         for board in [false, true] {
-            for button in buttons_in(region, None, screen, 1., board) {
+            for button in buttons_in(region, None, screen, 1., board, board) {
                 let hint = tooltip_in(&button, Language::En);
                 assert!(ENGLISH_HINTS.contains(&hint.as_str()), "{hint}");
             }
@@ -757,6 +789,33 @@ mod tests {
         let redo = tooltip_in(find(Action::Redo), Language::De);
         assert!(redo.ends_with("· Strg+Y / Strg+Umschalt+Z"), "{redo}");
         assert!(tooltip_in(find(Action::Close), Language::De).ends_with("· Esc"));
+    }
+
+    #[test]
+    fn box_and_text_colour_sit_just_before_the_swatches_only_when_asked() {
+        let region = Rect::new(Point { x: 100., y: 100. }, Point { x: 400., y: 300. }).unwrap();
+        let screen = Rect::new(Point::default(), Point { x: 1920., y: 1080. }).unwrap();
+        let plain = buttons_in(region, None, screen, 1., false, false);
+        let with = buttons_in(region, None, screen, 1., false, true);
+        assert!(
+            !plain
+                .iter()
+                .any(|b| matches!(b.action, Action::BoxColor | Action::TextColor))
+        );
+        assert_eq!(with.len(), plain.len() + 2);
+        let actions: Vec<_> = with.iter().map(|b| b.action).collect();
+        let red = actions
+            .iter()
+            .position(|a| *a == Action::Color(COLORS[0]))
+            .unwrap();
+        assert_eq!(actions[red - 2..red], [Action::BoxColor, Action::TextColor]);
+        let box_color = &with[red - 2];
+        assert_eq!(box_color.panel, 1, "in the action panel");
+        assert_eq!(tooltip_in(box_color, Language::En), "Box color");
+        assert_eq!(
+            tooltip_in(&with[red - 1], Language::En),
+            "Text color · Right-click for automatic black or white"
+        );
     }
 
     #[test]
@@ -788,7 +847,7 @@ mod tests {
         let region = Rect::new(Point { x: 100., y: 100. }, Point { x: 400., y: 300. }).unwrap();
         let screen = Rect::new(Point::default(), Point { x: 1920., y: 1080. }).unwrap();
         for board in [false, true] {
-            let buttons = buttons_in(region, None, screen, 1., board);
+            let buttons = buttons_in(region, None, screen, 1., board, false);
             let tools: Vec<Tool> = buttons
                 .iter()
                 .filter_map(|b| match b.action {

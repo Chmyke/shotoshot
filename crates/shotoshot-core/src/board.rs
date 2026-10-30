@@ -373,6 +373,7 @@ mod tests {
                 size: 24.,
                 extent: Point { x: 60., y: 29. },
                 label: Some(crate::Label::Fit),
+                ink: None,
             },
             style: Style {
                 color: [250, 192, 66],
@@ -380,7 +381,15 @@ mod tests {
             },
             fill: Vec::new(),
         };
-        for (objects, version) in [(vec![label.clone()], 3), (vec![label, bent], 4)] {
+        let mut inked = label.clone();
+        if let Shape::Text { ink, .. } = &mut inked.shape {
+            *ink = Some([1, 2, 3]);
+        }
+        for (objects, version) in [
+            (vec![label.clone()], 3),
+            (vec![label, bent.clone()], 4),
+            (vec![inked, bent], 5),
+        ] {
             let mut board = Board::default();
             board.scatter(&desktop(objects, 2), &screens);
             let text = board.encode();

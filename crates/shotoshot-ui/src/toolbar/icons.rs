@@ -71,10 +71,12 @@ fn faint_on(rgb: [u8; 3], ground: [u8; 3]) -> bool {
     (luma(rgb) - luma(ground)).abs() < 40.
 }
 
+/// `label` is the panel and ink of the text box the box and text colour buttons show.
 pub(super) fn draw<C: Canvas>(
     canvas: &mut C,
     b: &Button,
     colors: ([u8; 3], [u8; 3]),
+    label: ([u8; 3], [u8; 3]),
     (selected, swatch): (bool, Option<SwatchLook>),
     scale: f64,
 ) -> Result<(), C::Error> {
@@ -94,15 +96,18 @@ pub(super) fn draw<C: Canvas>(
         foreground,
         ground,
         swatch,
+        label,
     };
     paint(canvas, b.action, origin, scale, look, colors)
 }
 
-/// How a glyph sits on its button: its ink, the fill under it, and a swatch's dot and ring.
+/// How a glyph sits on its button: its ink, the fill under it, a swatch's dot and ring, and
+/// the panel and ink of the text box the box and text colour buttons show.
 struct Look {
     foreground: [u8; 3],
     ground: [u8; 3],
     swatch: Option<SwatchLook>,
+    label: ([u8; 3], [u8; 3]),
 }
 
 /// One action's glyph with its top-left corner at `origin`: 20 px wide at scale 1.
@@ -122,6 +127,7 @@ pub fn glyph<C: Canvas>(
         foreground,
         ground: PANEL,
         swatch: Some(SwatchLook::rest(motion::marks_colour(action, current))),
+        label: (current, shotoshot_core::label_ink(current)),
     };
     paint(canvas, action, origin, scale, look, (current, tint))
 }
@@ -135,6 +141,7 @@ fn paint<C: Canvas>(
         foreground,
         ground,
         swatch,
+        label: (panel_rgb, ink_rgb),
     }: Look,
     (current, tint): ([u8; 3], [u8; 3]),
 ) -> Result<(), C::Error> {
@@ -276,6 +283,28 @@ fn paint<C: Canvas>(
             let ink = Ink::solid(shotoshot_core::label_ink(tint));
             g.band((6., 8.), (14., 8.), ink, 1.6)?;
             g.band((10., 8.), (10., 13.), ink, 1.6)?;
+        }
+        // The box's own colour, a plain square, beside the text colour's letter on it.
+        Action::BoxColor => {
+            let panel = g.rect(3., 3., 17., 17.);
+            let radius = 3. * scale;
+            g.canvas
+                .fill_round_rect(panel, radius, Ink::solid(panel_rgb))?;
+            g.canvas
+                .stroke_round_rect(panel, radius, g.ink, 1.6 * scale)?;
+        }
+        // An A in the text's actual ink on the box colour: the colour of my text.
+        Action::TextColor => {
+            let panel = g.rect(1.5, 1.5, 18.5, 18.5);
+            let radius = 3. * scale;
+            g.canvas
+                .fill_round_rect(panel, radius, Ink::solid(panel_rgb))?;
+            g.canvas
+                .stroke_round_rect(panel, radius, g.ink, 1.6 * scale)?;
+            let letter = g.points(&[(5.5, 15.), (10., 4.5), (14.5, 15.)]);
+            let ink = Ink::solid(ink_rgb);
+            g.canvas.polyline(&letter, false, ink, 2.2 * scale)?;
+            g.band((7.4, 11.5), (12.6, 11.5), ink, 2.)?;
         }
         Action::Tool(Tool::Text) => {
             g.line((3., 3.), (17., 3.))?;
@@ -443,6 +472,52 @@ mod tests {
     }
 
     #[test]
+    fn box_colour_shows_the_panel_and_text_colour_its_letter_in_the_ink() {
+        let (panel, ink) = ([250, 192, 66], [237, 79, 92]);
+        let ops = |action| {
+            let mut canvas = Recorder {
+                size: Point { x: 30., y: 30. },
+                ops: Vec::new(),
+            };
+            let button = Button {
+                bounds: Rect::new(Point::default(), Point { x: 30., y: 30. }).unwrap(),
+                label: Key::ToolbarTextColor,
+                action,
+                panel: 1,
+                active: false,
+                enabled: true,
+            };
+            let colors = ([1; 3], [2; 3]);
+            draw(
+                &mut canvas,
+                &button,
+                colors,
+                (panel, ink),
+                (false, None),
+                1.,
+            )
+            .unwrap();
+            canvas.ops
+        };
+        let filled = |ops: &[crate::scale_tests::Op], rgb| {
+            let solid = format!("{:?}", Ink::solid(rgb));
+            ops.iter()
+                .any(|op| op.name == "fill_round_rect" && op.fixed == solid)
+        };
+        let inked = |ops: &[crate::scale_tests::Op], rgb| {
+            let solid = format!("{:?}", Ink::solid(rgb));
+            ops.iter()
+                .any(|op| matches!(op.name, "polyline" | "line") && op.fixed.starts_with(&solid))
+        };
+        let box_color = ops(Action::BoxColor);
+        assert!(filled(&box_color, panel), "the box colour");
+        assert!(!inked(&box_color, ink));
+        let text_color = ops(Action::TextColor);
+        assert!(filled(&text_color, panel), "on the box colour");
+        assert!(inked(&text_color, ink), "a letter in the text's ink");
+    }
+
+    #[test]
     fn a_drop_the_blue_of_a_chosen_button_keeps_a_rim_there() {
         let blue = COLORS[3];
         let bucket = Button {
@@ -458,7 +533,15 @@ mod tests {
                 size: Point { x: 30., y: 30. },
                 ops: Vec::new(),
             };
-            draw(&mut canvas, &bucket, (blue, blue), (selected, None), 1.).unwrap();
+            draw(
+                &mut canvas,
+                &bucket,
+                (blue, blue),
+                (blue, blue),
+                (selected, None),
+                1.,
+            )
+            .unwrap();
             canvas.ops.iter().any(|op| op.name == "stroke_ellipse")
         };
         assert!(rim(true), "on the chosen fill");

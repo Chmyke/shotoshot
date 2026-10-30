@@ -50,6 +50,8 @@ toolbar.green = 绿色
 toolbar.blue = 蓝色
 toolbar.white = 白色
 toolbar.black = 黑色
+toolbar.box_color = 文本框颜色
+toolbar.text_color = 文字颜色 · 右键单击恢复为自动黑色或白色
 toolbar.custom_color = 自定义颜色
 toolbar.eyedropper = 取色器
 toolbar.fill = 为线条、形状或背景着色 · {shortcut} · 右键单击或 Alt+单击移除颜色
@@ -269,12 +271,8 @@ pointer.high = 高
 pointer.circle = 圆形
 pointer.horizontal = 横条
 pointer.vertical = 竖条
-pointer.zoom_2 == 2×
-pointer.zoom_3 == 3×
-pointer.zoom_4 == 4×
-pointer.small = 小
-pointer.medium_size = 中
-pointer.large = 大
+pointer.zoom_value == {zoom}×
+pointer.size_value == {size} px
 pointer.reset = 恢复默认
 
 settings.title = 设置

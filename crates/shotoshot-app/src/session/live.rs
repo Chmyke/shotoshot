@@ -79,9 +79,9 @@ impl Session {
     pub fn paint_window(&mut self, hwnd: HWND, hdc: HDC) -> Result<()> {
         // A change made outside this window's messages still starts the toolbar's motion
         // before the frame that shows it.
-        let current = self.toolbar_color();
+        let (current, field_ink) = (self.toolbar_color(), self.field_ink());
         self.capture
-            .observe_toolbar(current, std::time::Instant::now());
+            .observe_toolbar(current, field_ink, std::time::Instant::now());
         let painted = self.paint_window_once(hwnd, hdc);
         self.native.caret.arm(hwnd);
         painted

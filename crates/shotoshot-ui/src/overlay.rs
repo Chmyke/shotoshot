@@ -242,17 +242,19 @@ impl Capture {
             })
             .unwrap_or_default()
     }
+    /// `field_ink` is the open text field's ink (`Some(None)`: automatic), `None` without one.
     pub fn draw_toolbar<C: Canvas>(
         &self,
         canvas: &mut C,
         current_color: [u8; 3],
+        field_ink: Option<Option<[u8; 3]>>,
         now: std::time::Instant,
     ) -> Result<(), C::Error> {
         let buttons = self.buttons();
         toolbar::draw(
             canvas,
             &buttons,
-            self.toolbar_state(current_color),
+            self.toolbar_state(current_color, field_ink),
             self.tool_tint(current_color),
             (&self.toolbar_motion, now),
             self.ui_scale(),

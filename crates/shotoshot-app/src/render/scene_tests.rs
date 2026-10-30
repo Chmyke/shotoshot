@@ -103,6 +103,7 @@ fn checkpoints_match_the_warmed_direct_render_on_both_backends() {
                 size: 28.,
                 extent: renderer.measure_annotation_text("éM 文", 28.).unwrap(),
                 label: None,
+                ink: None,
             },
         });
         let direct = || {
@@ -260,6 +261,7 @@ fn rotated_text_and_offscreen_strokes_keep_their_complete_pixels() {
             size: 28.,
             extent: renderer.measure_annotation_text("éM 文", 28.).unwrap(),
             label: None,
+            ink: None,
         },
     };
     let mut objects = vec![pen, text.clone()];

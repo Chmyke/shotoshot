@@ -67,7 +67,11 @@ impl Capture {
             if host.text_active()
                 && !matches!(
                     action,
-                    Action::Color(_) | Action::CustomColor | Action::Eyedropper
+                    Action::Color(_)
+                        | Action::CustomColor
+                        | Action::Eyedropper
+                        | Action::BoxColor
+                        | Action::TextColor
                 )
             {
                 host.finish_text(self, true);
@@ -151,11 +155,20 @@ impl Capture {
         }
         Ok(None)
     }
-    /// A secondary press. With the bucket in hand it takes off the coat seen under the
+    /// A secondary press. On the text colour button it gives text boxes back their automatic
+    /// black or white ink. With the bucket in hand it takes off the coat seen under the
     /// pointer, whatever its colour, like Alt + click (Mickaël, 2026-10-17); it does nothing
-    /// else. True when it changed the document.
-    pub fn secondary_down(&mut self, p: Point) -> bool {
+    /// else. True when it changed what is shown.
+    pub fn secondary_down<H: Host>(&mut self, host: &mut H, p: Point) -> bool {
         self.pointer = self.clamp(p);
+        let on_text_color = self
+            .buttons()
+            .iter()
+            .any(|b| b.action == Action::TextColor && b.enabled && b.bounds.contains(self.pointer));
+        if on_text_color {
+            self.give_ink(host, None);
+            return true;
+        }
         if !self.bucket || !self.pointer_on_document() {
             return false;
         }
@@ -332,7 +345,12 @@ impl Capture {
         self.bucket = armed
             && matches!(
                 a,
-                Action::Color(_) | Action::CopyColor(_) | Action::CustomColor | Action::Eyedropper
+                Action::Color(_)
+                    | Action::CopyColor(_)
+                    | Action::CustomColor
+                    | Action::Eyedropper
+                    | Action::BoxColor
+                    | Action::TextColor
             );
         match a {
             Action::Fill => self.bucket = !armed,
@@ -352,6 +370,9 @@ impl Capture {
                 self.editor.tool = t;
                 self.editor.selected.clear();
             }
+            Action::BoxColor => self.ink_target = false,
+            Action::TextColor => self.ink_target = true,
+            Action::Color(c) if self.inks() => self.give_ink(host, Some(c)),
             Action::Color(c) => {
                 self.editor.style.color = c;
                 if host.text_active() {
@@ -474,6 +495,16 @@ impl Capture {
             }
         }
         Ok(())
+    }
+    /// `ink` (`None`: the automatic black or white) onto the open field's text, else onto
+    /// the selected text boxes as one undo step, and onto the next boxes of this capture.
+    fn give_ink<H: Host>(&mut self, host: &mut H, ink: Option<[u8; 3]>) {
+        self.label_ink = ink;
+        if host.text_active() {
+            host.set_text_ink(ink);
+        } else {
+            self.editor.apply_ink(ink);
+        }
     }
     pub fn accept_custom_color<H: Host>(&mut self, host: &mut H, color: [u8; 3]) {
         self.custom_color = color;
@@ -850,18 +881,27 @@ mod tests {
         click(&mut c, &mut host, p(500., 350.), Modifiers::default());
         c.action(&mut host, Action::Color(WHITE));
         assert!(
-            c.secondary_down(p(300., 200.)),
+            c.secondary_down(&mut host, p(300., 200.)),
             "whatever the colour in hand"
         );
         assert_eq!(top(&c.editor.objects()[0].fill), None);
-        assert!(c.secondary_down(p(500., 350.)));
+        assert!(c.secondary_down(&mut host, p(500., 350.)));
         assert_eq!(top(c.editor.background()), None);
         assert!(c.bucket, "still in hand");
-        assert!(!c.secondary_down(p(500., 350.)), "nothing left to take off");
+        assert!(
+            !c.secondary_down(&mut host, p(500., 350.)),
+            "nothing left to take off"
+        );
         c.editor.undo();
-        assert!(!c.secondary_down(p(20., 20.)), "outside the region");
+        assert!(
+            !c.secondary_down(&mut host, p(20., 20.)),
+            "outside the region"
+        );
         c.action(&mut host, Action::Tool(Tool::Arrow));
-        assert!(!c.secondary_down(p(500., 350.)), "the bucket is down");
+        assert!(
+            !c.secondary_down(&mut host, p(500., 350.)),
+            "the bucket is down"
+        );
         assert_eq!(top(c.editor.background()), Some(BLACK));
     }
     #[test]
@@ -1170,7 +1210,15 @@ mod tests {
     fn the_label_tool_edits_a_text_it_presses() {
         let (mut c, mut host) = selected();
         c.editor
-            .add_label(p(200., 200.), "hi".into(), p(20., 20.), [0; 3], 20., None)
+            .add_label(
+                p(200., 200.),
+                "hi".into(),
+                p(20., 20.),
+                [0; 3],
+                20.,
+                None,
+                None,
+            )
             .unwrap();
         c.action(&mut host, Action::Tool(Tool::Label));
         c.pointer_down(&mut host, p(205., 205.), Modifiers::default())
@@ -1190,6 +1238,7 @@ mod tests {
                 [0; 3],
                 20.,
                 Some(Label::Wrap(50.)),
+                None,
             )
             .unwrap();
         c.editor.selected = vec![id];
@@ -1199,5 +1248,168 @@ mod tests {
         };
         // The stand-in measure gives half the size per letter: one word per line.
         assert_eq!(extent.y, 2. * size);
+    }
+    const YELLOW: [u8; 3] = [250, 192, 66];
+    const SKY: [u8; 3] = crate::toolbar::COLORS[3];
+    const GRASS: [u8; 3] = crate::toolbar::COLORS[2];
+    const SNOW: [u8; 3] = crate::toolbar::COLORS[4];
+    fn button(c: &Capture, action: Action) -> Option<crate::toolbar::Button> {
+        c.buttons().into_iter().find(|b| b.action == action)
+    }
+    /// A text on yellow at (200, 200), boxed unless `plain`, selected, with the text box
+    /// tool in hand.
+    fn boxed(plain: bool) -> (Capture, FakeHost, u64) {
+        let (mut c, mut host) = selected();
+        c.action(&mut host, Action::Tool(Tool::Label));
+        let label = (!plain).then_some(Label::Fit);
+        let id = c
+            .editor
+            .add_label(
+                p(200., 200.),
+                "hi".into(),
+                p(20., 20.),
+                YELLOW,
+                20.,
+                label,
+                None,
+            )
+            .unwrap();
+        c.editor.selected = vec![id];
+        (c, host, id)
+    }
+    fn ink(c: &Capture) -> Option<[u8; 3]> {
+        match c.editor.objects()[0].shape {
+            Shape::Text { ink, .. } => ink,
+            _ => panic!("text expected"),
+        }
+    }
+    #[test]
+    fn box_and_text_colour_show_before_the_swatches_only_for_text_boxes() {
+        let (mut c, mut host) = selected();
+        let shown = |c: &Capture| {
+            let actions: Vec<_> = c.buttons().iter().map(|b| b.action).collect();
+            let at = |action| actions.iter().position(|a| *a == action);
+            match (at(Action::BoxColor), at(Action::TextColor)) {
+                (Some(b), Some(t)) => {
+                    let red = at(Action::Color(crate::toolbar::COLORS[0]));
+                    assert_eq!((t, red), (b + 1, Some(b + 2)), "just before the swatches");
+                    true
+                }
+                (None, None) => false,
+                _ => panic!("both or neither"),
+            }
+        };
+        assert!(!shown(&c), "a capture opens as before");
+        c.action(&mut host, Action::Tool(Tool::Pen));
+        assert!(!shown(&c));
+        c.action(&mut host, Action::Tool(Tool::Label));
+        assert!(shown(&c), "the text box tool in hand");
+        assert!(!c.ink_target, "a capture starts on the box colour");
+        assert!(button(&c, Action::BoxColor).unwrap().active);
+        assert!(!button(&c, Action::TextColor).unwrap().active);
+
+        let (mut c, mut host, id) = boxed(false);
+        c.action(&mut host, Action::Tool(Tool::Select));
+        assert!(!shown(&c), "nothing selected");
+        c.editor.selected = vec![id];
+        assert!(shown(&c), "a selected text box");
+        let (mut c, mut host, id) = boxed(true);
+        c.action(&mut host, Action::Tool(Tool::Select));
+        c.editor.selected = vec![id];
+        assert!(!shown(&c), "a plain text has no box");
+    }
+    #[test]
+    fn the_palette_colours_the_chosen_target_until_the_other_is_clicked() {
+        let (mut c, mut host, _) = boxed(false);
+        let m = Modifiers::default();
+        let text_color = button(&c, Action::TextColor).unwrap().bounds.center();
+        assert_eq!(
+            c.pointer_down(&mut host, text_color, m).unwrap(),
+            Some(Action::TextColor)
+        );
+        c.action(&mut host, Action::TextColor);
+        assert!(button(&c, Action::TextColor).unwrap().active);
+        assert!(!button(&c, Action::BoxColor).unwrap().active);
+        c.action(&mut host, Action::Color(SKY));
+        assert_eq!(ink(&c), Some(SKY), "a swatch colours the text");
+        assert_eq!(c.editor.objects()[0].style.color, YELLOW, "not the box");
+        assert_ne!(c.editor.style.color, SKY, "nor the pen");
+        c.action(&mut host, Action::Color(SNOW));
+        assert_eq!(ink(&c), Some(SNOW), "the target stays");
+        c.accept_custom_color(&mut host, [1, 2, 3]);
+        assert_eq!(ink(&c), Some([1, 2, 3]), "the custom colour too");
+        c.action(&mut host, Action::Eyedropper);
+        let Some(Action::CopyColor(picked)) = c.pointer_down(&mut host, p(300., 300.), m).unwrap()
+        else {
+            panic!("the eyedropper picks");
+        };
+        assert_eq!(ink(&c), Some(picked), "and the eyedropper");
+        assert!(c.ink_target);
+
+        c.action(&mut host, Action::BoxColor);
+        c.action(&mut host, Action::Color(SKY));
+        assert_eq!(c.editor.objects()[0].style.color, SKY, "the box, as before");
+        assert_eq!(ink(&c), Some(picked), "its text keeps the ink given");
+    }
+    #[test]
+    fn right_click_on_text_colour_gives_the_automatic_ink_back_in_one_step() {
+        let (mut c, mut host, _) = boxed(false);
+        c.action(&mut host, Action::TextColor);
+        c.action(&mut host, Action::Color(SKY));
+        let text_color = button(&c, Action::TextColor).unwrap().bounds.center();
+        c.action(&mut host, Action::BoxColor);
+        assert!(c.secondary_down(&mut host, text_color));
+        assert_eq!(ink(&c), None);
+        assert_eq!(c.label_ink, None, "the next boxes too");
+        assert_eq!(c.editor.objects()[0].text_ink(), [0; 3], "dark on yellow");
+        assert!(!c.ink_target, "the target is left as it was");
+        assert!(
+            !c.secondary_down(&mut host, p(300., 300.)),
+            "elsewhere, nothing"
+        );
+        c.editor.undo();
+        assert_eq!(ink(&c), Some(SKY), "one undo step");
+        c.editor.undo();
+        assert_eq!(ink(&c), None, "the ink given was one step too");
+    }
+    #[test]
+    fn the_next_boxes_and_the_open_field_take_the_ink() {
+        let (mut c, mut host) = selected();
+        let m = Modifiers::default();
+        c.action(&mut host, Action::Tool(Tool::Label));
+        c.action(&mut host, Action::TextColor);
+        c.action(&mut host, Action::Color(GRASS));
+        assert!(c.editor.objects().is_empty());
+        c.pointer_down(&mut host, p(200., 200.), m).unwrap();
+        c.pointer_up(&mut host, p(200., 200.), m);
+        assert_eq!(host.ink, Some(GRASS), "a new box opens in the ink given");
+        let color = host.color;
+        c.action(&mut host, Action::Color(SKY));
+        assert_eq!(host.ink, Some(SKY), "the field's text changes live");
+        assert_eq!(host.color, color, "its box does not");
+        let text_color = button(&c, Action::TextColor).unwrap().bounds.center();
+        assert_eq!(
+            c.pointer_down(&mut host, text_color, m).unwrap(),
+            Some(Action::TextColor)
+        );
+        assert!(host.text_open, "the target buttons keep the field open");
+        assert!(c.secondary_down(&mut host, text_color));
+        assert_eq!(host.ink, None, "automatic again while typing");
+        c.action(&mut host, Action::BoxColor);
+        c.action(&mut host, Action::Color(SNOW));
+        assert_eq!(host.color, Some(SNOW), "the box colour goes to the field");
+    }
+    #[test]
+    fn the_bucket_and_other_tools_keep_colouring_as_before() {
+        let (mut c, mut host, _) = boxed(false);
+        c.action(&mut host, Action::TextColor);
+        c.action(&mut host, Action::Fill);
+        c.action(&mut host, Action::Color(SKY));
+        assert!(c.bucket, "the bucket waits for its colour");
+        assert_eq!(c.editor.style.color, SKY, "and takes it");
+        assert_eq!(ink(&c), None);
+        c.action(&mut host, Action::Tool(Tool::Pen));
+        c.action(&mut host, Action::Color(SNOW));
+        assert_eq!(c.editor.style.color, SNOW, "the pen takes the colour");
     }
 }

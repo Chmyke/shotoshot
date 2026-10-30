@@ -460,7 +460,9 @@ impl Native {
         let result = (|| -> Result<()> {
             unsafe {
                 let ink = match input.label {
-                    Some(_) => shotoshot_core::label_ink(input.color),
+                    Some(_) => input
+                        .ink
+                        .unwrap_or_else(|| shotoshot_core::label_ink(input.color)),
                     None => input.color,
                 };
                 if input.label.is_some() {
@@ -693,6 +695,7 @@ mod tests {
                 face: Face::Annotation,
                 color: [255; 3],
                 label: None,
+                ink: None,
                 font,
                 drag_anchor: None,
                 scroll: Default::default(),

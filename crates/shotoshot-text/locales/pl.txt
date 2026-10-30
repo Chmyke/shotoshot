@@ -50,6 +50,8 @@ toolbar.green = Zielony
 toolbar.blue = Niebieski
 toolbar.white = Biały
 toolbar.black = Czarny
+toolbar.box_color = Kolor pola tekstowego
+toolbar.text_color = Kolor tekstu · Prawy klik przywraca automatyczny czarny lub biały
 toolbar.custom_color = Własny kolor
 toolbar.eyedropper = Pipeta
 toolbar.fill = Pokoloruj linię, kształt lub tło · {shortcut} · Prawy klik lub Alt+klik usuwa kolor
@@ -269,12 +271,8 @@ pointer.high = Wysoka
 pointer.circle = Koło
 pointer.horizontal = Pas poziomy
 pointer.vertical = Pas pionowy
-pointer.zoom_2 == 2×
-pointer.zoom_3 == 3×
-pointer.zoom_4 == 4×
-pointer.small = Mała
-pointer.medium_size = Średnia
-pointer.large = Duża
+pointer.zoom_value == {zoom}×
+pointer.size_value == {size} px
 pointer.reset = Przywróć domyślne
 
 settings.title = Ustawienia

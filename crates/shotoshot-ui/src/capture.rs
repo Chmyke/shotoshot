@@ -6,7 +6,9 @@ use crate::{
     toolbar::{self, Action, Button, HoverHint, Motion},
     wheel,
 };
-use shotoshot_core::{Editor, FillChange, Label, Object, Point, Rect, Shape, Tool, arrow_points};
+use shotoshot_core::{
+    Editor, FillChange, Label, Object, Point, Rect, Shape, Tool, arrow_points, label_ink,
+};
 use shotoshot_text::Key;
 
 /// Margin of the size badge on each side of what it shows, in logical pixels.
@@ -127,6 +129,12 @@ pub struct Capture {
     pub(crate) label_drag: Option<(Point, Point)>,
     /// The panel the next new text opens with, set by the label tool for `Host::begin_text`.
     pub new_label: Option<Label>,
+    /// The palette colours the text of text boxes rather than their panel (`Action::TextColor`),
+    /// until `Action::BoxColor`. Every capture starts on the panel.
+    pub ink_target: bool,
+    /// The ink the next text boxes of this capture take, the last one given; `None` keeps
+    /// the automatic black or white.
+    pub label_ink: Option<[u8; 3]>,
 }
 impl Capture {
     pub fn new(image: Image) -> Self {
@@ -142,6 +150,8 @@ impl Capture {
             text_size: 24.,
             label_drag: None,
             new_label: None,
+            ink_target: false,
+            label_ink: None,
             live: false,
             reopened: false,
             searching: false,
@@ -244,11 +254,20 @@ impl Capture {
             .region
             .map(|r| {
                 let screen = self.toolbar_screen(r);
-                toolbar::buttons_in(r, badge, screen, self.ui_scale(), self.board)
+                toolbar::buttons_in(
+                    r,
+                    badge,
+                    screen,
+                    self.ui_scale(),
+                    self.board,
+                    self.label_context(),
+                )
             })
             .unwrap_or_default();
         for b in &mut buttons {
             match b.action {
+                Action::BoxColor => b.active = !self.ink_target,
+                Action::TextColor => b.active = self.ink_target,
                 Action::Undo => {
                     b.enabled = self.editor.can_undo();
                     if !b.enabled {
@@ -375,11 +394,18 @@ impl Capture {
     }
     /// Starts the toolbar's one-shot motion when what it marks has changed. Call it after each
     /// input and before asking `next_tick`; while the toolbar is hidden, nothing is recorded.
-    pub fn observe_toolbar(&mut self, current_color: [u8; 3], now: std::time::Instant) {
+    /// `field_ink` is the open text field's ink (`Some(None)`: automatic), `None` without one.
+    pub fn observe_toolbar(
+        &mut self,
+        current_color: [u8; 3],
+        field_ink: Option<Option<[u8; 3]>>,
+        now: std::time::Instant,
+    ) {
         if self.region.is_none() || self.selecting {
             return;
         }
-        let (buttons, state) = (self.buttons(), self.toolbar_state(current_color));
+        let state = self.toolbar_state(current_color, field_ink);
+        let buttons = self.buttons();
         self.toolbar_motion.observe(&buttons, state, now);
     }
     /// Milliseconds to the next toolbar or hint frame; `None` when nothing moves.
@@ -390,12 +416,47 @@ impl Capture {
         ];
         ticks.into_iter().flatten().min()
     }
-    pub(crate) fn toolbar_state(&self, current: [u8; 3]) -> toolbar::Chosen {
+    pub(crate) fn toolbar_state(
+        &self,
+        current: [u8; 3],
+        field_ink: Option<Option<[u8; 3]>>,
+    ) -> toolbar::Chosen {
         toolbar::Chosen {
             tool: self.editor.tool,
             eyedropper: self.eyedropper,
             current,
             pointer: self.pointer,
+            label: self.label_colors(current, field_ink),
+        }
+    }
+    /// Whether the box and text colour buttons show: the text box tool is in hand or a
+    /// selected text sits on a panel.
+    pub fn label_context(&self) -> bool {
+        self.editor.tool == Tool::Label || self.selected_label().is_some()
+    }
+    /// The first selected text that sits on a panel.
+    fn selected_label(&self) -> Option<&Object> {
+        self.editor.objects().iter().find(|o| {
+            self.editor.selected.contains(&o.id)
+                && matches!(o.shape, Shape::Text { label: Some(_), .. })
+        })
+    }
+    /// Whether a colour now goes to the text of text boxes rather than to their panel.
+    pub(crate) fn inks(&self) -> bool {
+        self.ink_target && !self.bucket && self.label_context()
+    }
+    /// The panel and ink the box and text colour buttons show: the open field's, else the
+    /// first selected box's, else those the next box takes.
+    fn label_colors(
+        &self,
+        current: [u8; 3],
+        field_ink: Option<Option<[u8; 3]>>,
+    ) -> ([u8; 3], [u8; 3]) {
+        let ink = |forced: Option<[u8; 3]>| forced.unwrap_or_else(|| label_ink(current));
+        match (field_ink, self.selected_label()) {
+            (Some(forced), _) => (current, ink(forced)),
+            (None, Some(o)) => (o.style.color, o.text_ink()),
+            (None, None) => (current, ink(self.label_ink)),
         }
     }
     pub fn rotation_handle(&self) -> Option<Point> {

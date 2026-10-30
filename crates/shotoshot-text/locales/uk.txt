@@ -50,6 +50,8 @@ toolbar.green = Зелений
 toolbar.blue = Синій
 toolbar.white = Білий
 toolbar.black = Чорний
+toolbar.box_color = Колір текстового поля
+toolbar.text_color = Колір тексту · Правий клік: автоматично чорний або білий
 toolbar.custom_color = Власний колір
 toolbar.eyedropper = Піпетка
 toolbar.fill = Зафарбувати штрих, фігуру чи тло · {shortcut} · Правий клік або Alt+клік прибирає колір
@@ -269,12 +271,8 @@ pointer.high = Висока
 pointer.circle = Коло
 pointer.horizontal = Горизонтальна смуга
 pointer.vertical = Вертикальна смуга
-pointer.zoom_2 == 2×
-pointer.zoom_3 == 3×
-pointer.zoom_4 == 4×
-pointer.small = Мала
-pointer.medium_size = Середня
-pointer.large = Велика
+pointer.zoom_value == {zoom}×
+pointer.size_value == {size} px
 pointer.reset = Відновити типові
 
 settings.title = Налаштування

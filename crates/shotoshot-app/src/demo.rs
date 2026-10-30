@@ -151,6 +151,29 @@ pub fn render_demo() -> Result<()> {
         &preview,
         &path.with_file_name("shotoshot-selection-hint.png"),
     )?;
+    // A selected text box whose text has an ink of its own: the box and text colour buttons
+    // stand before the swatches, the text one chosen.
+    let mut boxes = crate::session::Session::new(Image::solid(1100, 680, [248, 245, 242, 255]))?;
+    boxes.capture.region = Rect::new(Point { x: 70., y: 100. }, Point { x: 1030., y: 600. });
+    boxes.capture.selecting = false;
+    boxes.capture.ink_target = true;
+    let (text, size) = ("Its own ink", 28.);
+    let extent = renderer.measure_annotation_text(text, size as f32)?;
+    let editor = &mut boxes.capture.editor;
+    editor.tool = Tool::Label;
+    if let Some(id) = editor.add_label(
+        Point { x: 420., y: 320. },
+        text.into(),
+        extent,
+        [28, 31, 40],
+        size,
+        Some(Label::Fit),
+        Some([250, 192, 66]),
+    ) {
+        editor.selected = vec![id];
+    }
+    let preview = paint_image(1100, 680, |hdc| boxes.paint(hdc))?;
+    save_png(&preview, &path.with_file_name("shotoshot-label-colors.png"))?;
     dense_interface(&path.with_file_name("shotoshot-interface-200.png"))?;
     shape_samples::render(&path.with_file_name("shotoshot-shape-scales.png"))?;
     labels(&renderer, &path.with_file_name("shotoshot-labels.png"))?;
@@ -158,7 +181,8 @@ pub fn render_demo() -> Result<()> {
 }
 
 /// Texts on their panels, as exported: fitted and wrapped, short and long, accents and
-/// several lines, light and dark panels, one turned, over a light and a dark ground.
+/// several lines, light and dark panels, one in an ink of its own, one turned, over a light
+/// and a dark ground.
 fn labels(renderer: &Renderer, path: &std::path::Path) -> Result<()> {
     let at = |x: f64, y: f64| Point { x, y };
     let mut image = Image::solid(900, 520, [248, 245, 242, 255]);
@@ -170,13 +194,14 @@ fn labels(renderer: &Renderer, path: &std::path::Path) -> Result<()> {
     }
     let mut editor = Editor::default();
     let samples = [
-        (at(40., 40.), "Note", 24., [250, 192, 66], None),
+        (at(40., 40.), "Note", 24., [250, 192, 66], None, None),
         (
             at(160., 40.),
             "Step 1
 Open the menu",
             20.,
             [237, 79, 92],
+            None,
             None,
         ),
         (
@@ -185,6 +210,7 @@ Open the menu",
             20.,
             [28, 31, 40],
             Some(300.),
+            None,
         ),
         (
             at(40., 340.),
@@ -192,18 +218,35 @@ Open the menu",
             18.,
             [245, 245, 248],
             Some(160.),
+            None,
         ),
-        (at(500., 40.), "On a dark ground", 22., [80, 153, 244], None),
+        (
+            at(500., 40.),
+            "On a dark ground",
+            22.,
+            [80, 153, 244],
+            None,
+            None,
+        ),
         (
             at(500., 150.),
             "Wrapped on a white panel, three lines or so.",
             18.,
             [245, 245, 248],
             Some(200.),
+            None,
         ),
-        (at(560., 360.), "Turned", 28., [64, 199, 128], None),
+        (
+            at(500., 280.),
+            "Its own ink",
+            22.,
+            [245, 245, 248],
+            None,
+            Some([237, 79, 92]),
+        ),
+        (at(560., 360.), "Turned", 28., [64, 199, 128], None, None),
     ];
-    for (corner, text, size, color, wrap) in samples {
+    for (corner, text, size, color, wrap, ink) in samples {
         let extent = match wrap {
             Some(width) => {
                 renderer.measure_wrapped_annotation_text(text, size as f32, width as f32)?
@@ -218,6 +261,7 @@ Open the menu",
             color,
             size,
             label,
+            ink,
         );
     }
     let mut objects = editor.objects().to_vec();

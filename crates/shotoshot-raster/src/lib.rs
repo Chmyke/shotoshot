@@ -546,6 +546,7 @@ impl Canvas for SkiaCanvas<'_> {
                     size,
                     extent,
                     label,
+                    ink: _,
                 } => {
                     let center = o.local_bounds().center();
                     let transform = Transform::from_rotate_at(

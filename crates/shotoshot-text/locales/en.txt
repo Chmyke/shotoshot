@@ -64,6 +64,8 @@ toolbar.green = Green
 toolbar.blue = Blue
 toolbar.white = White
 toolbar.black = Black
+toolbar.box_color = Box color
+toolbar.text_color = Text color · Right-click for automatic black or white
 toolbar.custom_color = Custom color
 toolbar.eyedropper = Eyedropper
 toolbar.fill = Color a stroke, a shape or the background · {shortcut} · Right-click or Alt+click clears
@@ -310,12 +312,8 @@ pointer.high = High
 pointer.circle = Circle
 pointer.horizontal = Horizontal band
 pointer.vertical = Vertical band
-pointer.zoom_2 = 2×
-pointer.zoom_3 = 3×
-pointer.zoom_4 = 4×
-pointer.small = Small
-pointer.medium_size = Medium
-pointer.large = Large
+pointer.zoom_value = {zoom}×
+pointer.size_value = {size} px
 # A shortcut that is not set.
 pointer.reset = Restore defaults
 

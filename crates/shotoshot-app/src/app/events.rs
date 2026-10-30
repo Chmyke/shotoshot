@@ -247,7 +247,7 @@ impl App {
             }
             WM_RBUTTONDOWN => {
                 if let Some(s) = &mut self.session
-                    && s.capture.secondary_down(point)
+                    && s.secondary_down(hwnd, point)
                 {
                     invalidate(hwnd);
                 }
@@ -391,8 +391,8 @@ impl App {
         }
         let now = std::time::Instant::now();
         if let Some(s) = &mut self.session {
-            let current = s.toolbar_color();
-            s.capture.observe_toolbar(current, now);
+            let (current, field_ink) = (s.toolbar_color(), s.field_ink());
+            s.capture.observe_toolbar(current, field_ink, now);
         }
         unsafe {
             let _ = KillTimer(Some(hwnd), crate::toolbar::HINT_TIMER);

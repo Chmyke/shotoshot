@@ -41,6 +41,8 @@ pub struct TextField {
     pub rotation: f64,
     /// The panel the text sits on, whose width may break its lines.
     pub label: Option<Label>,
+    /// The ink of the text on its panel; `None` is the black or white that contrasts with it.
+    pub ink: Option<[u8; 3]>,
     /// Newlines are refused (typed, pasted or Enter); used by the crop-size fields.
     single_line: bool,
     text: String,
@@ -62,6 +64,7 @@ impl TextField {
                         text,
                         size,
                         label,
+                        ink,
                         ..
                     },
                 style,
@@ -74,6 +77,7 @@ impl TextField {
                 color: style.color,
                 rotation: *rotation,
                 label: *label,
+                ink: *ink,
                 caret: text.len(),
                 anchor: text.len(),
                 text: text.clone(),
@@ -88,6 +92,7 @@ impl TextField {
                 color: capture.editor.style.color,
                 rotation: 0.,
                 label: capture.new_label,
+                ink: capture.label_ink,
                 single_line: false,
                 text: String::new(),
                 caret: 0,
@@ -106,6 +111,7 @@ impl TextField {
             color,
             rotation: 0.,
             label: None,
+            ink: None,
             single_line: true,
             caret: text.len(),
             anchor: 0,
@@ -390,7 +396,7 @@ impl TextField {
         if let Some(id) = self.object {
             capture
                 .editor
-                .update_text_measured_sized_colored(id, self.text, extent, self.color, size);
+                .update_text_inked(id, self.text, extent, self.color, size, self.ink);
             capture.select_committed_text(id);
         } else if let Some(id) = capture.editor.add_label(
             self.position,
@@ -399,6 +405,7 @@ impl TextField {
             self.color,
             size,
             self.label,
+            self.ink,
         ) {
             capture.select_committed_text(id);
         }
@@ -450,7 +457,7 @@ impl TextField {
             }
         }
         let ink = match self.label {
-            Some(_) => label_ink(self.color),
+            Some(_) => self.ink.unwrap_or_else(|| label_ink(self.color)),
             None => self.color,
         };
         if let Some(error) = measure_error {
@@ -665,5 +672,45 @@ mod tests {
         // A click on the second line, inside the panel's left margin.
         let (offset, inside) = f.hit(Point { x: 46., y: 85. }, &mut measure);
         assert_eq!((offset, inside), (6, true));
+    }
+    #[test]
+    fn a_box_field_takes_the_given_ink_draws_with_it_and_keeps_it() {
+        let mut capture = Capture::new(Image::solid(400, 300, [0; 4]));
+        capture.new_label = Some(Label::Fit);
+        capture.editor.style.color = [250, 192, 66];
+        capture.label_ink = Some([237, 79, 92]);
+        let mut f = TextField::open(&capture, Point { x: 50., y: 60. });
+        assert_eq!(
+            f.ink,
+            Some([237, 79, 92]),
+            "the next box takes the ink given"
+        );
+        f.insert("Hi");
+        let inks = |f: &TextField| {
+            let mut canvas = crate::scale_tests::Recorder {
+                size: Point { x: 400., y: 300. },
+                ops: Vec::new(),
+            };
+            f.draw(&mut canvas, false, 1.).unwrap();
+            canvas
+                .ops
+                .into_iter()
+                .filter(|op| op.name == "text")
+                .map(|op| op.fixed)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(inks(&f), [format!("{:?}", Ink::solid([237, 79, 92]))]);
+        f.ink = None;
+        assert_eq!(
+            inks(&f),
+            [format!("{:?}", Ink::solid([0; 3]))],
+            "automatic: dark on yellow"
+        );
+        f.ink = Some([1, 2, 3]);
+        f.commit(&mut capture, measure("Hi"));
+        assert_eq!(capture.editor.objects()[0].text_ink(), [1, 2, 3]);
+        capture.label_ink = None;
+        let again = TextField::open(&capture, Point { x: 55., y: 65. });
+        assert_eq!(again.ink, Some([1, 2, 3]), "an edited box keeps its own");
     }
 }

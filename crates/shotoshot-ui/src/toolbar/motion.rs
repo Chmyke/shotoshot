@@ -213,6 +213,8 @@ pub struct Chosen {
     pub eyedropper: bool,
     pub current: [u8; 3],
     pub pointer: Point,
+    /// Panel and ink of the text box the box and text colour buttons show.
+    pub label: ([u8; 3], [u8; 3]),
 }
 impl Chosen {
     pub(super) fn button(&self, b: &Button) -> bool {
@@ -261,7 +263,7 @@ mod tests {
     fn panel() -> Vec<Button> {
         let region = Rect::new(Point { x: 100., y: 100. }, Point { x: 400., y: 300. }).unwrap();
         let screen = Rect::new(Point::default(), Point { x: 1920., y: 1080. }).unwrap();
-        buttons_in(region, None, screen, 1., false)
+        buttons_in(region, None, screen, 1., false, false)
     }
     fn chosen(tool: Tool, current: [u8; 3]) -> Chosen {
         Chosen {
@@ -269,6 +271,7 @@ mod tests {
             eyedropper: false,
             current,
             pointer: Point::default(),
+            label: (current, current),
         }
     }
     const ARROW: Action = Action::Tool(Tool::Arrow);

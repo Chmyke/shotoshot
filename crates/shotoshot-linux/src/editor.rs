@@ -79,6 +79,11 @@ impl Host for Native {
             field.color = rgb;
         }
     }
+    fn set_text_ink(&mut self, ink: Option<[u8; 3]>) {
+        if let Some(field) = &mut self.field {
+            field.ink = ink;
+        }
+    }
     fn cancel_text_drag(&mut self) -> bool {
         self.field.as_mut().is_some_and(|f| f.pointer_up())
     }
@@ -478,7 +483,8 @@ impl Editor {
         // frame that shows the change.
         let now = Instant::now();
         let current = toolbar_color(&self.capture, self.native.field.as_ref().map(|f| f.color));
-        self.capture.observe_toolbar(current, now);
+        let field_ink = self.native.field.as_ref().map(|f| f.ink);
+        self.capture.observe_toolbar(current, field_ink, now);
         self.native.layout_badge(&mut self.capture);
         self.frame.data_mut().copy_from_slice(self.backdrop.data());
         let capture = &self.capture;
@@ -511,8 +517,9 @@ impl Editor {
                 .map_err(|e| e.0)?;
             if !capture.selecting {
                 let current = toolbar_color(capture, native.field.as_ref().map(|f| f.color));
+                let field_ink = native.field.as_ref().map(|f| f.ink);
                 capture
-                    .draw_toolbar(&mut canvas, current, now)
+                    .draw_toolbar(&mut canvas, current, field_ink, now)
                     .map_err(|e| e.0)?;
                 let over_toolbar = capture.toolbar_contains(capture.pointer);
                 let feedback = capture.picker.is_none()
@@ -1033,7 +1040,7 @@ impl ApplicationHandler for Editor {
                 ..
             } => {
                 let p = self.capture.pointer;
-                if self.capture.secondary_down(p) {
+                if self.capture.secondary_down(&mut self.native, p) {
                     self.redraw();
                 }
             }
@@ -1068,7 +1075,8 @@ impl ApplicationHandler for Editor {
         // blinks and the placing limit; otherwise sleep until input.
         let now = Instant::now();
         let current = toolbar_color(&self.capture, self.native.field.as_ref().map(|f| f.color));
-        self.capture.observe_toolbar(current, now);
+        let field_ink = self.native.field.as_ref().map(|f| f.ink);
+        self.capture.observe_toolbar(current, field_ink, now);
         let hint = (self.capture.next_tick(now)).map(|ms| now + Duration::from_millis(ms as u64));
         let due = hint.into_iter().chain(self.native.caret_due);
         match due.chain(self.placing).min() {

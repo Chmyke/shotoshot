@@ -50,6 +50,8 @@ toolbar.green = Verde
 toolbar.blue = Azul
 toolbar.white = Branco
 toolbar.black = Preto
+toolbar.box_color = Cor da caixa
+toolbar.text_color = Cor do texto · Clique direito para preto ou branco automático
 toolbar.custom_color = Cor personalizada
 toolbar.eyedropper = Conta-gotas
 toolbar.fill = Colorir um traço, uma forma ou o fundo · {shortcut} · Clique direito ou Alt+clique remove a cor
@@ -269,12 +271,8 @@ pointer.high = Alto
 pointer.circle = Círculo
 pointer.horizontal = Faixa horizontal
 pointer.vertical = Faixa vertical
-pointer.zoom_2 == 2×
-pointer.zoom_3 == 3×
-pointer.zoom_4 == 4×
-pointer.small = Pequena
-pointer.medium_size = Média
-pointer.large = Grande
+pointer.zoom_value == {zoom}×
+pointer.size_value == {size} px
 pointer.reset = Restaurar padrões
 
 settings.title = Configurações

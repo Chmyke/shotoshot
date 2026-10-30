@@ -51,6 +51,9 @@ pub enum Shape {
         extent: Point,
         /// A panel of the object's colour behind the text, which is then black or white.
         label: Option<Label>,
+        /// The ink a panel's text was given; `None` keeps the black or white that contrasts
+        /// with the panel (`label_ink`). Meaningless without a panel.
+        ink: Option<[u8; 3]>,
     },
 }
 #[derive(Clone, Debug, PartialEq)]
@@ -219,10 +222,15 @@ impl Object {
             }
         }
     }
-    /// The colour a text is drawn in: its own, or the contrast of its panel.
+    /// The colour a text is drawn in: its own, or on a panel the ink it was given, else the
+    /// contrast of the panel.
     pub fn text_ink(&self) -> [u8; 3] {
         match self.shape {
-            Shape::Text { label: Some(_), .. } => label_ink(self.style.color),
+            Shape::Text {
+                label: Some(_),
+                ink,
+                ..
+            } => ink.unwrap_or_else(|| label_ink(self.style.color)),
             _ => self.style.color,
         }
     }

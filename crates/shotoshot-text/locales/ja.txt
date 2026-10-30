@@ -50,6 +50,8 @@ toolbar.green = 緑
 toolbar.blue = 青
 toolbar.white = 白
 toolbar.black = 黒
+toolbar.box_color = ボックスの色
+toolbar.text_color = 文字の色 · 右クリックで自動の黒または白に戻す
 toolbar.custom_color = カスタム色
 toolbar.eyedropper = スポイト
 toolbar.fill = 線・図形・背景に色を塗る · {shortcut} · 右クリックまたは Alt+クリックで色を解除
@@ -269,12 +271,8 @@ pointer.high = 大
 pointer.circle = 円
 pointer.horizontal = 横帯
 pointer.vertical = 縦帯
-pointer.zoom_2 == 2×
-pointer.zoom_3 == 3×
-pointer.zoom_4 == 4×
-pointer.small = 小
-pointer.medium_size = 中
-pointer.large = 大
+pointer.zoom_value == {zoom}×
+pointer.size_value == {size} px
 pointer.reset = 既定に戻す
 
 settings.title = 設定

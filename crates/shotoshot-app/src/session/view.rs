@@ -53,7 +53,12 @@ impl Session {
         let capture = &self.capture;
         if capture.region.is_some() {
             if !capture.selecting {
-                capture.draw_toolbar(canvas, self.toolbar_color(), std::time::Instant::now())?;
+                capture.draw_toolbar(
+                    canvas,
+                    self.toolbar_color(),
+                    self.field_ink(),
+                    std::time::Instant::now(),
+                )?;
                 self.draw_pointer_feedback(canvas)?;
                 if let Some(picker) = &self.capture.picker {
                     picker.draw(canvas)?;
@@ -71,6 +76,10 @@ impl Session {
 
     /// The colour the toolbar marks: the wheel's while it is open, the text's while typing,
     /// else the drawing colour.
+    /// The open text field's ink on its panel (`Some(None)`: automatic), `None` without one.
+    pub(crate) fn field_ink(&self) -> Option<Option<[u8; 3]>> {
+        self.native.text.as_ref().map(|t| t.ink)
+    }
     pub(crate) fn toolbar_color(&self) -> [u8; 3] {
         let capture = &self.capture;
         capture

@@ -175,7 +175,7 @@ impl Native {
     pub fn begin_text(&mut self, capture: &mut Capture, hwnd: HWND, p: Point) -> Result<()> {
         unsafe {
             let existing = capture.text_at(p);
-            let (position, value, id, size, rgb, rotation, label) = if let Some(Object {
+            let (position, value, id, size, rgb, rotation, label, ink) = if let Some(Object {
                 id,
                 shape:
                     Shape::Text {
@@ -183,6 +183,7 @@ impl Native {
                         text,
                         size,
                         label,
+                        ink,
                         ..
                     },
                 style,
@@ -198,6 +199,7 @@ impl Native {
                     style.color,
                     *rotation,
                     *label,
+                    *ink,
                 )
             } else {
                 (
@@ -208,6 +210,7 @@ impl Native {
                     capture.editor.style.color,
                     0.,
                     capture.new_label,
+                    capture.label_ink,
                 )
             };
             let width = (capture.image.width as f64 - position.x).max(1.) as i32;
@@ -249,6 +252,7 @@ impl Native {
                 face: Face::Annotation,
                 color: rgb,
                 label,
+                ink,
                 font,
                 drag_anchor: None,
                 scroll: Default::default(),
@@ -293,12 +297,13 @@ impl Native {
                         }
                     };
                     if let Some(id) = input.object {
-                        capture.editor.update_text_measured_sized_colored(
+                        capture.editor.update_text_inked(
                             id,
                             text,
                             extent,
                             input.color,
                             input.size as f64,
+                            input.ink,
                         );
                         capture.select_committed_text(id);
                     } else if let Some(id) = capture.editor.add_label(
@@ -308,6 +313,7 @@ impl Native {
                         input.color,
                         input.size as f64,
                         input.label,
+                        input.ink,
                     ) {
                         capture.select_committed_text(id);
                     }

@@ -589,6 +589,7 @@ impl Renderer {
                     size,
                     extent,
                     label,
+                    ink: _,
                 } = &o.shape
                 {
                     let mut previous = Matrix3x2::identity();

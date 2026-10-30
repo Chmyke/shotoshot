@@ -378,7 +378,7 @@ fn scene(scale: f64) -> Vec<Op> {
 
     c.draw_underlay(&mut canvas).unwrap();
     c.draw_frame(&mut canvas, true).unwrap();
-    c.draw_toolbar(&mut canvas, [1, 2, 3], Instant::now())
+    c.draw_toolbar(&mut canvas, [1, 2, 3], None, Instant::now())
         .unwrap();
 
     let button = c.buttons()[0].bounds.center();

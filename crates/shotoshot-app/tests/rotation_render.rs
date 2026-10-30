@@ -20,6 +20,7 @@ fn exported_rotated_text_matches_quarter_turn_pixels_and_crop_translation() {
             size: 28.,
             extent: Point { x: 100., y: 40. },
             label: None,
+            ink: None,
         },
     };
     let crop = Rect {

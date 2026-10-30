@@ -50,6 +50,8 @@ toolbar.green = 초록
 toolbar.blue = 파랑
 toolbar.white = 흰색
 toolbar.black = 검정
+toolbar.box_color = 상자 색
+toolbar.text_color = 글자 색 · 오른쪽 클릭: 자동 검정 또는 흰색
 toolbar.custom_color = 사용자 지정 색
 toolbar.eyedropper = 스포이트
 toolbar.fill = 선, 도형 또는 배경 칠하기 · {shortcut} · 오른쪽 클릭 또는 Alt+클릭: 색 제거
@@ -269,12 +271,8 @@ pointer.high = 높음
 pointer.circle = 원
 pointer.horizontal = 가로 띠
 pointer.vertical = 세로 띠
-pointer.zoom_2 == 2×
-pointer.zoom_3 == 3×
-pointer.zoom_4 == 4×
-pointer.small = 작게
-pointer.medium_size = 보통
-pointer.large = 크게
+pointer.zoom_value == {zoom}×
+pointer.size_value == {size} px
 pointer.reset = 기본값 복원
 
 settings.title = 설정

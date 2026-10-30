@@ -9,7 +9,7 @@ pub use scene::Scene;
 
 const HEADER: &[u8] = b"shotoshot-document ";
 /// The latest version read; a file is written in the lowest one that holds it (`Scene::version`).
-pub(crate) const VERSION: u32 = 4;
+pub(crate) const VERSION: u32 = 5;
 const FRAME: &[u8] = b"frame-png ";
 /// Larger files are refused unread: far above any desktop saved as two PNG images.
 pub const MAX_FILE: u64 = 256 << 20;
@@ -140,6 +140,13 @@ mod tests {
         let file = pack(&PIXEL, &labelled, FRAME_IMAGE).unwrap();
         let payload = png::extract(&file).unwrap();
         assert!(payload.starts_with(b"shotoshot-document 3\n"));
+        assert_eq!(unpack(&file), Ok((labelled.clone(), FRAME_IMAGE)));
+        if let crate::Shape::Text { ink, .. } = &mut labelled.objects[6].shape {
+            *ink = Some([1, 2, 3]);
+        }
+        let file = pack(&PIXEL, &labelled, FRAME_IMAGE).unwrap();
+        let payload = png::extract(&file).unwrap();
+        assert!(payload.starts_with(b"shotoshot-document 5\n"));
         assert_eq!(unpack(&file), Ok((labelled, FRAME_IMAGE)));
     }
     #[test]

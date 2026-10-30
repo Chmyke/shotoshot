@@ -230,7 +230,7 @@ fn portable_renderer_paints_the_whole_capture_overlay() {
         capture.draw_frame(&mut canvas, true).unwrap();
         let color = capture.editor.style.color;
         let now = std::time::Instant::now();
-        capture.draw_toolbar(&mut canvas, color, now).unwrap();
+        capture.draw_toolbar(&mut canvas, color, None, now).unwrap();
         capture.draw_width_ring(&mut canvas).unwrap();
     }
     let image = shotoshot_raster::image_from_pixmap(&frame, 0, 0);
@@ -423,6 +423,7 @@ fn both_renderers_set_annotation_text_in_the_same_embedded_face() {
             size: size as f64,
             extent,
             label: None,
+            ink: None,
         },
     };
     let objects = std::slice::from_ref(&object);
@@ -467,6 +468,7 @@ fn both_renderers_set_a_label_on_the_same_panel_and_lines() {
             size: size as f64,
             extent,
             label: Some(Label::Wrap(width as f64)),
+            ink: None,
         },
     };
     let objects = std::slice::from_ref(&object);
@@ -515,4 +517,21 @@ fn both_renderers_set_a_label_on_the_same_panel_and_lines() {
             inside(&raster)
         );
     }
+    // An ink of its own: both renderers set the letters in it, green in any channel order.
+    let mut inked = object.clone();
+    if let Shape::Text { ink, .. } = &mut inked.shape {
+        *ink = Some([0, 200, 0]);
+    }
+    let green = |image: &Image| {
+        image
+            .pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .any(|p| p[1] > 150 && p[0] < 80 && p[2] < 80)
+    };
+    assert!(!green(&direct), "no green before");
+    let objects = std::slice::from_ref(&inked);
+    assert!(green(&native.export(&image, &[], objects, crop).unwrap()));
+    assert!(green(&portable.export(&image, &[], objects, crop).unwrap()));
 }

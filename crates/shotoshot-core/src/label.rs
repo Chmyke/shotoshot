@@ -1,7 +1,8 @@
 //! ROLE: The rounded panel a text can sit on: margins, corners, ink and line breaks.
 //! OWNER: Text objects (`Shape::Text::label`); renderers and text fields read it here.
 //! INVARIANTS: Margins and corners follow the font size, so the wheel keeps the
-//! proportions; the ink follows the panel colour and is never stored.
+//! proportions; the ink follows the panel colour unless the text was given one
+//! (`Shape::Text::ink`), and the automatic one is never stored.
 use crate::Point;
 use std::ops::Range;
 

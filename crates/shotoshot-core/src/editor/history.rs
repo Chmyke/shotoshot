@@ -175,9 +175,11 @@ impl Editor {
         color: [u8; 3],
         size: f64,
     ) -> Option<u64> {
-        self.add_label(position, text, extent, color, size, None)
+        self.add_label(position, text, extent, color, size, None, None)
     }
-    /// A text on a panel of `color` when `label` is given, or a plain text otherwise.
+    /// A text on a panel of `color` when `label` is given, or a plain text otherwise. A
+    /// panel's text takes `ink`, or with `None` the black or white that contrasts with it.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_label(
         &mut self,
         position: Point,
@@ -186,6 +188,7 @@ impl Editor {
         color: [u8; 3],
         size: f64,
         label: Option<Label>,
+        ink: Option<[u8; 3]>,
     ) -> Option<u64> {
         if text.trim().is_empty()
             || !position.finite()
@@ -213,6 +216,7 @@ impl Editor {
                 size,
                 extent,
                 label,
+                ink: label.and(ink),
             },
             style: Style {
                 color,
@@ -270,6 +274,7 @@ impl Editor {
         };
         self.update_text_measured_sized_colored(id, text, measured, color, size);
     }
+    /// The edited text, its extent, colour and size as one step; a panel keeps its ink.
     pub fn update_text_measured_sized_colored(
         &mut self,
         id: u64,
@@ -277,6 +282,30 @@ impl Editor {
         measured: Point,
         color: [u8; 3],
         new_size: f64,
+    ) {
+        let Some(ink) = self
+            .objects
+            .iter()
+            .find(|o| o.id == id)
+            .map(|o| match o.shape {
+                Shape::Text { ink, .. } => ink,
+                _ => None,
+            })
+        else {
+            return;
+        };
+        self.update_text_inked(id, text, measured, color, new_size, ink);
+    }
+    /// `update_text_measured_sized_colored` that also gives a panel's text `ink` (`None`:
+    /// the automatic black or white), as one step.
+    pub fn update_text_inked(
+        &mut self,
+        id: u64,
+        text: String,
+        measured: Point,
+        color: [u8; 3],
+        new_size: f64,
+        ink: Option<[u8; 3]>,
     ) {
         if !measured.finite()
             || measured.x < 0.
@@ -293,12 +322,15 @@ impl Editor {
                 text: value,
                 extent,
                 size,
+                label,
+                ink: own,
                 ..
             } = &mut o.shape
         {
             *value = text;
             *size = new_size;
             *extent = measured;
+            *own = label.and(ink);
             o.style.color = color;
         }
         self.commit(before);
@@ -445,6 +477,29 @@ impl Editor {
             }
         }
         self.commit(before);
+    }
+    /// `ink` onto the text of every selected panel (`None`: the automatic black or white),
+    /// as one undo step; plain texts and shapes are left alone. True when one changed.
+    pub fn apply_ink(&mut self, ink: Option<[u8; 3]>) -> bool {
+        if self.drawing() {
+            return false;
+        }
+        self.cancel();
+        let before = self.objects.clone();
+        for o in &mut self.objects {
+            if self.selected.contains(&o.id)
+                && let Shape::Text {
+                    label: Some(_),
+                    ink: own,
+                    ..
+                } = &mut o.shape
+            {
+                *own = ink;
+            }
+        }
+        let changed = before != self.objects;
+        self.commit(before);
+        changed
     }
     /// Each selected shape's own width through `step`, colours untouched, as one undo step.
     /// Returns the first one's new width; None while drawing or with nothing selected.

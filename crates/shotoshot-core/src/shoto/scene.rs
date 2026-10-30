@@ -61,11 +61,15 @@ impl Scene {
     }
     /// The lowest format version that holds this scene: 2 once a zone has more than one coat
     /// or a coat spares a shape, 3 once a text sits on a panel, 4 once an arrow or a line
-    /// bends, so simpler files still open in an earlier Shotoshot.
+    /// bends, 5 once a panel's text has an ink of its own, so simpler files still open in an
+    /// earlier Shotoshot.
     pub fn version(&self) -> u32 {
         let plain = |coats: &[Paint]| coats.len() <= 1 && coats.iter().all(|c| c.walls.is_empty());
         let labelled = |o: &Object| matches!(o.shape, Shape::Text { label: Some(_), .. });
-        if self.objects.iter().any(|o| bent(o.bend())) {
+        let inked = |o: &Object| matches!(o.shape, Shape::Text { ink: Some(_), .. });
+        if self.objects.iter().any(inked) {
+            5
+        } else if self.objects.iter().any(|o| bent(o.bend())) {
             4
         } else if self.objects.iter().any(labelled) {
             3
@@ -161,10 +165,12 @@ fn object_valid(object: &Object, points: &mut usize) -> bool {
                 size,
                 extent,
                 label,
+                ink,
             } => {
-                label
-                    .and_then(Label::wrap)
-                    .is_none_or(|w| w.is_finite() && w > 0.)
+                (label.is_some() || ink.is_none())
+                    && label
+                        .and_then(Label::wrap)
+                        .is_none_or(|w| w.is_finite() && w > 0.)
                     && position.finite()
                     && (8. ..=300.).contains(size)
                     && extent.finite()
@@ -248,6 +254,7 @@ fn encode_object(out: &mut String, object: &Object) -> std::fmt::Result {
             size,
             extent,
             label,
+            ink,
         } => {
             write!(
                 out,
@@ -258,6 +265,9 @@ fn encode_object(out: &mut String, object: &Object) -> std::fmt::Result {
                 Some(Label::Fit) => out.push_str(" label=fit"),
                 Some(Label::Wrap(width)) => write!(out, " label=wrap:{width}")?,
                 None => {}
+            }
+            if let Some([r, g, b]) = ink {
+                write!(out, " ink={r:02x}{g:02x}{b:02x}")?;
             }
             out.push_str(" text=");
             for byte in text.bytes() {
@@ -476,11 +486,18 @@ fn decode_object(line: &str, version: u32, points: &mut usize) -> Option<Object>
                 Some(text) => Some(Label::Wrap(number(text.strip_prefix("wrap:")?)?)),
                 None => None,
             };
+            let ink = match f.take("ink") {
+                // Only a panel's text has an ink of its own.
+                Some(_) if version < 5 || label.is_none() => return None,
+                Some(text) => Some(hex(text)?.try_into().ok()?),
+                None => None,
+            };
             Shape::Text {
                 position: pair(x, y),
                 size: number(f.take("size")?)?,
                 extent: pair(w, h),
                 label,
+                ink,
                 text: String::from_utf8(hex(f
                     .take("text")
                     .filter(|t| t.len() <= 2 * MAX_TEXT)?)?)
@@ -596,6 +613,7 @@ pub(super) mod tests {
                         size: 24.,
                         extent: pair(120.5, 64.),
                         label: None,
+                        ink: None,
                     },
                 ),
             ],
@@ -843,6 +861,7 @@ object id=3 kind=text color=1c1f28 width=3 rotation=0.5 at=10,20 size=32 extent=
             size,
             extent,
             label: Some(label),
+            ink: None,
         };
         Scene {
             background: Vec::new(),
@@ -995,9 +1014,77 @@ object id=2 kind=arrow color=1c1f28 width=5 rotation=0 from=40,90 to=40,300.5 he
             assert_eq!(decode(&text, 4), None, "{from:?} replaced by {to:?}");
         }
     }
+    /// Version 5 as it was first written: a panel's text in an ink of its own, beside one
+    /// that keeps the automatic black or white. Files with this text exist: it never changes.
+    const VERSION_5: &str = "frame 1920 1080
+origin -1920 0
+region 100.5 200 900 700.25
+last 3
+object id=1 kind=text color=fac042 width=3 rotation=0 at=50,60 size=24 extent=120.5,29 label=fit ink=ed4f5c text=4e6f7465
+object id=3 kind=text color=1c1f28 width=3 rotation=0.5 at=10,20 size=32 extent=180,77 label=wrap:200.25 text=c3876120646f69742072657374657220696369
+";
+    fn inked() -> Scene {
+        let mut scene = labelled();
+        if let Shape::Text { ink, .. } = &mut scene.objects[0].shape {
+            *ink = Some([237, 79, 92]);
+        }
+        scene
+    }
+    #[test]
+    fn version_5_text_is_frozen() {
+        assert_eq!(inked().version(), 5);
+        assert_eq!(inked().encode(), VERSION_5);
+        assert_eq!(decode(VERSION_5, 5), Some(inked()));
+        assert_eq!(decode(VERSION_1, 5), Some(sample()), "version 5 reads 1");
+        assert_eq!(decode(VERSION_2, 5), Some(layered()), "and 2");
+        assert_eq!(
+            decode(VERSION_3, 5),
+            Some(labelled()),
+            "and 3, automatic ink"
+        );
+        assert_eq!(decode(VERSION_4, 5), Some(bent()), "and 4");
+        let mut inked_and_bent = inked();
+        inked_and_bent
+            .objects
+            .extend(bent().objects.into_iter().map(|mut o| {
+                o.id += 3;
+                o
+            }));
+        inked_and_bent.last_id = 5;
+        assert_eq!(inked_and_bent.version(), 5, "an ink outranks a bend");
+    }
+    #[test]
+    fn earlier_versions_know_no_ink() {
+        for version in 1..5 {
+            assert_eq!(decode(VERSION_5, version), None, "version {version}");
+        }
+        let automatic = VERSION_5.replacen(" ink=ed4f5c", "", 1);
+        assert_eq!(decode(&automatic, 3), Some(labelled()));
+    }
+    #[test]
+    fn inks_not_fully_understood_are_refused() {
+        for (from, to) in [
+            ("ink=ed4f5c", "ink=ed4f5"),
+            ("ink=ed4f5c", "ink=ed4f5c00"),
+            ("ink=ed4f5c", "ink=red"),
+            ("ink=ed4f5c", "ink="),
+            ("ink=ed4f5c", "ink=ed4f5c ink=ed4f5c"),
+            // Only a panel's text has an ink of its own.
+            ("label=fit ink=ed4f5c", "ink=ed4f5c"),
+        ] {
+            assert!(VERSION_5.contains(from), "{from:?} is not in the reference");
+            let text = VERSION_5.replacen(from, to, 1);
+            assert_eq!(decode(&text, 5), None, "{from:?} replaced by {to:?}");
+        }
+    }
     #[test]
     fn an_invalid_scene_is_recognised_before_it_is_written() {
         assert!(sample().valid());
+        let mut stray_ink = sample();
+        if let Shape::Text { ink, .. } = &mut stray_ink.objects[6].shape {
+            *ink = Some([1, 2, 3]);
+        }
+        assert!(!stray_ink.valid(), "an ink without a panel is not written");
         let broken: [fn(&mut Scene); 8] = [
             |s| s.width = 0,
             |s| s.region.max.x = 5000.,

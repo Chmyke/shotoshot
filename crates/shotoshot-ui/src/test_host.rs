@@ -10,6 +10,9 @@ pub struct FakeHost {
     pub text_size: f32,
     /// Where the open field's first line is and the panel it sits on.
     pub label: Option<(Point, Option<Label>)>,
+    /// The open field's colour and its ink on a panel (`None`: automatic).
+    pub color: Option<[u8; 3]>,
+    pub ink: Option<[u8; 3]>,
 }
 impl Host for FakeHost {
     type Error = ();
@@ -23,7 +26,12 @@ impl Host for FakeHost {
     fn text_active(&self) -> bool {
         self.text_open
     }
-    fn set_text_color(&mut self, _: [u8; 3]) {}
+    fn set_text_color(&mut self, rgb: [u8; 3]) {
+        self.color = Some(rgb);
+    }
+    fn set_text_ink(&mut self, ink: Option<[u8; 3]>) {
+        self.ink = ink;
+    }
     fn cancel_text_drag(&mut self) -> bool {
         false
     }
@@ -32,6 +40,8 @@ impl Host for FakeHost {
         self.text_open = true;
         self.text_size = capture.text_size;
         self.label = Some((p, capture.new_label));
+        self.color = Some(capture.editor.style.color);
+        self.ink = capture.label_ink;
         Ok(())
     }
     fn finish_text(&mut self, _: &mut Capture, _: bool) {
