@@ -95,6 +95,7 @@ pub(super) fn render(path: &std::path::Path) -> Result<()> {
                             end_attach: None,
                             head: true,
                             bend: Default::default(),
+                            elbow: false,
                         },
                         style,
                     });
@@ -142,6 +143,7 @@ fn bent_samples(path: &std::path::Path) -> Result<()> {
                 end_attach: None,
                 head,
                 bend,
+                elbow: false,
             },
         })
         .collect();
@@ -196,6 +198,7 @@ fn thick_samples(path: &std::path::Path) -> Result<()> {
                 end_attach: None,
                 head: true,
                 bend: Default::default(),
+                elbow: false,
             },
         },
         Object {

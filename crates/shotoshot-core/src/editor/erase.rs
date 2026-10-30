@@ -220,6 +220,8 @@ impl Editor {
         let before = self.objects.clone();
         for o in &mut self.objects {
             let (start_cap, end_cap) = o.end_caps();
+            // An elbow's ends rest on the sides facing each other, not along a direction.
+            let elbow = elbow_ends(o, &before);
             if let Shape::Arrow {
                 start,
                 end,
@@ -229,15 +231,21 @@ impl Editor {
             } = &mut o.shape
             {
                 if start_attach.is_some_and(|a| ids.contains(&a.target)) {
-                    *start = start_attach
-                        .and_then(|a| resolve(a, &before, start_cap))
-                        .unwrap_or(*start);
+                    *start = match elbow {
+                        Some((a, _)) => a.point,
+                        None => start_attach
+                            .and_then(|a| resolve(a, &before, start_cap))
+                            .unwrap_or(*start),
+                    };
                     *start_attach = None;
                 }
                 if end_attach.is_some_and(|a| ids.contains(&a.target)) {
-                    *end = end_attach
-                        .and_then(|a| resolve(a, &before, end_cap))
-                        .unwrap_or(*end);
+                    *end = match elbow {
+                        Some((_, b)) => b.point,
+                        None => end_attach
+                            .and_then(|a| resolve(a, &before, end_cap))
+                            .unwrap_or(*end),
+                    };
                     *end_attach = None;
                 }
             }

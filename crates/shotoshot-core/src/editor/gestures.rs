@@ -24,10 +24,14 @@ impl Editor {
         self.cancel();
         let before = self.objects.clone();
         let fresh = self.fresh_bend_handle(p);
+        let anchor = self.anchor_at(p);
         self.fresh = None;
         let kind = if let Some(index) = fresh {
             self.fresh = Some(self.objects[index].id);
             GestureKind::Bend { index }
+        } else if let Some(source) = anchor {
+            self.begin_elbow(source, p);
+            GestureKind::Draw
         } else if self.tool == Tool::Select {
             self.selection_gesture(p, modifiers)
         } else if self.tool == Tool::Eraser {
@@ -46,6 +50,7 @@ impl Editor {
                     end_attach: None,
                     head: self.tool == Tool::Arrow,
                     bend: Point::default(),
+                    elbow: false,
                 },
                 Tool::Pen | Tool::Highlight => Shape::Stroke {
                     points: vec![p],
@@ -111,6 +116,110 @@ impl Editor {
             return None;
         }
         self.object_at(p).filter(|id| !self.selected.contains(id))
+    }
+    /// The text box whose four anchors show for a pointer at `p`: the lone selected one
+    /// whatever the tool, else the one under or just around the pointer with Select or Arrow
+    /// in hand. None during a gesture.
+    pub fn anchor_owner(&self, p: Point) -> Option<u64> {
+        if self.gesture.is_some() || !p.finite() {
+            return None;
+        }
+        let boxed = |o: &&Object| matches!(o.shape, Shape::Text { label: Some(_), .. });
+        if let [id] = self.selected[..]
+            && self.objects.iter().filter(boxed).any(|o| o.id == id)
+        {
+            return Some(id);
+        }
+        if !matches!(self.tool, Tool::Select | Tool::Arrow) {
+            return None;
+        }
+        // A corridor around the box keeps its anchors in reach on the way out to them.
+        let corridor = (ANCHOR_GAP + 10.) * self.ui_scale;
+        self.objects
+            .iter()
+            .rev()
+            .filter(boxed)
+            .find(|o| {
+                o.local_bounds()
+                    .expanded(corridor)
+                    .contains(o.world_to_local(p))
+            })
+            .map(|o| o.id)
+    }
+    /// The four anchors of a text box, clockwise from the top: the middle of each side,
+    /// `ANCHOR_GAP` interface pixels out, turned with the box.
+    pub fn anchors(&self, id: u64) -> Option<[Point; 4]> {
+        let o = self.objects.iter().find(|o| o.id == id)?;
+        let r = o.local_bounds();
+        let (c, half) = (r.center(), r.size() * 0.5);
+        let gap = ANCHOR_GAP * self.ui_scale;
+        let (x, y) = (half.x + gap, half.y + gap);
+        Some(
+            [(0., -y), (x, 0.), (0., y), (-x, 0.)]
+                .map(|(dx, dy)| o.local_to_world(c + Point { x: dx, y: dy })),
+        )
+    }
+    /// The text box whose anchor a press at `p` would pull an arrow out of; never over a
+    /// handle of the selection, which the press grabs instead.
+    pub fn anchor_at(&self, p: Point) -> Option<u64> {
+        let id = self.anchor_owner(p)?;
+        if self.tool == Tool::Select && self.handle_at(p).is_some() {
+            return None;
+        }
+        let grip = 9. * self.ui_scale;
+        self.anchors(id)?
+            .iter()
+            .any(|a| (*a - p).length() < grip)
+            .then_some(id)
+    }
+    /// What the elbow arrow being pulled out would attach its free end to on release.
+    pub fn connect_target(&self) -> Option<u64> {
+        let g = self.gesture.as_ref()?;
+        if !matches!(g.kind, GestureKind::Draw) {
+            return None;
+        }
+        match self.objects.last()?.shape {
+            Shape::Arrow {
+                elbow: true,
+                end_attach,
+                ..
+            } => end_attach.map(|a| a.target),
+            _ => None,
+        }
+    }
+    /// A new elbow arrow out of text box `source`, in the box's colour, its free end at `p`.
+    fn begin_elbow(&mut self, source: u64, p: Point) {
+        let Some(color) = self
+            .objects
+            .iter()
+            .find(|o| o.id == source)
+            .map(|o| o.style.color)
+        else {
+            return;
+        };
+        self.next_id += 1;
+        self.objects.push(Object {
+            rotation: 0.,
+            fill: Vec::new(),
+            id: self.next_id,
+            shape: Shape::Arrow {
+                start: p,
+                end: p,
+                start_attach: Some(Attachment {
+                    target: source,
+                    direction: Point { x: 1., y: 0. },
+                }),
+                end_attach: None,
+                head: true,
+                bend: Point::default(),
+                elbow: true,
+            },
+            style: Style {
+                color,
+                width: self.style.width,
+            },
+        });
+        self.selected.clear();
     }
     /// Objects the marquee being drawn would add on release.
     pub fn marquee_catch(&self) -> Vec<u64> {
@@ -193,6 +302,9 @@ impl Editor {
         };
         let index = self.objects.iter().position(|o| o.id == id)?;
         let o = &self.objects[index];
+        if matches!(o.shape, Shape::Arrow { elbow: true, .. }) {
+            return None;
+        }
         let (a, b) = arrow_points(o, &self.objects)?;
         Some((index, bend_point(a, b, o.bend())))
     }
@@ -234,6 +346,30 @@ impl Editor {
         match g.kind {
             GestureKind::Erase { .. } => {}
             GestureKind::Draw => {
+                let elbow = self.objects.last().and_then(|o| match o.shape {
+                    Shape::Arrow {
+                        elbow: true,
+                        start_attach,
+                        ..
+                    } => Some(start_attach.map(|a| a.target)),
+                    _ => None,
+                });
+                if let Some(source) = elbow {
+                    // Pulled out of a box: the end binds on contact, Alt keeps it free.
+                    let reach = 10. * self.ui_scale;
+                    let prior = &self.objects[..self.objects.len() - 1];
+                    let bound = (!g.modifiers.alt)
+                        .then(|| connect_at(p, prior, source, reach))
+                        .flatten();
+                    if let Some(Shape::Arrow {
+                        end, end_attach, ..
+                    }) = self.objects.last_mut().map(|o| &mut o.shape)
+                    {
+                        *end = p;
+                        *end_attach = bound;
+                    }
+                    return;
+                }
                 let p = if g.modifiers.shift
                     && matches!(
                         self.tool,
@@ -377,11 +513,26 @@ impl Editor {
                 } else {
                     p
                 };
-                let attachment = g
-                    .modifiers
-                    .attaches()
-                    .then(|| attach_at(p, &self.objects))
-                    .flatten();
+                let attachment = match self.objects[index].shape {
+                    // An elbow's ends bind on contact as when pulled out, never both to one.
+                    Shape::Arrow {
+                        elbow: true,
+                        start_attach,
+                        end_attach,
+                        ..
+                    } => {
+                        let other = if start { end_attach } else { start_attach };
+                        let reach = 10. * self.ui_scale;
+                        (!g.modifiers.alt)
+                            .then(|| connect_at(p, &self.objects, other.map(|a| a.target), reach))
+                            .flatten()
+                    }
+                    _ => g
+                        .modifiers
+                        .attaches()
+                        .then(|| attach_at(p, &self.objects))
+                        .flatten(),
+                };
                 if let Shape::Arrow {
                     start: a,
                     end: b,

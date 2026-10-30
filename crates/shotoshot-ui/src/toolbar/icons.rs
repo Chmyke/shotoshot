@@ -243,6 +243,7 @@ fn paint<C: Canvas>(
                     end_attach: None,
                     head: true,
                     bend: Default::default(),
+                    elbow: false,
                 },
             };
             g.canvas.annotations(&[arrow], None)?;

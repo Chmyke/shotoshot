@@ -1,4 +1,7 @@
-use crate::{Object, Point, Shape, arrow_points, bent, bent_arrival, bent_points};
+use crate::{
+    Object, Point, Shape, arrow_points, bent, bent_arrival, bent_points, elbow_corners,
+    elbow_points,
+};
 
 // Bound the deviation from the analytic ellipse in screen/document pixels.
 const CURVE_ERROR: f64 = 0.2;
@@ -90,17 +93,21 @@ pub fn paths(object: &Object, objects: &[Object]) -> Vec<Vec<Point>> {
             if length < 0.001 {
                 return vec![];
             }
-            let curve = bent(*bend).then(|| bent_points(a, b, *bend));
+            let corners = elbow_corners(object, objects);
+            let curve = match &corners {
+                Some(_) => elbow_points(object, objects),
+                None => bent(*bend).then(|| bent_points(a, b, *bend)),
+            };
             if !head {
                 return vec![curve.unwrap_or_else(|| vec![a, b])];
             }
-            let unit = match curve {
-                Some(_) => {
-                    let arrival = bent_arrival(a, b, *bend);
-                    arrival * (1. / arrival.length())
-                }
-                None => d * (1. / length),
+            // An elbow's head lies along its last straight run, a curve's along its tangent.
+            let arrival = match (&corners, &curve) {
+                (Some(c), _) if c.len() >= 2 => c[c.len() - 1] - c[c.len() - 2],
+                (_, Some(_)) => bent_arrival(a, b, *bend),
+                _ => d,
             };
+            let unit = arrival * (1. / arrival.length().max(1e-9));
             let wing = Point {
                 x: -unit.y,
                 y: unit.x,

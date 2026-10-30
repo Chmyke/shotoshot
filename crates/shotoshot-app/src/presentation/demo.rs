@@ -75,6 +75,7 @@ fn arrow(x0: f64, y0: f64, x1: f64, y1: f64) -> Shape {
         end_attach: None,
         head: true,
         bend: Default::default(),
+        elbow: false,
     }
 }
 

@@ -792,6 +792,9 @@ impl Capture {
         if self.bucket {
             return CursorKind::Cross;
         }
+        if self.editor.anchor_at(f).is_some() {
+            return CursorKind::Cross;
+        }
         if matches!(self.editor.tool, Tool::Text | Tool::Label) {
             // A click on a text edits it, anywhere else it starts one: two shapes to tell.
             return if self.text_at(f).is_some() {

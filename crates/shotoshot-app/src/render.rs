@@ -1241,6 +1241,7 @@ mod arrow_tests {
                 end_attach: None,
                 head: true,
                 bend: Default::default(),
+                elbow: false,
             },
         };
         let output = renderer

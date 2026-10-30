@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.28 · 2026-10-30
+
+- Text boxes sprout four little dots when you hover them: pull one and out comes an arrow, leaving the box square-on and turning neat rounded corners. Drop it on another box or shape and it stays hooked on, wherever you move either one.
+
 ## 0.3.27 · 2026-10-30
 
 - The loupe's size and zoom are now sliders: from a modest 120 px to a generous 480 px, and from 2× all the way up to 8× for the tiniest print.

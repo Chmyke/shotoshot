@@ -318,6 +318,7 @@ fn cached_arrow_prefix_updates_when_its_later_attachment_target_moves() {
                 }),
                 head: true,
                 bend: Default::default(),
+                elbow: false,
             },
         },
         Object {
@@ -360,6 +361,7 @@ fn short_thick_arrow_head_fits_inside_the_checkpoint() {
             end_attach: None,
             head: true,
             bend: Default::default(),
+            elbow: false,
         },
     }];
     let first = paint(&renderer, &objects, 45., None);

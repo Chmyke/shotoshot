@@ -1,6 +1,6 @@
 use crate::{
-    Label, Paint, Point, Rect, bent_bounds, coat_seen, label_ink, remap_walls, rotate_point,
-    segment_distance,
+    Label, Paint, Point, Rect, bent_bounds, coat_seen, elbow_ends, elbow_points, label_ink,
+    polyline_bounds, remap_walls, rotate_point, segment_distance,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -33,8 +33,11 @@ pub enum Shape {
         /// False for the Line tool: the same bindable segment without a head.
         head: bool,
         /// Where the curve passes halfway, relative to its resolved ends (`bend_point`);
-        /// zero for a straight segment.
+        /// zero for a straight segment. Unused by an elbow arrow.
         bend: Point,
+        /// Pulled out of a text box: square turns out of the side facing each end's target
+        /// instead of a segment or a curve (`elbow_points`).
+        elbow: bool,
     },
     Stroke {
         points: Vec<Point>,
@@ -95,6 +98,7 @@ impl Object {
     }
     pub fn prepare_transform(&mut self, objects: &[Object], selected: &[u64]) {
         let (start_cap, end_cap) = self.end_caps();
+        let ends = elbow_ends(self, objects).map(|(a, b)| (a.point, b.point));
         if let Shape::Arrow {
             start,
             end,
@@ -103,12 +107,16 @@ impl Object {
             ..
         } = &mut self.shape
         {
-            *start = start_attach
-                .and_then(|a| resolve(a, objects, start_cap))
-                .unwrap_or(*start);
-            *end = end_attach
-                .and_then(|a| resolve(a, objects, end_cap))
-                .unwrap_or(*end);
+            if let Some((a, b)) = ends {
+                (*start, *end) = (a, b);
+            } else {
+                *start = start_attach
+                    .and_then(|a| resolve(a, objects, start_cap))
+                    .unwrap_or(*start);
+                *end = end_attach
+                    .and_then(|a| resolve(a, objects, end_cap))
+                    .unwrap_or(*end);
+            }
             if start_attach.is_some_and(|a| !selected.contains(&a.target)) {
                 *start_attach = None;
             }
@@ -118,14 +126,19 @@ impl Object {
         }
     }
     pub fn resolved_bounds(&self, objects: &[Object]) -> Rect {
+        if let Some(bounds) = elbow_points(self, objects).and_then(|p| polyline_bounds(&p)) {
+            return bounds;
+        }
         arrow_points(self, objects)
             .and_then(|(a, b)| bent_bounds(a, b, self.bend()))
             .unwrap_or_else(|| self.bounds())
     }
-    /// An arrow's or line's bend; zero for every other shape.
+    /// An arrow's or line's bend; zero for an elbow arrow and every other shape.
     pub fn bend(&self) -> Point {
         match self.shape {
-            Shape::Arrow { bend, .. } => bend,
+            Shape::Arrow {
+                bend, elbow: false, ..
+            } => bend,
             _ => Point::default(),
         }
     }
@@ -184,8 +197,13 @@ impl Object {
         match &self.shape {
             Shape::Rectangle(r) | Shape::Ellipse(r) => *r,
             Shape::Arrow {
-                start, end, bend, ..
-            } => bent_bounds(*start, *end, *bend).unwrap_or_default(),
+                start,
+                end,
+                bend,
+                elbow,
+                ..
+            } => bent_bounds(*start, *end, if *elbow { Point::default() } else { *bend })
+                .unwrap_or_default(),
             Shape::Stroke { points, .. } => points
                 .iter()
                 .fold(None, |r: Option<Rect>, p| {
@@ -409,19 +427,50 @@ pub fn attach_at(p: Point, objects: &[Object]) -> Option<Attachment> {
         .iter()
         .rev()
         .find(|o| {
-            matches!(o.shape, Shape::Rectangle(_) | Shape::Ellipse(_))
-                && o.local_bounds()
-                    .expanded(o.style.width * 0.5)
-                    .contains(o.world_to_local(p))
+            let edge = match o.shape {
+                Shape::Rectangle(_) | Shape::Ellipse(_) => o.style.width * 0.5,
+                Shape::Text { label: Some(_), .. } => 0.,
+                _ => return false,
+            };
+            o.local_bounds()
+                .expanded(edge)
+                .contains(o.world_to_local(p))
         })
-        .map(|o| Attachment {
-            target: o.id,
-            direction: if (o.world_to_local(p) - o.local_bounds().center()).length() < 0.001 {
-                Point { x: 1., y: 0. }
-            } else {
-                o.world_to_local(p) - o.local_bounds().center()
-            },
+        .map(|o| attachment_to(o, p))
+}
+fn attachment_to(o: &Object, p: Point) -> Attachment {
+    let d = o.world_to_local(p) - o.local_bounds().center();
+    Attachment {
+        target: o.id,
+        direction: if d.length() < 0.001 {
+            Point { x: 1., y: 0. }
+        } else {
+            d
+        },
+    }
+}
+/// What the free end of an elbow arrow at `p` binds to, the arrow's own start target
+/// `except`ed: anywhere on a text box, near a rectangle's or an ellipse's outline (`reach`)
+/// or on its fill, but not inside an empty one, which stays free to point at the image.
+pub fn connect_at(
+    p: Point,
+    objects: &[Object],
+    except: Option<u64>,
+    reach: f64,
+) -> Option<Attachment> {
+    objects
+        .iter()
+        .rev()
+        .filter(|o| Some(o.id) != except)
+        .find(|o| match o.shape {
+            Shape::Text { label: Some(_), .. } => o
+                .local_bounds()
+                .expanded(reach)
+                .contains(o.world_to_local(p)),
+            Shape::Rectangle(_) | Shape::Ellipse(_) => o.hit(p, reach, objects),
+            _ => false,
         })
+        .map(|o| attachment_to(o, p))
 }
 /// `cap` keeps a round line end from overlapping the target's stroke.
 pub fn resolve(a: Attachment, objects: &[Object], cap: f64) -> Option<Point> {
@@ -463,6 +512,9 @@ pub fn resolve(a: Attachment, objects: &[Object], cap: f64) -> Option<Point> {
     Some(o.local_to_world(r.center() + offset))
 }
 pub fn arrow_points(o: &Object, objects: &[Object]) -> Option<(Point, Point)> {
+    if let Some((a, b)) = elbow_ends(o, objects) {
+        return Some((a.point, b.point));
+    }
     if let Shape::Arrow {
         start,
         end,

@@ -155,8 +155,56 @@ impl Capture {
             canvas.fill_ellipse(middle, radius, ACCENT)?;
             canvas.stroke_ellipse(middle, radius, Ink::solid([250, 250, 250]), 1.5 * s)?;
         }
+        if show_selection {
+            self.draw_anchors(canvas, s)?;
+        }
         if let Some(m) = self.editor.marquee() {
             canvas.stroke_rect(m, ACCENT, s)?;
+        }
+        Ok(())
+    }
+    /// The four anchors of the text box an arrow can be pulled out of, the one under the
+    /// pointer larger and filled with a plus; while one is pulled, the object its end would
+    /// attach to in the hover's dashes.
+    fn draw_anchors<C: Canvas>(&self, canvas: &mut C, s: f64) -> Result<(), C::Error> {
+        if let Some(id) = self.editor.connect_target()
+            && let Some(frame) = self.editor.frame_of(id)
+        {
+            dashed(canvas, frame.outline(3. * s), ACCENT, s)?;
+        }
+        if !self.pointer_on_document() {
+            return Ok(());
+        }
+        let f = self.to_frame(self.pointer);
+        let Some(id) = self.editor.anchor_owner(f) else {
+            return Ok(());
+        };
+        let Some(anchors) = self.editor.anchors(id) else {
+            return Ok(());
+        };
+        let hot = self.editor.anchor_at(f).is_some();
+        let white = Ink::solid([250, 250, 250]);
+        for a in anchors {
+            let near = hot && (a - f).length() < 9. * s;
+            let r = if near { 6. } else { 4. } * s;
+            let radius = Point { x: r, y: r };
+            canvas.fill_ellipse(a, radius, if near { ACCENT } else { white })?;
+            canvas.stroke_ellipse(a, radius, ACCENT, 1.5 * s)?;
+            if near {
+                let arm = 2.5 * s;
+                canvas.line(
+                    a - Point { x: arm, y: 0. },
+                    a + Point { x: arm, y: 0. },
+                    white,
+                    1.5 * s,
+                )?;
+                canvas.line(
+                    a - Point { x: 0., y: arm },
+                    a + Point { x: 0., y: arm },
+                    white,
+                    1.5 * s,
+                )?;
+            }
         }
         Ok(())
     }

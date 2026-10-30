@@ -109,6 +109,7 @@ impl Scene {
                 end_attach: None,
                 head: true,
                 bend: Default::default(),
+                elbow: false,
             },
             LiveTool::Rectangle => Shape::Rectangle(bounds),
             LiveTool::Ellipse => {
@@ -428,6 +429,7 @@ mod tests {
                 end_attach: None,
                 head: true,
                 bend: Default::default(),
+                elbow: false,
             }
         );
     }

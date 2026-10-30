@@ -73,7 +73,30 @@ fn scene() -> Vec<Object> {
     e.style.color = [28, 31, 40];
     e.fill_at(p(380., 90.), false);
     assert!(e.objects()[..2].iter().all(|o| !o.fill.is_empty()));
-    e.objects().to_vec()
+    let mut objects = e.objects().to_vec();
+    // An elbow arrow out of the rectangle's bottom, one rounded turn to a free point.
+    objects.push(Object {
+        id: e.last_id() + 1,
+        rotation: 0.,
+        fill: Vec::new(),
+        style: Style {
+            color: [80, 153, 244],
+            width: 5.,
+        },
+        shape: Shape::Arrow {
+            start: p(120., 150.),
+            end: p(300., 250.),
+            start_attach: Some(Attachment {
+                target: objects[0].id,
+                direction: p(0., 1.),
+            }),
+            end_attach: None,
+            head: true,
+            bend: Point::default(),
+            elbow: true,
+        },
+    });
+    objects
 }
 
 #[test]
@@ -126,6 +149,7 @@ fn both_renderers_keep_fractional_arrow_joins_solid_and_tails_round() {
             end_attach: None,
             head: true,
             bend: Default::default(),
+            elbow: false,
         },
     }];
     for output in [

@@ -144,7 +144,11 @@ impl Capture {
         }
         // The crop limits export only: every tool but the bucket works off the region too, so
         // a shape set down beside it joins the capture once the region grows over it.
-        if self.editor.tool == Tool::Text {
+        // An anchor of a text box pulls an arrow out of it whatever the tool.
+        if self.editor.anchor_at(f).is_some() {
+            self.editor.begin(f, modifiers);
+            host.capture_pointer();
+        } else if self.editor.tool == Tool::Text {
             self.new_label = None;
             host.begin_text(self, f)?;
         } else if self.editor.tool == Tool::Label {
@@ -662,6 +666,46 @@ mod tests {
         (c, host)
     }
 
+    #[test]
+    fn an_anchor_of_the_box_just_written_pulls_an_arrow_with_the_box_tool_in_hand() {
+        let (mut c, mut host) = selected();
+        c.action(&mut host, Action::Tool(Tool::Label));
+        let id = c
+            .editor
+            .add_label(
+                p(200., 200.),
+                "Note".into(),
+                p(100., 24.),
+                [253, 216, 53],
+                20.,
+                Some(Label::Fit),
+                None,
+            )
+            .unwrap();
+        // A text just validated stays selected, and so shows its anchors.
+        c.editor.select_only(id);
+        let bottom = c.editor.anchors(id).unwrap()[2];
+        assert_eq!(c.cursor(bottom), crate::CursorKind::Cross);
+        c.pointer_down(&mut host, bottom, Modifiers::default())
+            .unwrap();
+        assert!(!host.text_open, "no new text opened on the anchor");
+        assert!(host.captured);
+        c.pointer_up(&mut host, p(450., 350.), Modifiers::default());
+        let arrow = &c.editor.objects()[1];
+        assert!(matches!(
+            arrow.shape,
+            Shape::Arrow {
+                elbow: true,
+                start_attach: Some(_),
+                ..
+            }
+        ));
+        assert_eq!(arrow.style.color, [253, 216, 53]);
+        // Beside the box, the label tool still opens a new text.
+        c.pointer_down(&mut host, p(450., 150.), Modifiers::default())
+            .unwrap();
+        assert!(host.text_open);
+    }
     #[test]
     fn wheel_scales_arrow_head_and_shaft_around_the_fixed_tip() {
         let (mut c, mut host) = selected();

@@ -46,6 +46,7 @@ fn live_shapes_have_soft_corners_and_independently_sized_arrowheads() {
             end_attach: None,
             head: true,
             bend: Default::default(),
+            elbow: false,
         },
     };
     layer.begin(false).unwrap();
@@ -97,6 +98,7 @@ fn fading_arrow_has_no_double_opacity_at_the_head_join() {
                 end_attach: None,
                 head: true,
                 bend: Default::default(),
+                elbow: false,
             },
         };
         layer.begin(false).unwrap();

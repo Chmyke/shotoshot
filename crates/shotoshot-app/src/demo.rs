@@ -177,7 +177,66 @@ pub fn render_demo() -> Result<()> {
     dense_interface(&path.with_file_name("shotoshot-interface-200.png"))?;
     shape_samples::render(&path.with_file_name("shotoshot-shape-scales.png"))?;
     labels(&renderer, &path.with_file_name("shotoshot-labels.png"))?;
+    elbows(
+        &renderer,
+        &path.with_file_name("shotoshot-elbow-arrows.png"),
+    )?;
     crate::presentation::demo::render()
+}
+
+/// Arrows pulled out of text boxes by their anchors, from real gestures: one to a button of
+/// the capture (free end), one into another box; the pointer rests on an anchor of a third
+/// box, larger, among its four.
+fn elbows(renderer: &Renderer, path: &std::path::Path) -> Result<()> {
+    let at = |x: f64, y: f64| Point { x, y };
+    let mut image = Image::solid(1100, 680, [248, 245, 242, 255]);
+    // A blue button of the captured application (BGRA), the free end's target.
+    for y in 470..510 {
+        for x in 180..320 {
+            let index = (y * 1100 + x) * 4;
+            image.pixels[index..index + 4].copy_from_slice(&[235, 111, 31, 255]);
+        }
+    }
+    let mut session = crate::session::Session::new(image)?;
+    session.capture.region = Rect::new(at(70., 100.), at(1030., 600.));
+    session.capture.selecting = false;
+    let editor = &mut session.capture.editor;
+    editor.tool = Tool::Arrow;
+    editor.style.width = 4.;
+    let add = |editor: &mut Editor, corner: Point, text: &str, color| -> Result<u64> {
+        let size = 22.;
+        let extent = renderer.measure_annotation_text(text, size as f32)?;
+        editor
+            .add_label(
+                corner + Label::padding(size),
+                text.into(),
+                extent,
+                color,
+                size,
+                Some(Label::Fit),
+                None,
+            )
+            .ok_or_else(|| windows::Win32::Foundation::E_INVALIDARG.into())
+    };
+    let export = add(editor, at(560., 170.), "Export as PNG here", [250, 192, 66])?;
+    let first = add(editor, at(160., 150.), "Step 1", [80, 153, 244])?;
+    let second = add(editor, at(380., 300.), "Step 2", [28, 31, 40])?;
+    let hovered = add(editor, at(760., 420.), "Hover me", [64, 199, 128])?;
+    let pull = |editor: &mut Editor, id: u64, side: usize, to: Point| {
+        let from = editor.anchors(id).map(|a| a[side]).unwrap_or(to);
+        editor.begin(from, Modifiers::default());
+        editor.update(to);
+        editor.finish();
+    };
+    pull(editor, export, 3, at(322., 490.));
+    let into = editor
+        .frame_of(second)
+        .map_or(at(0., 0.), |f| f.bounds.center());
+    pull(editor, first, 1, into);
+    let pointer = editor.anchors(hovered).map_or(at(0., 0.), |a| a[3]);
+    session.capture.pointer = pointer;
+    let preview = paint_image(1100, 680, |hdc| session.paint(hdc))?;
+    save_png(&preview, path)
 }
 
 /// Texts on their panels, as exported: fitted and wrapped, short and long, accents and

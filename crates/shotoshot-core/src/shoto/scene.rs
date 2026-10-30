@@ -61,13 +61,16 @@ impl Scene {
     }
     /// The lowest format version that holds this scene: 2 once a zone has more than one coat
     /// or a coat spares a shape, 3 once a text sits on a panel, 4 once an arrow or a line
-    /// bends, 5 once a panel's text has an ink of its own, so simpler files still open in an
-    /// earlier Shotoshot.
+    /// bends, 5 once a panel's text has an ink of its own, 6 once an arrow is an elbow, so
+    /// simpler files still open in an earlier Shotoshot.
     pub fn version(&self) -> u32 {
         let plain = |coats: &[Paint]| coats.len() <= 1 && coats.iter().all(|c| c.walls.is_empty());
         let labelled = |o: &Object| matches!(o.shape, Shape::Text { label: Some(_), .. });
         let inked = |o: &Object| matches!(o.shape, Shape::Text { ink: Some(_), .. });
-        if self.objects.iter().any(inked) {
+        let elbow = |o: &Object| matches!(o.shape, Shape::Arrow { elbow: true, .. });
+        if self.objects.iter().any(elbow) {
+            6
+        } else if self.objects.iter().any(inked) {
             5
         } else if self.objects.iter().any(|o| bent(o.bend())) {
             4
@@ -140,10 +143,12 @@ fn object_valid(object: &Object, points: &mut usize) -> bool {
                 end_attach,
                 head: _,
                 bend,
+                elbow,
             } => {
                 start.finite()
                     && end.finite()
                     && bend.finite()
+                    && !(*elbow && bent(*bend))
                     && [start_attach, end_attach]
                         .iter()
                         .all(|a| a.is_none_or(|a| a.direction.finite()))
@@ -220,13 +225,16 @@ fn encode_object(out: &mut String, object: &Object) -> std::fmt::Result {
             end_attach,
             head,
             bend,
+            elbow,
         } => {
             write!(
                 out,
                 " from={},{} to={},{} head={}",
                 start.x, start.y, end.x, end.y, *head as u8
             )?;
-            if bent(*bend) {
+            if *elbow {
+                out.push_str(" elbow=1");
+            } else if bent(*bend) {
                 write!(out, " bend={},{}", bend.x, bend.y)?;
             }
             for (key, attach) in [("start", start_attach), ("end", end_attach)] {
@@ -446,25 +454,41 @@ fn decode_object(line: &str, version: u32, points: &mut usize) -> Option<Object>
     let shape = match f.take("kind")? {
         "rectangle" => Shape::Rectangle(rect(f.take("rect")?)?),
         "ellipse" => Shape::Ellipse(rect(f.take("rect")?)?),
-        "arrow" => Shape::Arrow {
-            start: point(f.take("from")?)?,
-            end: point(f.take("to")?)?,
-            head: flag(f.take("head")?)?,
-            start_attach: match f.take("start") {
+        "arrow" => {
+            let start = point(f.take("from")?)?;
+            let end = point(f.take("to")?)?;
+            let head = flag(f.take("head")?)?;
+            let start_attach = match f.take("start") {
                 Some(text) => Some(attachment(text)?),
                 None => None,
-            },
-            end_attach: match f.take("end") {
+            };
+            let end_attach = match f.take("end") {
                 Some(text) => Some(attachment(text)?),
                 None => None,
-            },
-            bend: match f.take("bend") {
+            };
+            let bend = match f.take("bend") {
                 Some(_) if version < 4 => return None,
                 // A straight line is written without the field, never as a zero bend.
                 Some(text) => point(text).filter(|b| bent(*b))?,
                 None => Point::default(),
-            },
-        },
+            };
+            let elbow = match f.take("elbow") {
+                Some(_) if version < 6 => return None,
+                // Written only when set, and never with a bend it would not draw.
+                Some("1") if !bent(bend) => true,
+                Some(_) => return None,
+                None => false,
+            };
+            Shape::Arrow {
+                start,
+                end,
+                start_attach,
+                end_attach,
+                head,
+                bend,
+                elbow,
+            }
+        }
         "stroke" => Shape::Stroke {
             highlight: flag(f.take("highlight")?)?,
             points: list(f.take("points")?, ';', points)?
@@ -549,6 +573,7 @@ pub(super) mod tests {
             end_attach,
             head,
             bend: Point::default(),
+            elbow: false,
         };
         let (red, white, blue) = ([237, 79, 92], [255; 3], [16, 32, 48]);
         let from = pair(1., 2.);
@@ -947,6 +972,7 @@ object id=2 kind=arrow color=1c1f28 width=5 rotation=0 from=40,90 to=40,300.5 he
             end_attach: None,
             head,
             bend,
+            elbow: false,
         };
         Scene {
             background: Vec::new(),
@@ -1075,6 +1101,72 @@ object id=3 kind=text color=1c1f28 width=3 rotation=0.5 at=10,20 size=32 extent=
             assert!(VERSION_5.contains(from), "{from:?} is not in the reference");
             let text = VERSION_5.replacen(from, to, 1);
             assert_eq!(decode(&text, 5), None, "{from:?} replaced by {to:?}");
+        }
+    }
+    /// Version 6 as it was first written: an elbow arrow pulled out of one text box into
+    /// another. Files with this text exist: it never changes.
+    const VERSION_6: &str = "frame 1920 1080
+origin -1920 0
+region 100.5 200 900 700.25
+last 4
+object id=1 kind=text color=fac042 width=3 rotation=0 at=50,60 size=24 extent=120.5,29 label=fit text=4e6f7465
+object id=3 kind=text color=1c1f28 width=3 rotation=0.5 at=10,20 size=32 extent=180,77 label=wrap:200.25 text=c3876120646f69742072657374657220696369
+object id=4 kind=arrow color=fac042 width=4 rotation=0 from=120,100 to=300,250 head=1 elbow=1 start=1,1,0 end=3,-1,0.5
+";
+    fn elbowed() -> Scene {
+        let mut scene = labelled();
+        scene.objects.push(object(
+            4,
+            0.,
+            [250, 192, 66],
+            4.,
+            Shape::Arrow {
+                start: pair(120., 100.),
+                end: pair(300., 250.),
+                start_attach: Some(Attachment {
+                    target: 1,
+                    direction: pair(1., 0.),
+                }),
+                end_attach: Some(Attachment {
+                    target: 3,
+                    direction: pair(-1., 0.5),
+                }),
+                head: true,
+                bend: Point::default(),
+                elbow: true,
+            },
+        ));
+        scene.last_id = 4;
+        scene
+    }
+    #[test]
+    fn version_6_text_is_frozen() {
+        assert_eq!(elbowed().version(), 6);
+        assert_eq!(elbowed().encode(), VERSION_6);
+        assert_eq!(decode(VERSION_6, 6), Some(elbowed()));
+        assert_eq!(decode(VERSION_5, 6), Some(inked()), "version 6 reads 5");
+        assert_eq!(decode(VERSION_4, 6), Some(bent()), "and 4");
+        assert_eq!(decode(VERSION_1, 6), Some(sample()), "and 1");
+    }
+    #[test]
+    fn earlier_versions_know_no_elbow() {
+        for version in 1..6 {
+            assert_eq!(decode(VERSION_6, version), None, "version {version}");
+        }
+    }
+    #[test]
+    fn elbows_not_fully_understood_are_refused() {
+        for (from, to) in [
+            ("elbow=1", "elbow=0"),
+            ("elbow=1", "elbow=yes"),
+            ("elbow=1", "elbow="),
+            ("elbow=1", "elbow=1 elbow=1"),
+            // An elbow never bends: the bend would be written and not drawn.
+            ("elbow=1", "elbow=1 bend=0,0.25"),
+        ] {
+            assert!(VERSION_6.contains(from), "{from:?} is not in the reference");
+            let text = VERSION_6.replacen(from, to, 1);
+            assert_eq!(decode(&text, 6), None, "{from:?} replaced by {to:?}");
         }
     }
     #[test]

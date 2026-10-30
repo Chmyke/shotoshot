@@ -310,6 +310,7 @@ mod tests {
                 end_attach,
                 head: true,
                 bend: Default::default(),
+                elbow: false,
             },
             style: Style {
                 color: [0, 0, 0],

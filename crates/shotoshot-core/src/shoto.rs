@@ -9,7 +9,7 @@ pub use scene::Scene;
 
 const HEADER: &[u8] = b"shotoshot-document ";
 /// The latest version read; a file is written in the lowest one that holds it (`Scene::version`).
-pub(crate) const VERSION: u32 = 5;
+pub(crate) const VERSION: u32 = 6;
 const FRAME: &[u8] = b"frame-png ";
 /// Larger files are refused unread: far above any desktop saved as two PNG images.
 pub const MAX_FILE: u64 = 256 << 20;
