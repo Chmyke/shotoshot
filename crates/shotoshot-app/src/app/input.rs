@@ -222,9 +222,14 @@ impl App {
             }
             match chosen {
                 170 => self.open_settings_window(hwnd)?,
-                171 => self.show_shortcut_setup(hwnd, setup::ShortcutTarget::Arrow)?,
-                172 => self.show_shortcut_setup(hwnd, setup::ShortcutTarget::Rectangle)?,
-                173 => self.show_shortcut_setup(hwnd, setup::ShortcutTarget::Ellipse)?,
+                // A shape row draws its shape, exactly as its shortcut does.
+                171..=173 => {
+                    if let Some(presentation) = &self.presentation {
+                        presentation
+                            .borrow_mut()
+                            .hotkey(crate::presentation::HOTKEY_BASE + (chosen - 170) as i32)?;
+                    }
+                }
                 101..=143 => {
                     if let Some(preferences) =
                         crate::presentation::menu::preference(chosen, &self.settings.presentation)

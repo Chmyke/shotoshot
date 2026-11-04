@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.36 · 2026-11-04
+
+- In the tray menu, the name and the keys of a command light up on their own: the name runs it, the keys change it. Arrow, Rectangle and Ellipse now draw their shape when clicked.
+
 ## 0.3.35 · 2026-11-04
 
 - The tray menu learned the same trick: click the keys shown next to a command and type new ones right there, without opening Settings. Clicking the name still runs it.

@@ -182,10 +182,6 @@ fn row_id(row: ShortcutRow) -> Option<u32> {
         .map(|candidate| candidate.id)
         .find(|&id| shortcut_row(id) == Some(row))
 }
-/// Rows whose only purpose is their shortcut: a click anywhere on them changes it.
-fn only_shortcut(id: u32) -> bool {
-    (171..=173).contains(&id)
-}
 
 /// What the rows display for the current settings.
 #[derive(Clone, Default)]
@@ -423,6 +419,11 @@ fn edit_parts(size: Point, slot: f64) -> [Rect; 3] {
     );
     [waiting, default, cancel]
 }
+/// Where the keys zone of a shortcut row `width` logical pixels wide starts, its keys
+/// measuring `caps`: the keys and a little air around them. Left of it is the label zone.
+fn keys_left(width: f64, caps: f64) -> f64 {
+    width - MARGIN - caps - EDIT_SPACE
+}
 /// The undo button left of keys `caps` logical pixels wide, in the row's logical pixels.
 fn undo_part(size: Point, caps: f64) -> Rect {
     let right = size.x - MARGIN - caps - UNDO_GAP;
@@ -447,9 +448,21 @@ enum Look<'a> {
     Editing(&'a RowEdit),
 }
 
+/// The part of a selected row the highlight covers: the pointer on a shortcut row lights its
+/// label or its keys, which do different things; the keyboard lights the whole row.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+enum Zone {
+    #[default]
+    Row,
+    Label,
+    Keys,
+}
+
 #[derive(Clone, Copy, Default)]
 struct State<'a> {
     selected: bool,
+    /// The part the highlight of a selected row covers.
+    zone: Zone,
     checked: bool,
     data: usize,
     look: Look<'a>,
@@ -620,15 +633,41 @@ fn paint_row<C: Canvas>(
         }
         _ => {}
     }
-    if state.selected {
+    // A shortcut row has two zones: its label runs the command, its keys change them.
+    let (caps, in_use) = caps_in(state.data, language());
+    let caps_width = if caps.is_empty() {
+        0.
+    } else {
+        let mut widths = Vec::with_capacity(caps.len());
+        for cap in &caps {
+            widths.push(
+                canvas
+                    .measure_styled_text(cap, u(settings_panel::SMALL_SIZE), TextStyle::Body)?
+                    .x
+                    / scale,
+            );
+        }
+        settings_panel::keycaps_width(widths)
+    };
+    let zoned = shortcut_row(row.id).is_some();
+    let split = keys_left(size.x / scale, caps_width);
+    if state.selected && zoned && state.zone == Zone::Keys {
+        // Only the keys light up, framed in the accent.
+        let frame = area(
+            size.x - u(MARGIN + caps_width + 4.),
+            middle - u(13.),
+            size.x - u(MARGIN - 4.),
+            middle + u(13.),
+        );
+        canvas.stroke_round_rect(frame.expanded(-u(0.75)), u(6.), Ink::solid(ACCENT), u(1.5))?;
+    } else if state.selected {
+        let right = if zoned && state.zone == Zone::Label {
+            u(split)
+        } else {
+            size.x - u(4.)
+        };
         canvas.fill_round_rect(
-            Rect {
-                min: Point { x: u(4.), y: u(1.) },
-                max: Point {
-                    x: size.x - u(4.),
-                    y: size.y - u(1.),
-                },
-            },
+            area(u(4.), u(1.), right, size.y - u(1.)),
             u(4.),
             Ink::solid(HOVER),
         )?;
@@ -714,22 +753,8 @@ fn paint_row<C: Canvas>(
         return Ok(());
     }
     if row.kind == Kind::Command {
-        let (caps, in_use) = caps_in(state.data, language());
         if let Look::Undo = state.look {
-            let mut widths = Vec::with_capacity(caps.len());
-            for cap in &caps {
-                widths.push(
-                    canvas
-                        .measure_styled_text(cap, u(settings_panel::SMALL_SIZE), TextStyle::Body)?
-                        .x
-                        / scale,
-                );
-            }
-            let width = if caps.is_empty() {
-                0.
-            } else {
-                settings_panel::keycaps_width(widths)
-            };
+            let width = caps_width;
             let logical = Point {
                 x: size.x / scale,
                 y: size.y / scale,
@@ -890,16 +915,25 @@ pub(super) fn preview() -> Result<()> {
             held: vec![tr_in(Language::En, Key::KeyCtrl).into()],
             error: String::new(),
         }),
-        before: None,
+        ..Default::default()
     };
     save_png(
         &render(&sample(), 0, 0, &editing, 1.)?,
         std::path::Path::new("target/shotoshot-menu-editing.png"),
     )?;
     let saved = popup::View {
-        editing: None,
         before: Some(172),
+        ..Default::default()
     };
+    // The pointer on the keys of Edit board: they light up alone, framed in the accent.
+    let keys = popup::View {
+        pointer: Some((8, true)),
+        ..Default::default()
+    };
+    save_png(
+        &render(&sample(), 8, 0, &keys, 1.)?,
+        std::path::Path::new("target/shotoshot-menu-hover-keys.png"),
+    )?;
     save_png(
         &render(&sample(), 0, 0, &saved, 1.)?,
         std::path::Path::new("target/shotoshot-menu-saved.png"),
@@ -1383,6 +1417,51 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn the_label_and_the_keys_light_up_apart() {
+        let row = find(1).unwrap();
+        let data = sample().capture;
+        let caps = with_painter(|renderer| caps_width_in(renderer, data, language())).unwrap();
+        let split = keys_left(WIDTH as f64, caps);
+        let hover = |image: &Image, from: f64, to: f64| {
+            let columns = from as usize..to as usize;
+            image
+                .pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .enumerate()
+                .filter(|(index, pixel)| {
+                    columns.contains(&(index % image.width as usize))
+                        && pixel[..3] == [HOVER[2], HOVER[1], HOVER[0]]
+                })
+                .count()
+        };
+        let lit = |zone| {
+            rendered(
+                row,
+                State {
+                    selected: true,
+                    data,
+                    zone,
+                    ..Default::default()
+                },
+                1.,
+            )
+        };
+        let label = lit(Zone::Label);
+        assert!(hover(&label, 0., split) > 0);
+        assert_eq!(hover(&label, split + 1., WIDTH as f64), 0);
+        assert_eq!(accent(&label), 0);
+        let keys = lit(Zone::Keys);
+        assert_eq!(hover(&keys, 0., WIDTH as f64), 0, "the label stays neutral");
+        assert!(accent(&keys) > 40, "the keys are framed in the accent");
+        assert_eq!(drawn(&keys, LABEL_X + 120., split, 1.), 0);
+        // The keyboard lights the whole row.
+        let whole = lit(Zone::Row);
+        assert!(hover(&whole, split + 1., WIDTH as f64 - 5.) > 0);
     }
 
     #[test]

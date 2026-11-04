@@ -108,6 +108,8 @@ fn pressed_on_icon(icon: RECT, pointer: POINT, pressed: bool) -> bool {
 pub(super) struct View {
     pub(super) editing: Option<RowEdit>,
     pub(super) before: Option<u32>,
+    /// The shortcut row under the pointer, and whether the pointer is on its keys.
+    pub(super) pointer: Option<(u32, bool)>,
 }
 impl View {
     fn look(&self, id: u32) -> Look<'_> {
@@ -191,6 +193,16 @@ impl Column {
                         checked: values.checked(row.id),
                         data: values.data(row.id),
                         look: view.look(row.id),
+                        zone: match view.pointer {
+                            Some((id, keys)) if id == row.id => {
+                                if keys {
+                                    Zone::Keys
+                                } else {
+                                    Zone::Label
+                                }
+                            }
+                            _ => Zone::Row,
+                        },
                     },
                     scale,
                 )?;
@@ -342,11 +354,6 @@ impl Model {
         self.post(EDIT, id as usize, op.pack());
     }
     fn activate(&mut self, column: usize, index: usize, keyboard: bool) -> Result<()> {
-        let id = self.columns[column].rows[index].id;
-        if column == 0 && only_shortcut(id) {
-            self.post_edit(id, EditOp::Begin);
-            return Ok(());
-        }
         match effect(&self.columns[column].rows[index]) {
             Effect::Apply(id) => self.post(COMMAND, id as usize, 1),
             Effect::Run(id) => {
@@ -415,6 +422,8 @@ impl Model {
         }
     }
     fn key(&mut self, key: VIRTUAL_KEY) -> Result<()> {
+        // The keyboard lights whole rows.
+        self.view.pointer = None;
         let column = usize::from(self.in_sub);
         match key {
             VK_DOWN | VK_UP => {
@@ -453,8 +462,32 @@ impl Model {
             y: (column.top(index + 1) - column.top(index)) as f64 / self.scale,
         }
     }
+    /// Whether `x`, in logical pixels, is on the keys of root row `index`, a shortcut row.
+    fn on_keys(&self, index: usize, x: f64) -> Result<bool> {
+        let id = ROOT[index].id;
+        if shortcut_row(id).is_none() {
+            return Ok(false);
+        }
+        let caps =
+            with_painter(|renderer| caps_width_in(renderer, self.values.data(id), language()))?;
+        Ok(x >= keys_left(self.row_size(index).x, caps))
+    }
+    /// The pointer moved to `x`, `y` of `column`: a shortcut row lights its label or its keys.
+    fn point(&mut self, column: usize, x: i32, y: i32) -> Result<()> {
+        let pointer = match self.columns[column].at(y) {
+            Some(index) if column == 0 && shortcut_row(ROOT[index].id).is_some() => {
+                Some((ROOT[index].id, self.on_keys(index, x as f64 / self.scale)?))
+            }
+            _ => None,
+        };
+        if pointer != self.view.pointer {
+            self.view.pointer = pointer;
+            self.redraw(0);
+        }
+        Ok(())
+    }
     /// A release at `x`, in logical pixels, on root row `index`, when it changes a shortcut:
-    /// on the keys, or anywhere on a row only there for its shortcut.
+    /// on its undo button or on its keys.
     fn shortcut_click(&self, index: usize, x: f64) -> Result<Option<EditOp>> {
         let id = ROOT[index].id;
         if shortcut_row(id).is_none() {
@@ -467,9 +500,7 @@ impl Model {
         if self.view.before == Some(id) && (undo.min.x..undo.max.x).contains(&x) {
             return Ok(Some(EditOp::Undo));
         }
-        // The keys and a little air around them.
-        let keys = size.x - MARGIN - caps - EDIT_SPACE;
-        Ok((only_shortcut(id) || x >= keys).then_some(EditOp::Begin))
+        Ok((x >= keys_left(size.x, caps)).then_some(EditOp::Begin))
     }
     /// A release at `x`, `y` while a row listens: its buttons act, anywhere else leaves it.
     fn editing_click(&self, edit: &RowEdit, column: usize, x: f64, y: i32) -> Result<()> {
@@ -576,6 +607,7 @@ impl Model {
                     });
                 }
                 self.hover(column, self.columns[column].at(y));
+                self.point(column, x, y)?;
             }
             WM_MOUSELEAVE => self.left(column),
             // Released, as in a native menu, with either button.
@@ -888,11 +920,45 @@ mod tests {
         let column = |popup: &Popup| Column::new(ROOT, &popup.model.borrow().values, 1.).unwrap();
         unsafe { click_at(root, &column(&popup), index(1), width - 20) };
         assert_eq!(posted(owner.0), [edit(1, EditOp::Begin)]);
-        // A row only there for its shortcut changes it wherever it is clicked.
-        unsafe { click(root, &column(&popup), index(171)) };
+        // A shape row too: its keys change them, its label draws the shape.
+        unsafe { click_at(root, &column(&popup), index(171), width - 20) };
         assert_eq!(posted(owner.0), [edit(171, EditOp::Begin)]);
         unsafe { click(root, &column(&popup), index(1)) };
         assert_eq!(posted(owner.0), [(COMMAND, 1, 0)]);
+        let popup = hidden(owner.0);
+        unsafe { click(popup.root(), &column(&popup), index(171)) };
+        assert_eq!(posted(owner.0), [(COMMAND, 171, 0)]);
+    }
+
+    #[test]
+    fn the_pointer_lights_the_label_or_the_keys_of_a_shortcut_row() {
+        let owner = owner();
+        let popup = hidden(owner.0);
+        let (width, root) = (popup.model.borrow().columns[0].width, popup.root());
+        let column = Column::new(ROOT, &popup.model.borrow().values, 1.).unwrap();
+        let rest = |id: u32, x: i32| {
+            let y = (column.top(index(id)) + column.top(index(id) + 1)) / 2;
+            unsafe {
+                SendMessageW(
+                    root,
+                    WM_MOUSEMOVE,
+                    None,
+                    Some(LPARAM(((y as isize) << 16) | x as isize)),
+                );
+            }
+            let model = popup.model.borrow();
+            (model.selected[0], model.view.pointer)
+        };
+        assert_eq!(rest(1, 20), (Some(index(1)), Some((1, false))));
+        assert_eq!(rest(1, width - 20), (Some(index(1)), Some((1, true))));
+        assert_eq!(rest(172, width - 20), (Some(index(172)), Some((172, true))));
+        // Other rows light whole, and so does the keyboard.
+        assert_eq!(rest(170, width - 20), (Some(index(170)), None));
+        rest(8, width - 20);
+        unsafe {
+            SendMessageW(root, WM_KEYDOWN, Some(WPARAM(VK_DOWN.0 as usize)), None);
+        }
+        assert_eq!(popup.model.borrow().view.pointer, None);
     }
 
     #[test]
