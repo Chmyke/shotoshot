@@ -2,6 +2,12 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.31 · 2026-11-04
+
+- The installer no longer offers a vague "Windows language" option: your own language is simply ticked already, Polish for a Polish Windows, Spanish for a Spanish one.
+- Print Screen belongs to Shotoshot the moment the shortcut window appears after install, instead of waiting for you to click Save; press another key there to pick a different one.
+- Changing a shortcut from Settings opens its window in front, not hidden behind Settings where it looked like nothing happened.
+
 ## 0.3.30 · 2026-10-30
 
 - Arrows pulled out of a text box now really touch: they start from inside the box and the tip bites into its target, no more hairline gap at either end.

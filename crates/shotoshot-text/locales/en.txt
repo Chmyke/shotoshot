@@ -258,7 +258,6 @@ keycap.delete = Del
 # one line each, no `%`. Its language page lists the languages under their own names.
 installer.language.title = Shotoshot language
 installer.language.description = You can change it later from the Shotoshot icon in the notification area.
-installer.language.auto = Windows language
 installer.shoto_file = Shotoshot editable image
 
 # Pointer effects page of the Settings window: card titles and labels at 13 px, values and

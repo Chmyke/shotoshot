@@ -220,7 +220,6 @@ keycap.delete == Del
 # Installer
 installer.language.title = Shotoshot 언어
 installer.language.description = 나중에 알림 영역의 Shotoshot 아이콘에서 변경할 수 있습니다.
-installer.language.auto = Windows 언어
 installer.shoto_file = 편집 가능한 Shotoshot 이미지
 
 # Pointer effects

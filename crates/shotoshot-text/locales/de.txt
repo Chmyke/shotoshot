@@ -220,7 +220,6 @@ keycap.delete = Entf
 # Installer
 installer.language.title = Sprache von Shotoshot
 installer.language.description = Sie können sie später über das Shotoshot-Symbol im Infobereich ändern.
-installer.language.auto = Windows-Sprache
 installer.shoto_file = Bearbeitbares Shotoshot-Bild
 
 # Pointer effects

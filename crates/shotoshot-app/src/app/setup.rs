@@ -579,34 +579,17 @@ impl App {
                 if !(self.hotkey.active()
                     && self.settings.key == key
                     && self.settings.modifiers == mods)
+                    && let Err(error) = self.take_capture_shortcut(mods, key)
                 {
-                    let mut next = self.settings.clone();
-                    next.key = key;
-                    next.modifiers = mods;
-                    let free = crate::print_screen::windows_option(self.persist_preferences);
-                    if let Err(error) = self.hotkey.replace(free, mods, key, || {
-                        if self.persist_preferences {
-                            next.save().map_err(crate::settings::unsaved)
-                        } else {
-                            Ok(())
-                        }
-                    }) {
-                        let language = self.setup_ui.language;
-                        self.setup_ui.error = print_screen_error(mods, key, &error, language)
-                            .unwrap_or_else(|| {
-                                let code = error.code().0.to_string();
-                                Text::with_in(
-                                    language,
-                                    Key::SetupRegisterFailed,
-                                    &[("code", &code)],
-                                )
+                    let language = self.setup_ui.language;
+                    self.setup_ui.error = print_screen_error(mods, key, &error, language)
+                        .unwrap_or_else(|| {
+                            let code = error.code().0.to_string();
+                            Text::with_in(language, Key::SetupRegisterFailed, &[("code", &code)])
                                 .to_string()
-                            });
-                        invalidate(hwnd);
-                        return Ok(());
-                    }
-                    self.settings = next;
-                    self.restore_print_screen_if_unused();
+                        });
+                    invalidate(hwnd);
+                    return Ok(());
                 }
                 self.close_setup(hwnd)?;
                 self.notify(Notice::Preferences);
@@ -614,6 +597,23 @@ impl App {
             _ => {}
         }
         invalidate(hwnd);
+        Ok(())
+    }
+    /// Registers and saves the capture shortcut; on failure nothing changes.
+    pub(super) fn take_capture_shortcut(&mut self, mods: u32, key: u32) -> Result<()> {
+        let mut next = self.settings.clone();
+        next.key = key;
+        next.modifiers = mods;
+        let free = crate::print_screen::windows_option(self.persist_preferences);
+        self.hotkey.replace(free, mods, key, || {
+            if self.persist_preferences {
+                next.save().map_err(crate::settings::unsaved)
+            } else {
+                Ok(())
+            }
+        })?;
+        self.settings = next;
+        self.restore_print_screen_if_unused();
         Ok(())
     }
     /// Saves the shortcut that opens a board session; it needs Ctrl or Alt.

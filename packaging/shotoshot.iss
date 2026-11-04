@@ -3,7 +3,7 @@
 ; Test:  powershell -NoProfile -ExecutionPolicy Bypass -File packaging\test-installer.ps1
 ; RULE: keep AppVersion equal to [workspace.package] version in Cargo.toml (checked by the build script).
 
-#define AppVersion "0.3.30"
+#define AppVersion "0.3.31"
 #define AppName "Shotoshot"
 #define AppExeName "shotoshot.exe"
 #define AppPublisher "Mickaël Mancini"
@@ -288,23 +288,33 @@ begin
   Result := StrToIntDef(CustomMessage('ChoiceCount'), 1);
 end;
 
-{ "Windows language", then each language under its own name, on the choice the app has
-  now: an update validated as it is changes nothing. }
-procedure InitializeWizard;
+{ Each language under its own name, the language of Windows already selected (the wizard
+  speaks it, WizardTag; English when Shotoshot does not have it). There is no "Windows language"
+  choice (Mickael, 2026-11-04). An update keeps the language the app already has. }
+function ChoiceIndex(Tag: String): Integer;
 var
   I: Integer;
-  Current: String;
+begin
+  Result := -1;
+  for I := 0 to ChoiceCount - 1 do
+    if CompareText(CustomMessage('ChoiceTag' + IntToStr(I)), Tag) = 0 then
+      Result := I;
+end;
+
+procedure InitializeWizard;
+var
+  I, Index: Integer;
 begin
   LanguagePage := CreateInputOptionPage(wpWelcome, CustomMessage('LanguagePageTitle'),
     CustomMessage('LanguagePageDescription'), '', True, True);
-  LanguagePage.Add(CustomMessage('LanguageAuto'));
-  for I := 1 to ChoiceCount - 1 do
+  for I := 0 to ChoiceCount - 1 do
     LanguagePage.Add(CustomMessage('ChoiceName' + IntToStr(I)));
-  LanguagePage.SelectedValueIndex := 0;
-  Current := CurrentLanguage();
-  for I := 1 to ChoiceCount - 1 do
-    if CompareText(CustomMessage('ChoiceTag' + IntToStr(I)), Current) = 0 then
-      LanguagePage.SelectedValueIndex := I;
+  Index := ChoiceIndex(CurrentLanguage());
+  if Index < 0 then
+    Index := ChoiceIndex(CustomMessage('WizardTag'));
+  if Index < 0 then
+    Index := 0;
+  LanguagePage.SelectedValueIndex := Index;
 end;
 
 procedure CurPageChanged(CurPageID: Integer);

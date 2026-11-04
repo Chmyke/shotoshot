@@ -220,7 +220,6 @@ keycap.delete == Del
 # Installer
 installer.language.title = Shotoshot dili
 installer.language.description = Daha sonra bildirim alanındaki Shotoshot simgesinden değiştirebilirsiniz.
-installer.language.auto = Windows dili
 installer.shoto_file = Düzenlenebilir Shotoshot görüntüsü
 
 # Pointer effects

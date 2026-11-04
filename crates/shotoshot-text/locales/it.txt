@@ -220,7 +220,6 @@ keycap.delete == Del
 # Installer
 installer.language.title = Lingua di Shotoshot
 installer.language.description = Potrai cambiarla in seguito dall’icona di Shotoshot nell’area di notifica.
-installer.language.auto = Lingua di Windows
 installer.shoto_file = Immagine Shotoshot modificabile
 
 # Pointer effects

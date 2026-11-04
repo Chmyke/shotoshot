@@ -328,7 +328,16 @@ impl App {
             }
             self.setup = true;
             self.setup_ui = if target == setup::ShortcutTarget::Capture && self.settings.key == 0 {
-                setup::Setup::first_run()
+                // Print Screen works as soon as the window shows, not only once Save is pressed
+                // (Mickael, 2026-11-04): the window then only confirms it or changes it.
+                let mut first = setup::Setup::first_run();
+                if let Err(error) = self.take_capture_shortcut(0, crate::print_screen::KEY) {
+                    let language = shotoshot_text::language();
+                    first.error =
+                        setup::print_screen_error(0, crate::print_screen::KEY, &error, language)
+                            .unwrap_or_default();
+                }
+                first
             } else {
                 setup::Setup::change(
                     target,
@@ -424,7 +433,9 @@ impl App {
                 PostQuitMessage(0);
             }
         }
-        // The Settings window shows the shortcut as recorded, or as it stays.
+        // The Settings window shows the shortcut as recorded, or as it stays, and comes back
+        // to the front when the shortcut window was opened from it.
+        self.front_settings_window();
         self.refresh_settings_window()
     }
     fn save_shape_shortcut(

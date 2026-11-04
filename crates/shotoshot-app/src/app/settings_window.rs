@@ -247,6 +247,14 @@ impl App {
         }
         Ok(())
     }
+    /// Brings an open Settings window back to the front.
+    pub(super) fn front_settings_window(&self) {
+        if let Some(window) = &self.settings_ui.window {
+            unsafe {
+                let _ = SetForegroundWindow(window.hwnd());
+            }
+        }
+    }
     /// Creates the Settings window, placed and running, but not yet shown.
     fn create_settings_window(&mut self, owner: HWND) -> Result<HWND> {
         if self.persist_preferences {
@@ -288,11 +296,16 @@ impl App {
                 cursor.y,
                 100,
                 100,
-                Some(owner),
+                // PITFALL: not owned by the resident window. An owned window always stays above
+                // its owner, and the owner is the shortcut window that Settings opens: it showed
+                // behind Settings (Mickael, 2026-11-04). The resident is found through
+                // GWLP_USERDATA instead.
+                None,
                 None,
                 Some(instance.into()),
                 None,
             )?);
+            SetWindowLongPtrW(window.0, GWLP_USERDATA, owner.0 as isize);
             let dark: i32 = 1;
             let _ = windows::Win32::Graphics::Dwm::DwmSetWindowAttribute(
                 window.0,
@@ -748,10 +761,10 @@ fn title(language: Language) -> String {
 mod window_tests;
 
 unsafe extern "system" fn settings_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT {
-    // PITFALL: No unwind may cross the system callback. The App lives behind the owner window;
+    // PITFALL: No unwind may cross the system callback. The App lives behind the resident window;
     // a message that arrives while App is busy is left to the system.
     let outcome = std::panic::catch_unwind(|| unsafe {
-        let owner = GetWindow(hwnd, GW_OWNER).unwrap_or_default();
+        let owner = HWND(GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut core::ffi::c_void);
         let app = if owner.is_invalid() {
             std::ptr::null()
         } else {
