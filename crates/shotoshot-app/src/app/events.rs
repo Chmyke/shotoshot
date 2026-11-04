@@ -106,6 +106,10 @@ impl App {
             WM_COMMAND if self.session.is_some() => {
                 invalidate(hwnd);
             }
+            WM_HOTKEY if self.setup && self.setup_ui.inline => {
+                // A registered shortcut pressed while a Settings row listens is that row's keys.
+                self.row_edit_record(hwnd, (l.0 as u32) & 0xffff, (l.0 as u32) >> 16)?;
+            }
             WM_HOTKEY if self.setup => {
                 // A registered shortcut pressed in the window is recorded, listening or not.
                 self.setup_ui.recording = true;

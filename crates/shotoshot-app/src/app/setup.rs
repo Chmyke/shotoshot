@@ -273,6 +273,8 @@ pub(super) struct Setup {
     pub language: Language,
     pub layout: SetupLayout,
     pub painter: Option<Renderer>,
+    /// Changed in its row of Settings, with no window of its own.
+    pub inline: bool,
 }
 impl Setup {
     /// Opened from the menu: that click already asked for a change, so it listens at once.
@@ -407,7 +409,10 @@ fn hints_in(language: Language) -> Vec<String> {
     texts
 }
 
-fn modifier_labels_in(mods: u32, language: Language) -> impl Iterator<Item = &'static str> {
+pub(super) fn modifier_labels_in(
+    mods: u32,
+    language: Language,
+) -> impl Iterator<Item = &'static str> {
     [
         (2, Key::KeyCtrl),
         (4, Key::KeyShift),

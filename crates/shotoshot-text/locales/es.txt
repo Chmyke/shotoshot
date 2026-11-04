@@ -280,6 +280,9 @@ settings.general == General
 settings.shortcuts = Atajos
 settings.add = Añadir
 settings.in_use = En uso por otra aplicación
+settings.edit_press = Pulsa el nuevo atajo
+settings.edit_more = Añade una letra o una tecla
+settings.edit_saved = Guardado, antes: {keys}
 settings.start_with_windows_note = Listo para capturar en cuanto inicias sesión.
 settings.live_capture_note = La captura se actualiza hasta que la copias o la guardas.
 settings.shape_duration_note = Cuánto tiempo permanecen en pantalla las formas temporales.

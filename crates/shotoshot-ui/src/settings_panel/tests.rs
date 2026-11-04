@@ -522,3 +522,75 @@ fn explanations_stand_under_the_labels_that_need_one() {
         .row;
     assert_eq!(row.size().y, ROW);
 }
+
+/// Changing a shortcut happens inside its row: nothing moves, the window keeps its size, and
+/// what the row draws stays inside it (Mickael, 2026-11-04).
+#[test]
+fn a_shortcut_changes_in_its_row_without_moving_anything() {
+    for language in Language::ALL {
+        let mut panel = panel_in(language);
+        on(&mut panel, Page::Shortcuts);
+        let size = panel.layout.size;
+        let rows: Vec<Rect> = panel.layout.zones.iter().map(|z| z.row).collect();
+        for row in SHORTCUT_ROWS {
+            panel.editing = Some(RowEdit {
+                row,
+                held: vec!["Ctrl".into(), "Alt".into()],
+                error: String::new(),
+            });
+            panel.before = Some((row, vec!["Alt".into(), "R".into()]));
+            panel.arrange();
+            assert_eq!(panel.layout.size, size, "{language:?}");
+            let now: Vec<Rect> = panel.layout.zones.iter().map(|z| z.row).collect();
+            assert_eq!(now, rows, "{language:?}");
+            let r = zone(&panel, Item::Shortcut(row)).row;
+            for part in panel.edit_parts(row).unwrap() {
+                assert!(r.contains(part.min) && r.contains(part.max), "{language:?}");
+            }
+            let undo = panel.undo_button(row).unwrap();
+            assert!(r.contains(undo.min) && r.contains(undo.max), "{language:?}");
+            let mut canvas = Recorder {
+                size: panel.layout.size * 2.,
+                ops: Vec::new(),
+            };
+            panel.paint(&mut canvas, 2., 0).unwrap();
+        }
+    }
+}
+
+#[test]
+fn a_row_being_changed_answers_its_buttons_and_a_click_elsewhere_cancels() {
+    let mut panel = panel();
+    on(&mut panel, Page::Shortcuts);
+    let row = ShortcutRow::Rectangle;
+    panel.editing = Some(RowEdit {
+        row,
+        held: Vec::new(),
+        error: String::new(),
+    });
+    let [slot, default, cancel] = panel.edit_parts(row).unwrap();
+    assert_eq!(
+        panel.press(default.center()),
+        Action::Command(Command::DefaultShortcut(row))
+    );
+    assert_eq!(
+        panel.press(cancel.center()),
+        Action::Command(Command::CancelEdit)
+    );
+    assert_eq!(panel.press(slot.center()), Action::None);
+    let other = zone(&panel, Item::Shortcut(ShortcutRow::Arrow))
+        .row
+        .center();
+    assert_eq!(panel.press(other), Action::Command(Command::CancelEdit));
+
+    panel.editing = None;
+    panel.before = Some((row, vec!["Alt".into(), "R".into()]));
+    let undo = panel.undo_button(row).unwrap().center();
+    assert_eq!(
+        panel.press(undo),
+        Action::Command(Command::UndoShortcut(row))
+    );
+    // Another page forgets what it could give back.
+    on(&mut panel, Page::General);
+    assert_eq!(panel.before, None);
+}

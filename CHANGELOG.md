@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.34 · 2026-11-04
+
+- Changing a shortcut in Settings no longer opens a window: click its row, press the new keys, done. Esc changes your mind, the round arrow brings the default back, and right after saving, one click gives you the old keys again.
+
 ## 0.3.33 · 2026-11-04
 
 - Updating Shotoshot keeps your screenshot key and asks nothing: the key window only greets a first install, with Print Screen taken from Windows by default.

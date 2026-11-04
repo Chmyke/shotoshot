@@ -24,6 +24,10 @@ const RULE: [u8; 3] = [0x49, 0x49, 0x49];
 const ACCENT: [u8; 3] = [0x60, 0xcd, 0xff];
 /// A shortcut another program holds.
 const WARN: [u8; 3] = [0xf0, 0xa0, 0x4b];
+/// A refused shortcut, as the shortcut window shows it.
+const ERROR: [u8; 3] = [0xf8, 0x51, 0x49];
+/// The row of a shortcut being changed: a blue tint under the accent outline.
+const EDITING: [u8; 3] = [0x1d, 0x2a, 0x31];
 /// The two halves of the preview: a dark editor and a light page.
 const PREVIEW_DARK: [u8; 3] = [0x1b, 0x1e, 0x24];
 const PREVIEW_LIGHT: [u8; 3] = [0xf3, 0xf4, 0xf6];
@@ -134,6 +138,18 @@ impl Panel {
         for zone in &zones.zones {
             self.paint_zone(canvas, zone, scale)?;
         }
+        // The other rows step back while one is being changed.
+        if let Some(edit) = &self.editing {
+            for zone in &zones.zones {
+                if matches!(zone.item, Item::Shortcut(row) if row != edit.row) {
+                    canvas.fill_round_rect(
+                        px(zone.row),
+                        u(RADIUS),
+                        Ink::with_alpha(BACKGROUND, 0.6),
+                    )?;
+                }
+            }
+        }
         if self.page == Page::Pointer {
             self.paint_preview(canvas, scale, now)?;
         }
@@ -173,6 +189,11 @@ impl Panel {
             },
         };
         let label = self.label(zone.item);
+        if let Item::Shortcut(row_item) = zone.item
+            && let Some(edit) = self.editing.as_ref().filter(|edit| edit.row == row_item)
+        {
+            return self.paint_editing(canvas, zone, edit, &label, scale);
+        }
         // As in the menu, the eye of Show board is struck through while the board is hidden.
         let glyph = match zone.item.icon() {
             Icon::Eye if !self.is_shown(Shown::Board) => Icon::EyeOff,
@@ -202,6 +223,33 @@ impl Panel {
                     label_area,
                     scale,
                 )?;
+            }
+            Item::Shortcut(row_item)
+                if self.before.as_ref().is_some_and(|(r, _)| *r == row_item) =>
+            {
+                let before = self.before.as_ref().map_or(&[][..], |(_, keys)| &keys[..]);
+                let note = Text::with_in(
+                    self.language,
+                    Key::SettingsEditSaved,
+                    &[("keys", &before.join("+"))],
+                )
+                .to_string();
+                let undo = self.undo_button(row_item).map_or(control, px);
+                two_lines(
+                    canvas,
+                    (&label, LABEL_SIZE, TEXT),
+                    (&note, NOTE_SIZE, ACCENT),
+                    Rect {
+                        min: label_area.min,
+                        max: Point {
+                            x: undo.min.x - u(8.),
+                            y: label_area.max.y,
+                        },
+                    },
+                    scale,
+                )?;
+                square_button(canvas, undo, scale)?;
+                restore_glyph(canvas, undo.center(), SECONDARY, scale)?;
             }
             Item::Shortcut(row_item) if self.values.shortcuts[row_item.index()].in_use => {
                 two_lines(
@@ -265,6 +313,113 @@ impl Panel {
             Item::Field(field) => self.paint_field(canvas, field, control, scale),
             Item::Nav(_) | Item::Reset => Ok(()),
         }
+    }
+
+    /// A shortcut row being changed: tinted and outlined, its keys replaced by a dashed box that
+    /// waits for them, then the default and cancel buttons, all within the row's own height.
+    fn paint_editing<C: Canvas>(
+        &self,
+        canvas: &mut C,
+        zone: &Zone,
+        edit: &RowEdit,
+        label: &str,
+        scale: f64,
+    ) -> Result<(), C::Error> {
+        let u = |value: f64| value * scale;
+        let px = |r: Rect| Rect {
+            min: r.min * scale,
+            max: r.max * scale,
+        };
+        let row = px(zone.row);
+        let refused = !edit.error.is_empty();
+        let edge = if refused { ERROR } else { ACCENT };
+        canvas.fill_round_rect(row, u(RADIUS), Ink::solid(EDITING))?;
+        canvas.stroke_round_rect(row.expanded(-u(0.75)), u(RADIUS), Ink::solid(edge), u(1.5))?;
+        icon::draw(
+            canvas,
+            zone.item.icon(),
+            Point {
+                x: row.min.x + u(ROW_PAD),
+                y: row.center().y - u(ICON / 2.),
+            },
+            scale,
+            ICON_INK,
+        )?;
+        let Some([slot, default, cancel]) = self.edit_parts(edit.row).map(|parts| parts.map(px))
+        else {
+            return Ok(());
+        };
+        let note = if refused {
+            edit.error.as_str()
+        } else if edit.held.is_empty() {
+            self.text(Key::SettingsEditPress)
+        } else {
+            self.text(Key::SettingsEditMore)
+        };
+        two_lines(
+            canvas,
+            (label, LABEL_SIZE, TEXT),
+            (note, NOTE_SIZE, if refused { ERROR } else { SECONDARY }),
+            Rect {
+                min: Point {
+                    x: row.min.x + u(zone.item.label_left()),
+                    y: row.min.y,
+                },
+                max: Point {
+                    x: slot.min.x - u(8.),
+                    y: row.max.y,
+                },
+            },
+            scale,
+        )?;
+        dashed_round_rect(canvas, slot, edge, scale)?;
+        // The keys held so far, then the caret where the next one lands.
+        let mut caret = slot.center().x;
+        if !edit.held.is_empty() {
+            let mut widths = Vec::with_capacity(edit.held.len());
+            for cap in &edit.held {
+                widths.push(
+                    canvas
+                        .measure_styled_text(cap, u(SMALL_SIZE), TextStyle::Body)?
+                        .x
+                        / scale,
+                );
+            }
+            let right = slot.center().x + u(keycaps_width(widths) / 2.);
+            keycaps(
+                canvas,
+                &edit.held,
+                right,
+                slot.center().y,
+                11.,
+                scale,
+                false,
+            )?;
+            caret = right + u(6.);
+        }
+        canvas.line(
+            Point {
+                x: caret,
+                y: slot.center().y - u(7.),
+            },
+            Point {
+                x: caret,
+                y: slot.center().y + u(7.),
+            },
+            Ink::solid(edge),
+            u(1.5),
+        )?;
+        square_button(canvas, default, scale)?;
+        restore_glyph(canvas, default.center(), SECONDARY, scale)?;
+        let c = cancel.center();
+        let arm = u(4.);
+        for (a, b) in [
+            (Point { x: -arm, y: -arm }, Point { x: arm, y: arm }),
+            (Point { x: -arm, y: arm }, Point { x: arm, y: -arm }),
+        ] {
+            canvas.line(c + a, c + b, Ink::solid(SECONDARY), u(1.6))?;
+        }
+        Ok(())
     }
 
     fn paint_keys<C: Canvas>(
@@ -614,6 +769,92 @@ pub fn keycaps<C: Canvas>(
             if in_use { WARN } else { TEXT },
         )?;
         x += width + u(CAP_GAP);
+    }
+    Ok(())
+}
+/// A small square button of a shortcut row.
+fn square_button<C: Canvas>(canvas: &mut C, r: Rect, scale: f64) -> Result<(), C::Error> {
+    canvas.fill_round_rect(r, scale * 5., Ink::solid(BUTTON))?;
+    canvas.stroke_round_rect(
+        r.expanded(-scale * 0.5),
+        scale * 5.,
+        Ink::solid(BUTTON_EDGE),
+        scale,
+    )
+}
+/// The arrow that turns back: the default keys, or the keys from before.
+fn restore_glyph<C: Canvas>(
+    canvas: &mut C,
+    c: Point,
+    rgb: [u8; 3],
+    scale: f64,
+) -> Result<(), C::Error> {
+    let radius = scale * 5.;
+    // Most of a circle, open at the top left, where its arrowhead sits.
+    let arc: Vec<Point> = (0..=20)
+        .map(|i| {
+            let angle = (-150. + 270. * i as f64 / 20.).to_radians();
+            Point {
+                x: c.x + radius * angle.cos(),
+                y: c.y + radius * angle.sin(),
+            }
+        })
+        .collect();
+    canvas.polyline(&arc, false, Ink::solid(rgb), scale * 1.6)?;
+    let tip = arc[0];
+    canvas.polyline(
+        &[
+            Point {
+                x: tip.x,
+                y: tip.y - scale * 4.,
+            },
+            tip,
+            Point {
+                x: tip.x + scale * 4.,
+                y: tip.y,
+            },
+        ],
+        false,
+        Ink::solid(rgb),
+        scale * 1.6,
+    )
+}
+/// A rounded box drawn in dashes, where keys are awaited.
+fn dashed_round_rect<C: Canvas>(
+    canvas: &mut C,
+    r: Rect,
+    rgb: [u8; 3],
+    scale: f64,
+) -> Result<(), C::Error> {
+    let dash = scale * 4.;
+    let inset = scale * 5.;
+    let ink = Ink::solid(rgb);
+    let width = scale;
+    let (top, bottom) = (r.min.y + width / 2., r.max.y - width / 2.);
+    let (left, right) = (r.min.x + width / 2., r.max.x - width / 2.);
+    let mut x = left + inset;
+    while x < right - inset {
+        let end = (x + dash).min(right - inset);
+        canvas.line(Point { x, y: top }, Point { x: end, y: top }, ink, width)?;
+        canvas.line(
+            Point { x, y: bottom },
+            Point { x: end, y: bottom },
+            ink,
+            width,
+        )?;
+        x += 2. * dash;
+    }
+    let mut y = top + inset;
+    while y < bottom - inset {
+        let end = (y + dash).min(bottom - inset);
+        canvas.line(Point { x: left, y }, Point { x: left, y: end }, ink, width)?;
+        canvas.line(
+            Point { x: right, y },
+            Point { x: right, y: end },
+            ink,
+            width,
+        )?;
+        y += 2. * dash;
     }
     Ok(())
 }

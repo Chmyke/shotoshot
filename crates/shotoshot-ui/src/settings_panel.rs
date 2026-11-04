@@ -68,6 +68,14 @@ const CHEVRON: f64 = 20.;
 const CAP_PAD: f64 = 7.;
 const CAP_GAP: f64 = 4.;
 const CLEAR: f64 = 24.;
+/// A shortcut changed in its own row: the dashed box that waits for the keys, and the two
+/// square buttons beside it (default, cancel). The row keeps its height (Mickael, 2026-11-04).
+const EDIT_SLOT: f64 = 150.;
+const EDIT_BUTTON: f64 = 28.;
+const EDIT_GAP: f64 = 4.;
+const EDIT_WIDTH: f64 = EDIT_SLOT + 2. * EDIT_GAP + 2. * EDIT_BUTTON;
+/// The longest shortcut a "Saved, before" note names, to reserve its width.
+const LONGEST_BEFORE: &str = "Ctrl+Shift+Alt+Print Screen";
 const PREVIEW: Point = Point { x: 232., y: 236. };
 /// The preview draws the effects smaller than life so that they fit beside the settings.
 const PREVIEW_SCALE: f64 = 0.7;
@@ -308,12 +316,29 @@ impl Default for Values {
     }
 }
 
+/// A shortcut being changed in its own row: nothing opens and nothing below it moves.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RowEdit {
+    pub row: ShortcutRow,
+    /// The modifiers held so far, one keycap each.
+    pub held: Vec<String>,
+    /// Why the last keys were refused; empty while waiting.
+    pub error: String,
+}
+
 /// A change the platform makes: the panel shows its result with the next `Values`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command {
     Startup,
     Live,
+    /// Starts changing it in its row.
     EditShortcut(ShortcutRow),
+    /// Gives it its default keys, or none for a shortcut that has no default.
+    DefaultShortcut(ShortcutRow),
+    /// Leaves the row being changed as it was.
+    CancelEdit,
+    /// Gives it back the keys it had before the last change.
+    UndoShortcut(ShortcutRow),
     InputScale(u32),
     Duration(u32),
     /// The Presentation page's own defaults: size and lifetime.
@@ -673,6 +698,11 @@ pub struct Panel {
     /// Text widths measured by `fit`, by text, size in tenths of a pixel and style.
     widths: HashMap<(String, u32, TextStyle), f64>,
     pub layout: Layout,
+    /// The shortcut being changed in its row.
+    pub editing: Option<RowEdit>,
+    /// The last shortcut changed and its keys before: its row offers them back until the page
+    /// changes.
+    pub before: Option<(ShortcutRow, Vec<String>)>,
     preview: Effects,
     last_click: u64,
     clicks: u64,
@@ -712,6 +742,8 @@ impl Panel {
             remembered,
             widths: HashMap::new(),
             layout: Layout::default(),
+            editing: None,
+            before: None,
             preview: Effects::default(),
             last_click: 0,
             clicks: 0,
@@ -1097,11 +1129,25 @@ impl Panel {
             }
             Page::Shortcuts => {
                 let items: Vec<Item> = SHORTCUT_ROWS.map(Item::Shortcut).to_vec();
-                let label = self.label_width(&items);
+                // Room for a row being changed, so that changing one never resizes the window.
+                let before = Text::with_in(
+                    self.language,
+                    Key::SettingsEditSaved,
+                    &[("keys", LONGEST_BEFORE)],
+                )
+                .to_string();
+                let label = [
+                    self.text(Key::SettingsEditPress),
+                    self.text(Key::SettingsEditMore),
+                    &before,
+                ]
+                .iter()
+                .map(|t| self.width(t, NOTE_SIZE, TextStyle::Caption))
+                .fold(self.label_width(&items), f64::max);
                 let control = items
                     .iter()
-                    .map(|i| self.control_width(*i))
-                    .fold(0., f64::max);
+                    .map(|i| self.control_width(*i) + EDIT_BUTTON + 8.)
+                    .fold(EDIT_WIDTH, f64::max);
                 let groups = SHORTCUT_GROUPS
                     .iter()
                     .map(|(key, _)| self.width(self.text(*key), LABEL_SIZE, TextStyle::Strong))
@@ -1572,6 +1618,7 @@ impl Panel {
     }
     pub fn show_page(&mut self, page: Page) {
         self.page = page;
+        self.before = None;
         self.drag = None;
         self.arrange();
     }
@@ -1584,6 +1631,36 @@ impl Panel {
         self.arrange();
     }
 
+    /// The waiting box, the default button and the cancel button of `row` being changed, in
+    /// logical pixels: they take the right of the row, which keeps its height.
+    pub fn edit_parts(&self, row: ShortcutRow) -> Option<[Rect; 3]> {
+        let zone = self.layout.zone(Item::Shortcut(row))?;
+        let right = zone.row.max.x - ROW_PAD;
+        let middle = zone.row.center().y;
+        let half = EDIT_BUTTON / 2.;
+        let cancel = area(right - EDIT_BUTTON, middle - half, right, middle + half);
+        let default = area(
+            cancel.min.x - EDIT_GAP - EDIT_BUTTON,
+            middle - half,
+            cancel.min.x - EDIT_GAP,
+            middle + half,
+        );
+        let slot = area(
+            default.min.x - EDIT_GAP - EDIT_SLOT,
+            middle - half,
+            default.min.x - EDIT_GAP,
+            middle + half,
+        );
+        Some([slot, default, cancel])
+    }
+    /// The button that gives `row` back its keys from before its last change, left of them.
+    pub fn undo_button(&self, row: ShortcutRow) -> Option<Rect> {
+        let zone = self.layout.zone(Item::Shortcut(row))?;
+        let left = zone.control.min.x - 8.;
+        let middle = zone.row.center().y;
+        let half = EDIT_BUTTON / 2.;
+        Some(area(left - EDIT_BUTTON, middle - half, left, middle + half))
+    }
     /// Where the control of `item` sits on the current page, in logical pixels.
     pub fn control(&self, item: Item) -> Option<Rect> {
         self.layout.zone(item).map(|zone| zone.control)
@@ -1600,6 +1677,31 @@ impl Panel {
     }
     fn press_unseen(&mut self, p: Point) -> Action {
         self.keyboard = false;
+        // While a row is being changed, a click elsewhere leaves it as it was.
+        if let Some(edit) = &self.editing {
+            let row = edit.row;
+            if let Some([_, default, cancel]) = self.edit_parts(row) {
+                if default.contains(p) {
+                    return Action::Command(Command::DefaultShortcut(row));
+                }
+                if cancel.contains(p) {
+                    return Action::Command(Command::CancelEdit);
+                }
+            }
+            if self
+                .layout
+                .zone(Item::Shortcut(row))
+                .is_some_and(|zone| zone.row.contains(p))
+            {
+                return Action::None;
+            }
+            return Action::Command(Command::CancelEdit);
+        }
+        if let Some((row, _)) = &self.before
+            && self.undo_button(*row).is_some_and(|r| r.contains(p))
+        {
+            return Action::Command(Command::UndoShortcut(*row));
+        }
         let Some(item) = self.at(p) else {
             return Action::None;
         };
@@ -1818,6 +1920,13 @@ impl Panel {
                 None => Action::None,
             },
             _ => Action::None,
+        }
+    }
+    /// Clears the pointer shortcut of `row`; any other row has nothing to clear.
+    pub fn clear_pointer_shortcut(&mut self, row: ShortcutRow) -> Action {
+        match row.pointer_index() {
+            Some(index) => self.clear_shortcut(index),
+            None => Action::None,
         }
     }
     fn clear_shortcut(&mut self, index: usize) -> Action {

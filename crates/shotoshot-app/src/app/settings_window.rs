@@ -20,21 +20,24 @@ const CLASS: PCWSTR = w!("Shotoshot.Settings");
 
 /// The Settings window while it is open, and the page it showed last.
 pub(super) struct SettingsUi {
-    window: Option<SettingsWindow>,
+    pub(super) window: Option<SettingsWindow>,
     page: Page,
+    /// The last shortcut changed in its row and its keys before, offered back by the row.
+    pub(super) before: Option<(ShortcutRow, Option<(u32, u32)>)>,
 }
 impl Default for SettingsUi {
     fn default() -> Self {
         Self {
             window: None,
             page: Page::General,
+            before: None,
         }
     }
 }
 
-struct SettingsWindow {
+pub(super) struct SettingsWindow {
     window: OwnedWindow,
-    panel: Panel,
+    pub(super) panel: Panel,
     painter: Option<Renderer>,
     clock: std::time::Instant,
     /// A dragged slider changed the settings: the live pointer takes them at the next frame,
@@ -42,7 +45,7 @@ struct SettingsWindow {
     pending: bool,
 }
 impl SettingsWindow {
-    fn hwnd(&self) -> HWND {
+    pub(super) fn hwnd(&self) -> HWND {
         self.window.0
     }
     fn now(&self) -> u64 {
@@ -159,7 +162,11 @@ impl SettingsWindow {
 }
 
 /// One shortcut as keycaps, in `language`.
-fn keys_in(shortcut: Option<crate::settings::Shortcut>, in_use: bool, language: Language) -> Keys {
+pub(super) fn keys_in(
+    shortcut: Option<crate::settings::Shortcut>,
+    in_use: bool,
+    language: Language,
+) -> Keys {
     match shortcut {
         Some(s) if s.key != 0 => Keys {
             caps: setup::key_label_in(s.modifiers, s.key, language)
@@ -331,6 +338,10 @@ impl App {
         }
     }
     fn close_settings_window(&mut self) {
+        self.settings_ui.before = None;
+        if self.setup && self.setup_ui.inline {
+            let _ = self.row_edit_cancel(self.tray.hWnd);
+        }
         // The switch that fixes the keyboard and the mouse goes with the window.
         if let Some(presentation) = &self.presentation {
             let _ = presentation.borrow_mut().end_move();
@@ -541,20 +552,10 @@ impl App {
         match command {
             Command::Startup => self.run_menu_command(owner, 4)?,
             Command::Live => self.run_menu_command(owner, 5)?,
-            Command::EditShortcut(row) => {
-                let target = match row {
-                    ShortcutRow::Capture => return self.show_setup(owner),
-                    ShortcutRow::Instant => setup::ShortcutTarget::Instant,
-                    ShortcutRow::Board => setup::ShortcutTarget::Board,
-                    ShortcutRow::Arrow => setup::ShortcutTarget::Arrow,
-                    ShortcutRow::Rectangle => setup::ShortcutTarget::Rectangle,
-                    ShortcutRow::Ellipse => setup::ShortcutTarget::Ellipse,
-                    ShortcutRow::ShowClick => setup::ShortcutTarget::ShowClick,
-                    ShortcutRow::Spotlight => setup::ShortcutTarget::Spotlight,
-                    ShortcutRow::Loupe => setup::ShortcutTarget::Loupe,
-                };
-                self.show_shortcut_setup(owner, target)?;
-            }
+            Command::EditShortcut(row) => self.row_edit_begin(owner, row)?,
+            Command::CancelEdit => self.row_edit_cancel(owner)?,
+            Command::DefaultShortcut(row) => self.row_edit_default(owner, row)?,
+            Command::UndoShortcut(row) => self.row_edit_undo(owner, row)?,
             Command::InputScale(value) => {
                 if let Some(id) = menu_id(&crate::settings::INPUT_SCALES, value, 141) {
                     self.run_menu_command(owner, id)?;
@@ -606,7 +607,7 @@ impl App {
         }
         self.refresh_settings_window()
     }
-    fn settings_action(&mut self, owner: HWND, action: Action) -> Result<()> {
+    pub(super) fn settings_action(&mut self, owner: HWND, action: Action) -> Result<()> {
         match action {
             Action::None | Action::Repaint => {}
             Action::Changed { save: false, .. } => {
@@ -706,6 +707,21 @@ impl App {
                 };
                 let delta = (w.0 >> 16) as u16 as i16;
                 window.panel.wheel(p, (delta / 120).into())
+            }
+            // A row being changed takes every key, Alt combinations included.
+            WM_KEYDOWN | WM_SYSKEYDOWN if window.panel.editing.is_some() => {
+                // A key held down repeats: only its first press counts.
+                if l.0 & (1 << 30) == 0 {
+                    self.row_edit_key(owner, w.0 as u32)?;
+                }
+                return Ok(Some(LRESULT(0)));
+            }
+            WM_KEYUP | WM_SYSKEYUP if window.panel.editing.is_some() => {
+                self.row_edit_key_up(owner, w.0 as u32)?;
+                return Ok(Some(LRESULT(0)));
+            }
+            WM_SYSCHAR | WM_CHAR if window.panel.editing.is_some() => {
+                return Ok(Some(LRESULT(0)));
             }
             WM_KEYDOWN => {
                 let shift = unsafe { GetKeyState(VK_SHIFT.0 as i32) } < 0;
@@ -836,11 +852,24 @@ pub(super) fn preview() -> Result<()> {
             .measure_styled_text_in(text, size as f32, style, language)
             .map(|extent| extent.x)
     })?;
-    for (page, name) in PAGES
-        .into_iter()
-        .zip(["general", "shortcuts", "presentation", "pointer"])
-    {
+    // The Shortcuts page again, with a row listening, then with a change it offers back.
+    let editing = Some(shotoshot_ui::settings_panel::RowEdit {
+        row: ShortcutRow::Rectangle,
+        held: vec![tr_in(language, Key::KeyAlt).into()],
+        error: String::new(),
+    });
+    let before = Some((ShortcutRow::Rectangle, vec!["Alt".into(), "R".into()]));
+    for (page, name, edit, back) in [
+        (PAGES[0], "general", None, None),
+        (PAGES[1], "shortcuts", None, None),
+        (PAGES[2], "presentation", None, None),
+        (PAGES[3], "pointer", None, None),
+        (PAGES[1], "shortcuts-editing", editing, None),
+        (PAGES[1], "shortcuts-saved", None, before),
+    ] {
         panel.show_page(page);
+        panel.editing = edit;
+        panel.before = back;
         // A fixed moment of the preview animation: the same picture on every run.
         for now in (0..2100).step_by(16) {
             panel.tick(now);

@@ -11,6 +11,7 @@ mod instant;
 mod notice;
 mod pulse;
 mod recall;
+mod row_edit;
 mod settings_window;
 mod warm_probe;
 use notice::Notice;
@@ -339,29 +340,7 @@ impl App {
                 }
                 first
             } else {
-                setup::Setup::change(
-                    target,
-                    if let Some(index) = target.shape_index() {
-                        let s = self.settings.presentation.shape_shortcuts[index];
-                        Some((s.modifiers, s.key))
-                    } else if target == setup::ShortcutTarget::Instant {
-                        Some((
-                            self.settings.instant_shortcut.modifiers,
-                            self.settings.instant_shortcut.key,
-                        ))
-                    } else if target == setup::ShortcutTarget::Board {
-                        Some((
-                            self.settings.board_shortcut.modifiers,
-                            self.settings.board_shortcut.key,
-                        ))
-                    } else if let Some(index) = target.pointer_index() {
-                        let pointer = &self.settings.presentation.pointer;
-                        pointer.shortcuts()[index].map(|s| (s.modifiers, s.key))
-                    } else {
-                        (self.settings.key != 0)
-                            .then_some((self.settings.modifiers, self.settings.key))
-                    },
-                )
+                setup::Setup::change(target, self.current_shortcut(target))
             };
             SetWindowLongPtrW(
                 hwnd,
@@ -413,6 +392,24 @@ impl App {
             let _ = SetForegroundWindow(hwnd);
             invalidate(hwnd);
             Ok(())
+        }
+    }
+    /// The keys `target` has now, None when it has none.
+    fn current_shortcut(&self, target: setup::ShortcutTarget) -> Option<(u32, u32)> {
+        if let Some(index) = target.shape_index() {
+            let s = self.settings.presentation.shape_shortcuts[index];
+            Some((s.modifiers, s.key))
+        } else if target == setup::ShortcutTarget::Instant {
+            let s = self.settings.instant_shortcut;
+            Some((s.modifiers, s.key))
+        } else if target == setup::ShortcutTarget::Board {
+            let s = self.settings.board_shortcut;
+            Some((s.modifiers, s.key))
+        } else if let Some(index) = target.pointer_index() {
+            let pointer = &self.settings.presentation.pointer;
+            pointer.shortcuts()[index].map(|s| (s.modifiers, s.key))
+        } else {
+            (self.settings.key != 0).then_some((self.settings.modifiers, self.settings.key))
         }
     }
     fn close_setup(&mut self, hwnd: HWND) -> Result<()> {
