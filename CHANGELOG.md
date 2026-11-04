@@ -2,9 +2,13 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.33 · 2026-11-04
+
+- Updating Shotoshot keeps your screenshot key and asks nothing: the key window only greets a first install, with Print Screen taken from Windows by default.
+
 ## 0.3.32 · 2026-11-04
 
-- Every install, updates included, now ends on the screenshot key: Print Screen is ready to go, Save keeps it, or just press the key you'd rather use.
+Nothing you would notice in this version: the work is under the hood.
 
 ## 0.3.31 · 2026-11-04
 

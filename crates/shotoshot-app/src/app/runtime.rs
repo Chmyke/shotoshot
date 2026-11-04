@@ -18,7 +18,6 @@ const RESTORE_PRINT_SCREEN: &str = "--restore-print-screen";
 const RESTORE_WALLPAPER: &str = "--restore-wallpaper";
 /// Passed by the installer ([Run] in `packaging/shotoshot.iss`): the capture shortcut window
 /// opens at the end of every install, not only the first (Mickael, 2026-11-04).
-pub(super) const CHOOSE_SHORTCUT: &str = "--choose-shortcut";
 /// What the uninstaller runs before it removes the files (`packaging/shotoshot.iss`,
 /// `[UninstallRun]`), in this order: each gives back to Windows something Shotoshot took.
 pub(super) const UNINSTALL_RESTORES: [&str; 2] = [RESTORE_PRINT_SCREEN, RESTORE_WALLPAPER];
@@ -266,9 +265,7 @@ pub fn run() -> Result<()> {
             return Err(Error::from_thread());
         }
         let state = Box::new(RefCell::new(App {
-            setup: (settings.key == 0 || std::env::args().any(|a| a == CHOOSE_SHORTCUT))
-                && !diagnostic
-                && !editor_process,
+            setup: settings.key == 0 && !diagnostic && !editor_process,
             settings,
             session: None,
             hotkey: crate::hotkey::Hotkey::new(HWND::default()),
@@ -418,11 +415,6 @@ pub fn run() -> Result<()> {
             }
             if app.setup {
                 app.show_setup(hwnd)?;
-                // After an install the window confirms the shortcut kept: Save, or a new key.
-                if app.settings.key != 0 {
-                    app.setup_ui.recording = false;
-                    app.setup_ui.focus = 2;
-                }
             }
             if prepared_editor {
                 if !std::env::args().any(|a| a == "--cold-editor") {
