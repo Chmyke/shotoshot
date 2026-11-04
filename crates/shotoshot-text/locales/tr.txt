@@ -103,6 +103,7 @@ menu.instant_screenshot = Anında ekran görüntüsü
 menu.live_capture_default = Varsayılan olarak canlı yakalama
 menu.start_with_windows = Windows ile başlat
 menu.quit = Shotoshot’tan çık
+menu.press_keys = Tuşlara bas
 menu.seconds = {n} sn
 menu.percent = %{n}
 menu.language_auto = Windows dili

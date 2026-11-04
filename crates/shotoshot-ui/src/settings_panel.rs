@@ -22,7 +22,10 @@ use shotoshot_text::{Key, Language, Text, tr_in};
 use std::collections::HashMap;
 mod draw;
 
-pub use draw::{BACKGROUND, keycaps, keycaps_width};
+pub use draw::{
+    ACCENT, BACKGROUND, EDITING, ERROR, keycaps, keycaps_width, restore_glyph, square_button,
+    waiting_keys,
+};
 // Type of the window (Mickaël, 2026-10-30): titles in the display face, group headings
 // semibold, explanations in the face cut for small sizes.
 pub const TITLE_SIZE: f64 = 28.;

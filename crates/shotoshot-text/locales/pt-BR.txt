@@ -103,6 +103,7 @@ menu.instant_screenshot = Captura instantânea
 menu.live_capture_default = Captura ao vivo por padrão
 menu.start_with_windows = Iniciar com o Windows
 menu.quit = Sair do Shotoshot
+menu.press_keys = Pressione teclas
 menu.seconds = {n} s
 menu.percent = {n}%
 menu.language_auto = Idioma do Windows

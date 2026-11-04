@@ -490,6 +490,50 @@ fn the_menu_stays_open_for_settings_and_the_icon_closes_it() {
 }
 
 #[test]
+fn a_menu_row_listens_in_place_and_the_menu_closing_leaves_it_as_it_was() {
+    use tray_menu::EditOp;
+    let owner = hidden_window();
+    let mut app = resident(owner.0);
+    app.setup = false;
+    let keys = app.current_shortcut(setup::ShortcutTarget::Arrow);
+    let open = |app: &App| {
+        tray_menu::Popup::open(
+            owner.0,
+            RECT::default(),
+            app.menu_values().unwrap(),
+            POINT {
+                x: -32000,
+                y: -32000,
+            },
+            false,
+        )
+        .unwrap()
+    };
+    app.menu = Some(open(&app));
+    let listening = |app: &App| app.menu.as_ref().and_then(|menu| menu.editing());
+    app.menu_edit(owner.0, 171, EditOp::Begin).unwrap();
+    assert!(app.setup && app.setup_ui.inline, "the row listens");
+    assert_eq!(
+        listening(&app).map(|edit| edit.row),
+        Some(shotoshot_ui::settings_panel::ShortcutRow::Arrow)
+    );
+    // Esc arrives as a cancel: the row stops listening, the menu stays.
+    app.menu_edit(owner.0, 171, EditOp::Cancel).unwrap();
+    assert!(!app.setup && listening(&app).is_none() && app.menu.is_some());
+    // Closing the menu while a row listens leaves the keys as they were.
+    app.menu_edit(owner.0, 171, EditOp::Begin).unwrap();
+    assert!(app.setup);
+    let root = app.menu.as_ref().unwrap().root();
+    app.menu_closed(root, false);
+    assert!(app.menu.is_none() && !app.setup);
+    assert_eq!(app.current_shortcut(setup::ShortcutTarget::Arrow), keys);
+    // A row that shows no shortcut never listens.
+    app.menu = Some(open(&app));
+    app.menu_edit(owner.0, 170, EditOp::Begin).unwrap();
+    assert!(!app.setup && listening(&app).is_none());
+}
+
+#[test]
 fn stop_presentation_is_handled_even_while_a_menu_borrows_the_app() {
     unsafe {
         let instance = GetModuleHandleW(None).unwrap();

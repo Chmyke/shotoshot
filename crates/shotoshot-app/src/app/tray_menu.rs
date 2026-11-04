@@ -8,10 +8,11 @@ use shotoshot_core::{Rect, Tool};
 use shotoshot_text::{Key, Language, LanguageChoice, language, tr_in};
 pub(super) use shotoshot_ui::icon::Icon;
 pub(super) use shotoshot_ui::icon::draw as draw_icon;
+use shotoshot_ui::settings_panel::{RowEdit, ShortcutRow};
 use shotoshot_ui::{Canvas, Ink, TextStyle, settings_panel};
 use std::borrow::Cow;
 mod popup;
-pub(super) use popup::{CLOSED, COMMAND, Popup};
+pub(super) use popup::{CLOSED, COMMAND, EDIT, EditOp, Popup};
 
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {
@@ -163,6 +164,29 @@ fn label(row: &Row) -> Cow<'static, str> {
     label_in(row, language())
 }
 
+/// The shortcut row `id` shows and changes in place, if any.
+pub(super) fn shortcut_row(id: u32) -> Option<ShortcutRow> {
+    Some(match id {
+        1 => ShortcutRow::Capture,
+        7 => ShortcutRow::Instant,
+        8 => ShortcutRow::Board,
+        171 => ShortcutRow::Arrow,
+        172 => ShortcutRow::Rectangle,
+        173 => ShortcutRow::Ellipse,
+        _ => return None,
+    })
+}
+/// The menu row showing `row`, if the menu shows it.
+fn row_id(row: ShortcutRow) -> Option<u32> {
+    ROOT.iter()
+        .map(|candidate| candidate.id)
+        .find(|&id| shortcut_row(id) == Some(row))
+}
+/// Rows whose only purpose is their shortcut: a click anywhere on them changes it.
+fn only_shortcut(id: u32) -> bool {
+    (171..=173).contains(&id)
+}
+
 /// What the rows display for the current settings.
 #[derive(Clone, Default)]
 pub(super) struct Values {
@@ -259,6 +283,14 @@ const MARGIN: f64 = 14.;
 const TEXT_SIZE: f64 = 14.;
 const TITLE_SIZE: f64 = 12.;
 const SWITCH: Point = Point { x: 28., y: 14. };
+/// A listening row's waiting box at its narrowest, its square buttons and the gaps between them.
+const EDIT_SLOT: f64 = 140.;
+const EDIT_BUTTON: f64 = 24.;
+const EDIT_GAP: f64 = 4.;
+/// Between the label and the waiting box.
+const EDIT_SPACE: f64 = 8.;
+/// Between the undo button and the keys.
+const UNDO_GAP: f64 = 6.;
 /// Room for the submenu arrow.
 const ARROW: f64 = 14.;
 
@@ -297,16 +329,18 @@ fn width_in(renderer: &Renderer, row: &Row, data: usize, language: Language) -> 
         Kind::Toggle => LABEL_X + measure(&name, TEXT_SIZE)? + 2. * MARGIN + SWITCH.x + MARGIN,
         Kind::Choice => LABEL_X + measure(&name, TEXT_SIZE)? + 2. * MARGIN,
         Kind::Command => {
-            let (caps, _) = caps_in(data, language);
-            let right = if caps.is_empty() {
-                0.
-            } else {
-                let mut widths = Vec::with_capacity(caps.len());
-                for cap in &caps {
-                    widths.push(measure(cap, settings_panel::SMALL_SIZE)?);
-                }
-                2. * MARGIN + settings_panel::keycaps_width(widths)
-            };
+            let caps = caps_width_in(renderer, data, language)?;
+            let mut right = if caps == 0. { 0. } else { 2. * MARGIN + caps };
+            if shortcut_row(row.id).is_some() {
+                // Room for the undo button beside the keys, and for the row listening, so that
+                // neither moves nor resizes the menu.
+                let placeholder = measure(
+                    tr_in(language, Key::MenuPressKeys),
+                    settings_panel::SMALL_SIZE,
+                )?;
+                right = (right + EDIT_BUTTON + UNDO_GAP)
+                    .max(EDIT_SPACE + edit_width(slot_width(placeholder)));
+            }
             LABEL_X + measure(&name, TEXT_SIZE)? + right + MARGIN
         }
         Kind::Submenu => {
@@ -321,11 +355,104 @@ fn width_in(renderer: &Renderer, row: &Row, data: usize, language: Language) -> 
     })
 }
 
+/// The logical width of the keycaps of shortcut item data `data`; 0 without keys.
+fn caps_width_in(renderer: &Renderer, data: usize, language: Language) -> Result<f64> {
+    let (caps, _) = caps_in(data, language);
+    if caps.is_empty() {
+        return Ok(0.);
+    }
+    let mut widths = Vec::with_capacity(caps.len());
+    for cap in &caps {
+        widths.push(
+            renderer
+                .measure_styled_text_in(
+                    cap,
+                    settings_panel::SMALL_SIZE as f32,
+                    TextStyle::Body,
+                    language,
+                )?
+                .x,
+        );
+    }
+    Ok(settings_panel::keycaps_width(widths))
+}
+/// The waiting box of a listening row, wide enough for its placeholder measuring `placeholder`.
+fn slot_width(placeholder: f64) -> f64 {
+    // The placeholder, the caret after it and some air on both sides.
+    EDIT_SLOT.max(placeholder + 32.)
+}
+/// The waiting box and both buttons of a listening row, side by side.
+fn edit_width(slot: f64) -> f64 {
+    slot + 2. * EDIT_GAP + 2. * EDIT_BUTTON
+}
+fn area(left: f64, top: f64, right: f64, bottom: f64) -> Rect {
+    Rect {
+        min: Point { x: left, y: top },
+        max: Point {
+            x: right,
+            y: bottom,
+        },
+    }
+}
+fn scaled(r: Rect, scale: f64) -> Rect {
+    Rect {
+        min: r.min * scale,
+        max: r.max * scale,
+    }
+}
+/// The waiting box, the default button and the cancel button of a listening row `size`
+/// logical pixels large, in its own logical pixels: they end at the row's right margin.
+fn edit_parts(size: Point, slot: f64) -> [Rect; 3] {
+    let right = size.x - MARGIN;
+    let (top, bottom) = (
+        size.y / 2. - EDIT_BUTTON / 2.,
+        size.y / 2. + EDIT_BUTTON / 2.,
+    );
+    let cancel = area(right - EDIT_BUTTON, top, right, bottom);
+    let default = area(
+        cancel.min.x - EDIT_GAP - EDIT_BUTTON,
+        top,
+        cancel.min.x - EDIT_GAP,
+        bottom,
+    );
+    let waiting = area(
+        default.min.x - EDIT_GAP - slot,
+        top,
+        default.min.x - EDIT_GAP,
+        bottom,
+    );
+    [waiting, default, cancel]
+}
+/// The undo button left of keys `caps` logical pixels wide, in the row's logical pixels.
+fn undo_part(size: Point, caps: f64) -> Rect {
+    let right = size.x - MARGIN - caps - UNDO_GAP;
+    area(
+        right - EDIT_BUTTON,
+        size.y / 2. - EDIT_BUTTON / 2.,
+        right,
+        size.y / 2. + EDIT_BUTTON / 2.,
+    )
+}
+
+/// How a row looks beside the others.
 #[derive(Clone, Copy, Default)]
-struct State {
+enum Look<'a> {
+    #[default]
+    Plain,
+    /// Its shortcut just changed: an undo button gives the keys from before back.
+    Undo,
+    /// Another row listens.
+    Dimmed,
+    /// It listens for its new keys.
+    Editing(&'a RowEdit),
+}
+
+#[derive(Clone, Copy, Default)]
+struct State<'a> {
     selected: bool,
     checked: bool,
     data: usize,
+    look: Look<'a>,
 }
 
 /// The glyph `row` shows: Show board's eye is struck through while the board is hidden.
@@ -338,6 +465,97 @@ fn shown_icon(row: &Row, state: State) -> Icon {
 
 /// One row filling `size` device pixels, at `scale` device pixels per logical pixel.
 fn paint<C: Canvas>(
+    canvas: &mut C,
+    row: &Row,
+    state: State,
+    size: Point,
+    scale: f64,
+) -> std::result::Result<(), C::Error> {
+    if let Look::Editing(edit) = state.look {
+        return paint_editing(canvas, row, edit, size, scale);
+    }
+    paint_row(canvas, row, state, size, scale)?;
+    if let Look::Dimmed = state.look {
+        canvas.fill_rect(
+            Rect {
+                min: Point::default(),
+                max: size,
+            },
+            Ink::with_alpha(BACKGROUND, 0.6),
+        )?;
+    }
+    Ok(())
+}
+/// A row listening for its new keys: tinted and outlined, its keys replaced by the waiting box
+/// and its buttons; a refusal replaces its label, there being no room for a second line.
+fn paint_editing<C: Canvas>(
+    canvas: &mut C,
+    row: &Row,
+    edit: &RowEdit,
+    size: Point,
+    scale: f64,
+) -> std::result::Result<(), C::Error> {
+    let u = |value: f64| value * scale;
+    canvas.fill_rect(
+        Rect {
+            min: Point::default(),
+            max: size,
+        },
+        Ink::solid(BACKGROUND),
+    )?;
+    let refused = !edit.error.is_empty();
+    let edge = if refused {
+        settings_panel::ERROR
+    } else {
+        settings_panel::ACCENT
+    };
+    let band = area(u(4.), u(1.), size.x - u(4.), size.y - u(1.));
+    canvas.fill_round_rect(band, u(4.), Ink::solid(settings_panel::EDITING))?;
+    canvas.stroke_round_rect(band.expanded(-u(0.75)), u(4.), Ink::solid(edge), u(1.5))?;
+    let middle = size.y / 2.;
+    draw_icon(
+        canvas,
+        shown_icon(row, State::default()),
+        Point {
+            x: u(ICON_X),
+            y: middle - u(10. * ICON_SCALE),
+        },
+        u(ICON_SCALE),
+        SECONDARY,
+    )?;
+    let placeholder = tr_in(language(), Key::MenuPressKeys);
+    let extent = canvas
+        .measure_styled_text(placeholder, u(settings_panel::SMALL_SIZE), TextStyle::Body)?
+        .x
+        / scale;
+    let logical = Point {
+        x: size.x / scale,
+        y: size.y / scale,
+    };
+    let parts = edit_parts(logical, slot_width(extent)).map(|r| scaled(r, scale));
+    let (text, ink) = if refused {
+        (Cow::Borrowed(edit.error.as_str()), settings_panel::ERROR)
+    } else {
+        (label(row), TEXT)
+    };
+    let line = canvas
+        .measure_styled_text("X", u(TEXT_SIZE), TextStyle::Body)?
+        .y;
+    canvas.styled_text(
+        &text,
+        area(
+            u(LABEL_X),
+            middle - line / 2.,
+            parts[0].min.x - u(EDIT_SPACE),
+            middle + line / 2.,
+        ),
+        u(TEXT_SIZE),
+        Ink::solid(ink),
+        TextStyle::Body,
+    )?;
+    settings_panel::waiting_keys(canvas, parts, &edit.held, Some(placeholder), edge, scale)
+}
+fn paint_row<C: Canvas>(
     canvas: &mut C,
     row: &Row,
     state: State,
@@ -497,6 +715,29 @@ fn paint<C: Canvas>(
     }
     if row.kind == Kind::Command {
         let (caps, in_use) = caps_in(state.data, language());
+        if let Look::Undo = state.look {
+            let mut widths = Vec::with_capacity(caps.len());
+            for cap in &caps {
+                widths.push(
+                    canvas
+                        .measure_styled_text(cap, u(settings_panel::SMALL_SIZE), TextStyle::Body)?
+                        .x
+                        / scale,
+                );
+            }
+            let width = if caps.is_empty() {
+                0.
+            } else {
+                settings_panel::keycaps_width(widths)
+            };
+            let logical = Point {
+                x: size.x / scale,
+                y: size.y / scale,
+            };
+            let undo = scaled(undo_part(logical, width), scale);
+            settings_panel::square_button(canvas, undo, scale)?;
+            settings_panel::restore_glyph(canvas, undo.center(), SECONDARY, scale)?;
+        }
         return settings_panel::keycaps(canvas, &caps, right, middle, 9., scale, in_use);
     }
     let detail = detail_in(row, state.data, language());
@@ -572,7 +813,14 @@ fn draw_row(
 }
 
 /// Paints the whole menu, with the submenu of row `open` beside it, at `scale`.
-fn render(values: &Values, selected: u32, open: u32, scale: f64) -> Result<Image> {
+/// `view` is a shortcut row changing in place.
+fn render(
+    values: &Values,
+    selected: u32,
+    open: u32,
+    view: &popup::View,
+    scale: f64,
+) -> Result<Image> {
     let _open = Open;
     let root = popup::Column::new(ROOT, values, scale)?;
     let beside = popup::Column::new(choices(open), values, scale)?;
@@ -583,7 +831,14 @@ fn render(values: &Values, selected: u32, open: u32, scale: f64) -> Result<Image
         (root.width + beside.width) as u32,
         root.height().max(hang + beside.height()) as u32,
         |dc| {
-            root.paint(dc, POINT::default(), values, position(selected), scale)?;
+            root.paint(
+                dc,
+                POINT::default(),
+                values,
+                position(selected),
+                view,
+                scale,
+            )?;
             beside.paint(
                 dc,
                 POINT {
@@ -592,6 +847,7 @@ fn render(values: &Values, selected: u32, open: u32, scale: f64) -> Result<Image
                 },
                 values,
                 None,
+                &popup::View::default(),
                 scale,
             )
         },
@@ -624,13 +880,34 @@ fn sample() -> Values {
 }
 pub(super) fn preview() -> Result<()> {
     save_png(
-        &render(&sample(), 170, 0, 1.)?,
+        &render(&sample(), 170, 0, &popup::View::default(), 1.)?,
         std::path::Path::new("target/shotoshot-menu.png"),
+    )?;
+    // The arrow row listening with Ctrl held; the rectangle row offers its keys from before.
+    let editing = popup::View {
+        editing: Some(RowEdit {
+            row: ShortcutRow::Arrow,
+            held: vec![tr_in(Language::En, Key::KeyCtrl).into()],
+            error: String::new(),
+        }),
+        before: None,
+    };
+    save_png(
+        &render(&sample(), 0, 0, &editing, 1.)?,
+        std::path::Path::new("target/shotoshot-menu-editing.png"),
+    )?;
+    let saved = popup::View {
+        editing: None,
+        before: Some(172),
+    };
+    save_png(
+        &render(&sample(), 0, 0, &saved, 1.)?,
+        std::path::Path::new("target/shotoshot-menu-saved.png"),
     )
 }
 /// Opens and closes the menu's renderer the way a real menu does, for the resident diagnostic.
 pub(super) fn probe() -> Result<()> {
-    render(&sample(), 0, 150, 1.).map(|_| ())
+    render(&sample(), 0, 150, &popup::View::default(), 1.).map(|_| ())
 }
 
 #[cfg(test)]
@@ -867,7 +1144,8 @@ mod tests {
                 true
             )
         );
-        assert!(width_of(0) < width_of(short) && width_of(short) < width_of(long));
+        // A shortcut row keeps room for itself listening, whatever its keys.
+        assert!(width_of(0) <= width_of(short) && width_of(short) < width_of(long));
         // The longest shortcut is drawn entirely inside the width the row asks for.
         let needed = width_of(long);
         let image = paint_image(needed.ceil() as u32 + 40, 28, |dc| {
@@ -1055,6 +1333,116 @@ mod tests {
     }
 
     #[test]
+    fn a_listening_row_fits_the_width_it_asked_for() {
+        let _open = Open;
+        let values = sample();
+        for language in Language::ALL {
+            for row in ROOT.iter().filter(|row| shortcut_row(row.id).is_some()) {
+                let (needed, label_width, placeholder) = with_painter(|renderer| {
+                    let measure = |text: &str| {
+                        Ok::<_, Error>(
+                            renderer
+                                .measure_styled_text_in(
+                                    text,
+                                    settings_panel::SMALL_SIZE as f32,
+                                    TextStyle::Body,
+                                    language,
+                                )?
+                                .x,
+                        )
+                    };
+                    Ok((
+                        width_in(renderer, row, values.data(row.id), language)?,
+                        renderer
+                            .measure_styled_text_in(
+                                &label_in(row, language),
+                                TEXT_SIZE as f32,
+                                TextStyle::Body,
+                                language,
+                            )?
+                            .x,
+                        measure(tr_in(language, Key::MenuPressKeys))?,
+                    ))
+                })
+                .unwrap();
+                let size = Point {
+                    x: needed,
+                    y: height(row.kind),
+                };
+                let [waiting, default, cancel] = edit_parts(size, slot_width(placeholder));
+                let tag = language.tag();
+                assert!(
+                    waiting.min.x - EDIT_SPACE >= LABEL_X + label_width - 0.01,
+                    "{tag}: the waiting box covers the label of row {}",
+                    row.id
+                );
+                assert!(waiting.max.x <= default.min.x && default.max.x <= cancel.min.x);
+                assert!(cancel.max.x <= needed - MARGIN + 0.01);
+                for part in [waiting, default, cancel] {
+                    assert!(part.min.y >= 0. && part.max.y <= size.y, "{tag}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_listening_row_paints_inside_itself() {
+        let row = find(1).unwrap();
+        let edit = RowEdit {
+            row: ShortcutRow::Capture,
+            held: vec!["Ctrl".into()],
+            error: String::new(),
+        };
+        let state = State {
+            look: Look::Editing(&edit),
+            ..Default::default()
+        };
+        let image = rendered(row, state, 1.);
+        assert!(accent(&image) > 40, "the row is outlined in the accent");
+        // Right of the cancel button, inside the outline: the tint alone.
+        let cancel = edit_parts(
+            Point {
+                x: WIDTH as f64,
+                y: height(row.kind),
+            },
+            EDIT_SLOT,
+        )[2];
+        let tint = [
+            settings_panel::EDITING[2],
+            settings_panel::EDITING[1],
+            settings_panel::EDITING[0],
+        ];
+        let stray = image
+            .pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .enumerate()
+            .filter(|(index, pixel)| {
+                let (x, y) = (index % image.width as usize, index / image.width as usize);
+                (cancel.max.x as usize + 1..WIDTH as usize - 7).contains(&x)
+                    && (4..28).contains(&y)
+                    && pixel[..3] != tint
+            })
+            .count();
+        assert_eq!(stray, 0);
+        // A refusal shows in red in place of the label.
+        let refused = RowEdit {
+            error: "Refused".into(),
+            ..edit
+        };
+        let image = rendered(
+            row,
+            State {
+                look: Look::Editing(&refused),
+                ..Default::default()
+            },
+            1.,
+        );
+        assert_eq!(accent(&image), 0, "the outline turns red");
+    }
+
+    #[test]
     fn every_menu_fits() {
         let _open = Open;
         let values = sample();
@@ -1073,7 +1461,7 @@ mod tests {
     #[test]
     fn a_closed_menu_keeps_no_renderer() {
         for open in [0, 150] {
-            render(&sample(), 170, open, 1.).unwrap();
+            render(&sample(), 170, open, &popup::View::default(), 1.).unwrap();
         }
         assert!(PAINTER.with(|painter| painter.borrow().is_none()));
     }

@@ -103,6 +103,7 @@ menu.instant_screenshot = 即時擷取畫面
 menu.live_capture_default = 預設即時擷取
 menu.start_with_windows = 隨 Windows 啟動
 menu.quit = 結束 Shotoshot
+menu.press_keys = 按下按鍵
 menu.seconds = {n} 秒
 menu.percent = {n}%
 menu.language_auto = Windows 語言

@@ -10,6 +10,50 @@ pub(in crate::app) const COMMAND: u32 = WM_APP + 13;
 /// Posted to the owner once the menu is hidden: w = 1 when a press on the notification icon
 /// closed it, so the release that follows does not open it again; l = its root window.
 pub(in crate::app) const CLOSED: u32 = WM_APP + 14;
+/// Posted to the owner about a shortcut row changed in place: w = row id, l = `EditOp::pack`.
+/// The menu cannot check keys: App does, then shows the result with `Popup::set_editing`.
+pub(in crate::app) const EDIT: u32 = WM_APP + 18;
+
+/// What happened to a shortcut row changed in place.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(in crate::app) enum EditOp {
+    /// Starts listening.
+    Begin,
+    /// A key pressed while listening, its repeats left out.
+    KeyDown(u32),
+    KeyUp(u32),
+    /// Gives the row its keys of a fresh install.
+    Default,
+    /// Leaves the row as it was.
+    Cancel,
+    /// Gives the row back its keys from before its last change.
+    Undo,
+}
+impl EditOp {
+    pub(in crate::app) fn pack(self) -> isize {
+        let (op, key) = match self {
+            Self::Begin => (0, 0),
+            Self::KeyDown(key) => (1, key),
+            Self::KeyUp(key) => (2, key),
+            Self::Default => (3, 0),
+            Self::Cancel => (4, 0),
+            Self::Undo => (5, 0),
+        };
+        (op | (key << 8)) as isize
+    }
+    pub(in crate::app) fn unpack(l: isize) -> Option<Self> {
+        let key = (l >> 8) as u32;
+        Some(match l & 0xff {
+            0 => Self::Begin,
+            1 => Self::KeyDown(key),
+            2 => Self::KeyUp(key),
+            3 => Self::Default,
+            4 => Self::Cancel,
+            5 => Self::Undo,
+            _ => return None,
+        })
+    }
+}
 const CLASS: PCWSTR = w!("Shotoshot.Menu");
 /// Shows the submenu of the row the pointer rests on, after the system's menu delay.
 const SHOW_TIMER: usize = 1;
@@ -59,6 +103,23 @@ fn pressed_on_icon(icon: RECT, pointer: POINT, pressed: bool) -> bool {
         && (icon.top..icon.bottom).contains(&pointer.y)
 }
 
+/// A shortcut row changing in place, and the row that offers its keys from before back.
+#[derive(Clone, Default)]
+pub(super) struct View {
+    pub(super) editing: Option<RowEdit>,
+    pub(super) before: Option<u32>,
+}
+impl View {
+    fn look(&self, id: u32) -> Look<'_> {
+        match &self.editing {
+            Some(edit) if row_id(edit.row) == Some(id) => Look::Editing(edit),
+            Some(_) => Look::Dimmed,
+            None if self.before == Some(id) => Look::Undo,
+            None => Look::Plain,
+        }
+    }
+}
+
 /// One column of rows, laid out in device pixels.
 pub(super) struct Column {
     rows: &'static [Row],
@@ -103,6 +164,7 @@ impl Column {
         origin: POINT,
         values: &Values,
         selected: Option<usize>,
+        view: &View,
         scale: f64,
     ) -> Result<()> {
         let band = |top: i32, bottom: i32| RECT {
@@ -128,6 +190,7 @@ impl Column {
                         selected: selected == Some(index),
                         checked: values.checked(row.id),
                         data: values.data(row.id),
+                        look: view.look(row.id),
                     },
                     scale,
                 )?;
@@ -166,6 +229,7 @@ struct Model {
     selected: [Option<usize>; 2],
     /// The arrow keys move in the submenu.
     in_sub: bool,
+    view: View,
     /// False for tests: windows stay off screen, where nothing fits a work area.
     on_screen: bool,
 }
@@ -274,7 +338,15 @@ impl Model {
         }
         Ok(())
     }
+    fn post_edit(&self, id: u32, op: EditOp) {
+        self.post(EDIT, id as usize, op.pack());
+    }
     fn activate(&mut self, column: usize, index: usize, keyboard: bool) -> Result<()> {
+        let id = self.columns[column].rows[index].id;
+        if column == 0 && only_shortcut(id) {
+            self.post_edit(id, EditOp::Begin);
+            return Ok(());
+        }
         match effect(&self.columns[column].rows[index]) {
             Effect::Apply(id) => self.post(COMMAND, id as usize, 1),
             Effect::Run(id) => {
@@ -373,6 +445,92 @@ impl Model {
         }
         Ok(())
     }
+    /// The size of root row `index`, in logical pixels.
+    fn row_size(&self, index: usize) -> Point {
+        let column = &self.columns[0];
+        Point {
+            x: column.width as f64 / self.scale,
+            y: (column.top(index + 1) - column.top(index)) as f64 / self.scale,
+        }
+    }
+    /// A release at `x`, in logical pixels, on root row `index`, when it changes a shortcut:
+    /// on the keys, or anywhere on a row only there for its shortcut.
+    fn shortcut_click(&self, index: usize, x: f64) -> Result<Option<EditOp>> {
+        let id = ROOT[index].id;
+        if shortcut_row(id).is_none() {
+            return Ok(None);
+        }
+        let size = self.row_size(index);
+        let caps =
+            with_painter(|renderer| caps_width_in(renderer, self.values.data(id), language()))?;
+        let undo = undo_part(size, caps);
+        if self.view.before == Some(id) && (undo.min.x..undo.max.x).contains(&x) {
+            return Ok(Some(EditOp::Undo));
+        }
+        // The keys and a little air around them.
+        let keys = size.x - MARGIN - caps - EDIT_SPACE;
+        Ok((only_shortcut(id) || x >= keys).then_some(EditOp::Begin))
+    }
+    /// A release at `x`, `y` while a row listens: its buttons act, anywhere else leaves it.
+    fn editing_click(&self, edit: &RowEdit, column: usize, x: f64, y: i32) -> Result<()> {
+        let Some(id) = row_id(edit.row) else {
+            return Ok(());
+        };
+        let index = self.columns[column].at(y);
+        if column == 1 || index.is_none_or(|index| ROOT[index].id != id) {
+            self.post_edit(id, EditOp::Cancel);
+            return Ok(());
+        }
+        let size = self.row_size(index.unwrap_or_default());
+        let extent = with_painter(|renderer| {
+            Ok(renderer
+                .measure_styled_text_in(
+                    tr_in(language(), Key::MenuPressKeys),
+                    settings_panel::SMALL_SIZE as f32,
+                    TextStyle::Body,
+                    language(),
+                )?
+                .x)
+        })?;
+        let [_, default, cancel] = edit_parts(size, slot_width(extent));
+        if (default.min.x..default.max.x).contains(&x) {
+            self.post_edit(id, EditOp::Default);
+        } else if (cancel.min.x..cancel.max.x).contains(&x) {
+            self.post_edit(id, EditOp::Cancel);
+        }
+        Ok(())
+    }
+    fn released(&mut self, column: usize, x: i32, y: i32) -> Result<()> {
+        let x = x as f64 / self.scale;
+        if let Some(edit) = &self.view.editing {
+            return self.editing_click(edit, column, x, y);
+        }
+        let Some(index) = self.columns[column].at(y) else {
+            return Ok(());
+        };
+        if column == 0
+            && let Some(op) = self.shortcut_click(index, x)?
+        {
+            self.post_edit(ROOT[index].id, op);
+            return Ok(());
+        }
+        self.activate(column, index, false)
+    }
+    /// A key while a row listens: every key goes to it, Esc leaves it and Backspace gives the
+    /// default keys; a key held down repeats, and only its first press counts.
+    fn editing_key(&self, edit: &RowEdit, msg: u32, key: u32, repeat: bool) {
+        let Some(id) = row_id(edit.row) else {
+            return;
+        };
+        let op = match msg {
+            WM_KEYUP | WM_SYSKEYUP => EditOp::KeyUp(key),
+            _ if repeat => return,
+            _ if key == VK_ESCAPE.0 as u32 => EditOp::Cancel,
+            _ if key == VK_BACK.0 as u32 => EditOp::Default,
+            _ => EditOp::KeyDown(key),
+        };
+        self.post_edit(id, op);
+    }
     fn paint(&self, hwnd: HWND, column: usize) -> Result<()> {
         unsafe {
             let mut paint = PAINTSTRUCT::default();
@@ -382,6 +540,7 @@ impl Model {
                 POINT::default(),
                 &self.values,
                 self.selected[column],
+                &self.view,
                 self.scale,
             );
             let _ = EndPaint(hwnd, &paint);
@@ -391,6 +550,20 @@ impl Model {
     fn handle(&mut self, hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> Result<Option<LRESULT>> {
         let column = usize::from(hwnd == self.sub);
         let y = (l.0 >> 16) as u16 as i16 as i32;
+        let x = l.0 as u16 as i16 as i32;
+        if let Some(edit) = &self.view.editing {
+            match msg {
+                // Alt combinations included: the system must not take them for its menu.
+                WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP => {
+                    self.editing_key(edit, msg, w.0 as u32, l.0 & (1 << 30) != 0);
+                    return Ok(Some(LRESULT(0)));
+                }
+                WM_CHAR | WM_SYSCHAR => return Ok(Some(LRESULT(0))),
+                // The rows keep still while one listens.
+                WM_MOUSEMOVE | WM_TIMER => return Ok(Some(LRESULT(0))),
+                _ => {}
+            }
+        }
         match msg {
             WM_PAINT => self.paint(hwnd, column)?,
             WM_MOUSEMOVE => {
@@ -406,11 +579,7 @@ impl Model {
             }
             WM_MOUSELEAVE => self.left(column),
             // Released, as in a native menu, with either button.
-            WM_LBUTTONUP | WM_RBUTTONUP => {
-                if let Some(index) = self.columns[column].at(y) {
-                    self.activate(column, index, false)?;
-                }
-            }
+            WM_LBUTTONUP | WM_RBUTTONUP => self.released(column, x, y)?,
             WM_KEYDOWN => self.key(VIRTUAL_KEY(w.0 as u16))?,
             WM_TIMER if w.0 == SHOW_TIMER => self.rested()?,
             WM_ACTIVATE if w.0 & 0xffff == WA_INACTIVE as usize => {
@@ -532,6 +701,7 @@ impl Popup {
                 open: None,
                 selected: [None; 2],
                 in_sub: false,
+                view: View::default(),
                 on_screen,
             }));
             for window in [root.0, sub] {
@@ -583,6 +753,22 @@ impl Popup {
     }
     pub(in crate::app) fn root(&self) -> HWND {
         self.model.borrow().root
+    }
+    /// Shows `editing` in its row, or no row listening; the other rows dim while one listens.
+    pub(in crate::app) fn set_editing(&self, editing: Option<RowEdit>) {
+        let mut model = self.model.borrow_mut();
+        model.view.editing = editing;
+        model.redraw(0);
+    }
+    /// The row listening, as the menu shows it.
+    pub(in crate::app) fn editing(&self) -> Option<RowEdit> {
+        self.model.borrow().view.editing.clone()
+    }
+    /// Shows the undo button of `row`, whose shortcut just changed; None hides it.
+    pub(in crate::app) fn set_before(&self, row: Option<ShortcutRow>) {
+        let mut model = self.model.borrow_mut();
+        model.view.before = row.and_then(row_id);
+        model.redraw(0);
     }
     /// Shows `values`, after App applied a setting.
     pub(in crate::app) fn update(&self, values: Values) -> Result<()> {
@@ -658,19 +844,114 @@ mod tests {
         let mut found = Vec::new();
         let mut message = MSG::default();
         unsafe {
-            while PeekMessageW(&mut message, Some(owner), COMMAND, CLOSED, PM_REMOVE).as_bool() {
+            while PeekMessageW(&mut message, Some(owner), COMMAND, EDIT, PM_REMOVE).as_bool() {
                 found.push((message.message, message.wParam.0, message.lParam.0));
             }
         }
         found
     }
     unsafe fn click(window: HWND, column: &Column, row: usize) {
+        unsafe { click_at(window, column, row, 20) }
+    }
+    unsafe fn click_at(window: HWND, column: &Column, row: usize, x: i32) {
         let y = (column.top(row) + column.top(row + 1)) / 2;
-        let at = LPARAM(((y as isize) << 16) | 20);
+        let at = LPARAM(((y as isize) << 16) | x as isize);
         unsafe {
             SendMessageW(window, WM_MOUSEMOVE, None, Some(at));
             SendMessageW(window, WM_LBUTTONUP, None, Some(at));
         }
+    }
+
+    fn edit(id: u32, op: EditOp) -> (u32, usize, isize) {
+        (EDIT, id as usize, op.pack())
+    }
+
+    #[test]
+    fn an_edit_survives_its_message() {
+        for op in [
+            EditOp::Begin,
+            EditOp::KeyDown(0x41),
+            EditOp::KeyUp(VK_SNAPSHOT.0 as u32),
+            EditOp::Default,
+            EditOp::Cancel,
+            EditOp::Undo,
+        ] {
+            assert_eq!(EditOp::unpack(op.pack()), Some(op));
+        }
+    }
+
+    #[test]
+    fn a_click_on_the_keys_changes_them_and_on_the_label_runs_the_command() {
+        let owner = owner();
+        let popup = hidden(owner.0);
+        let (width, root) = (popup.model.borrow().columns[0].width, popup.root());
+        let column = |popup: &Popup| Column::new(ROOT, &popup.model.borrow().values, 1.).unwrap();
+        unsafe { click_at(root, &column(&popup), index(1), width - 20) };
+        assert_eq!(posted(owner.0), [edit(1, EditOp::Begin)]);
+        // A row only there for its shortcut changes it wherever it is clicked.
+        unsafe { click(root, &column(&popup), index(171)) };
+        assert_eq!(posted(owner.0), [edit(171, EditOp::Begin)]);
+        unsafe { click(root, &column(&popup), index(1)) };
+        assert_eq!(posted(owner.0), [(COMMAND, 1, 0)]);
+    }
+
+    #[test]
+    fn a_listening_row_takes_every_key_and_escape_keeps_the_menu() {
+        let owner = owner();
+        let popup = hidden(owner.0);
+        let root = popup.root();
+        let size = |hwnd| {
+            let mut rect = RECT::default();
+            unsafe { GetWindowRect(hwnd, &mut rect).unwrap() };
+            rect
+        };
+        let before = size(root);
+        popup.set_editing(Some(RowEdit {
+            row: ShortcutRow::Capture,
+            held: Vec::new(),
+            error: String::new(),
+        }));
+        assert_eq!(
+            size(root),
+            before,
+            "listening never moves or resizes the menu"
+        );
+        let key = |msg: u32, vk: VIRTUAL_KEY, repeat: bool| unsafe {
+            SendMessageW(
+                root,
+                msg,
+                Some(WPARAM(vk.0 as usize)),
+                Some(LPARAM(if repeat { 1 << 30 } else { 1 })),
+            )
+        };
+        key(WM_SYSKEYDOWN, VK_A, false);
+        key(WM_KEYDOWN, VK_A, true);
+        key(WM_SYSKEYUP, VK_A, false);
+        key(WM_KEYDOWN, VK_BACK, false);
+        key(WM_KEYDOWN, VK_DOWN, false);
+        key(WM_KEYDOWN, VK_ESCAPE, false);
+        assert_eq!(
+            posted(owner.0),
+            [
+                edit(1, EditOp::KeyDown(VK_A.0 as u32)),
+                edit(1, EditOp::KeyUp(VK_A.0 as u32)),
+                edit(1, EditOp::Default),
+                edit(1, EditOp::KeyDown(VK_DOWN.0 as u32)),
+                edit(1, EditOp::Cancel),
+            ],
+            "nothing closes the menu"
+        );
+        assert_eq!(popup.model.borrow().selected, [None; 2]);
+        // A click on another row leaves the listening one as it was, and runs nothing.
+        let column = Column::new(ROOT, &popup.model.borrow().values, 1.).unwrap();
+        unsafe { click(root, &column, index(3)) };
+        assert_eq!(posted(owner.0), [edit(1, EditOp::Cancel)]);
+        assert_eq!(size(root), before);
+        // Done listening: the keys walk the menu again.
+        popup.set_editing(None);
+        key(WM_KEYDOWN, VK_DOWN, false);
+        assert!(posted(owner.0).is_empty());
+        assert!(popup.model.borrow().selected[0].is_some());
     }
 
     #[test]

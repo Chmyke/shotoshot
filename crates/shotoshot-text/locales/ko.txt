@@ -103,6 +103,7 @@ menu.instant_screenshot = 즉시 스크린샷
 menu.live_capture_default = 기본으로 실시간 캡처
 menu.start_with_windows = Windows 시작 시 실행
 menu.quit = Shotoshot 종료
+menu.press_keys = 키를 누르세요
 menu.seconds = {n}초
 menu.percent = {n}%
 menu.language_auto = Windows 언어

@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.35 · 2026-11-04
+
+- The tray menu learned the same trick: click the keys shown next to a command and type new ones right there, without opening Settings. Clicking the name still runs it.
+
 ## 0.3.34 · 2026-11-04
 
 - Changing a shortcut in Settings no longer opens a window: click its row, press the new keys, done. Esc changes your mind, the round arrow brings the default back, and right after saving, one click gives you the old keys again.

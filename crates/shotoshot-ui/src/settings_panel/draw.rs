@@ -21,13 +21,13 @@ const TEXT: [u8; 3] = [0xf0, 0xf0, 0xf0];
 const SECONDARY: [u8; 3] = [0xc6, 0xc6, 0xc6];
 const MUTED: [u8; 3] = [0x9a, 0x9a, 0x9a];
 const RULE: [u8; 3] = [0x49, 0x49, 0x49];
-const ACCENT: [u8; 3] = [0x60, 0xcd, 0xff];
+pub const ACCENT: [u8; 3] = [0x60, 0xcd, 0xff];
 /// A shortcut another program holds.
 const WARN: [u8; 3] = [0xf0, 0xa0, 0x4b];
 /// A refused shortcut, as the shortcut window shows it.
-const ERROR: [u8; 3] = [0xf8, 0x51, 0x49];
+pub const ERROR: [u8; 3] = [0xf8, 0x51, 0x49];
 /// The row of a shortcut being changed: a blue tint under the accent outline.
-const EDITING: [u8; 3] = [0x1d, 0x2a, 0x31];
+pub const EDITING: [u8; 3] = [0x1d, 0x2a, 0x31];
 /// The two halves of the preview: a dark editor and a light page.
 const PREVIEW_DARK: [u8; 3] = [0x1b, 0x1e, 0x24];
 const PREVIEW_LIGHT: [u8; 3] = [0xf3, 0xf4, 0xf6];
@@ -372,54 +372,14 @@ impl Panel {
             },
             scale,
         )?;
-        dashed_round_rect(canvas, slot, edge, scale)?;
-        // The keys held so far, then the caret where the next one lands.
-        let mut caret = slot.center().x;
-        if !edit.held.is_empty() {
-            let mut widths = Vec::with_capacity(edit.held.len());
-            for cap in &edit.held {
-                widths.push(
-                    canvas
-                        .measure_styled_text(cap, u(SMALL_SIZE), TextStyle::Body)?
-                        .x
-                        / scale,
-                );
-            }
-            let right = slot.center().x + u(keycaps_width(widths) / 2.);
-            keycaps(
-                canvas,
-                &edit.held,
-                right,
-                slot.center().y,
-                11.,
-                scale,
-                false,
-            )?;
-            caret = right + u(6.);
-        }
-        canvas.line(
-            Point {
-                x: caret,
-                y: slot.center().y - u(7.),
-            },
-            Point {
-                x: caret,
-                y: slot.center().y + u(7.),
-            },
-            Ink::solid(edge),
-            u(1.5),
-        )?;
-        square_button(canvas, default, scale)?;
-        restore_glyph(canvas, default.center(), SECONDARY, scale)?;
-        let c = cancel.center();
-        let arm = u(4.);
-        for (a, b) in [
-            (Point { x: -arm, y: -arm }, Point { x: arm, y: arm }),
-            (Point { x: -arm, y: arm }, Point { x: arm, y: -arm }),
-        ] {
-            canvas.line(c + a, c + b, Ink::solid(SECONDARY), u(1.6))?;
-        }
-        Ok(())
+        waiting_keys(
+            canvas,
+            [slot, default, cancel],
+            &edit.held,
+            None,
+            edge,
+            scale,
+        )
     }
 
     fn paint_keys<C: Canvas>(
@@ -772,8 +732,87 @@ pub fn keycaps<C: Canvas>(
     }
     Ok(())
 }
+/// The right of a listening shortcut row: the dashed box waiting for keys, with the modifiers
+/// `held` so far and a caret, then the default and cancel buttons, in device pixels.
+/// `placeholder` fills the empty box where a row has no room for a second line (the menu).
+pub fn waiting_keys<C: Canvas>(
+    canvas: &mut C,
+    [slot, default, cancel]: [Rect; 3],
+    held: &[String],
+    placeholder: Option<&str>,
+    edge: [u8; 3],
+    scale: f64,
+) -> Result<(), C::Error> {
+    let u = |value: f64| value * scale;
+    dashed_round_rect(canvas, slot, edge, scale)?;
+    // The keys held so far, then the caret where the next one lands.
+    let mut caret = slot.center().x;
+    if !held.is_empty() {
+        let mut widths = Vec::with_capacity(held.len());
+        for cap in held {
+            widths.push(
+                canvas
+                    .measure_styled_text(cap, u(SMALL_SIZE), TextStyle::Body)?
+                    .x
+                    / scale,
+            );
+        }
+        let right = slot.center().x + u(keycaps_width(widths) / 2.);
+        let half_height = (slot.max.y - slot.min.y) / scale / 2. - 3.;
+        keycaps(
+            canvas,
+            held,
+            right,
+            slot.center().y,
+            half_height,
+            scale,
+            false,
+        )?;
+        caret = right + u(6.);
+    } else if let Some(text) = placeholder {
+        let extent = canvas
+            .measure_styled_text(text, u(SMALL_SIZE), TextStyle::Body)?
+            .x;
+        let left = slot.center().x - (extent + u(6.)) / 2.;
+        let box_ = Rect {
+            min: Point {
+                x: left,
+                y: slot.min.y,
+            },
+            max: Point {
+                x: left + extent,
+                y: slot.max.y,
+            },
+        };
+        centered(canvas, text, box_, u(SMALL_SIZE), TextStyle::Body, MUTED)?;
+        caret = box_.max.x + u(6.);
+    }
+    canvas.line(
+        Point {
+            x: caret,
+            y: slot.center().y - u(7.),
+        },
+        Point {
+            x: caret,
+            y: slot.center().y + u(7.),
+        },
+        Ink::solid(edge),
+        u(1.5),
+    )?;
+    square_button(canvas, default, scale)?;
+    restore_glyph(canvas, default.center(), SECONDARY, scale)?;
+    let c = cancel.center();
+    let arm = u(4.);
+    for (a, b) in [
+        (Point { x: -arm, y: -arm }, Point { x: arm, y: arm }),
+        (Point { x: -arm, y: arm }, Point { x: arm, y: -arm }),
+    ] {
+        canvas.line(c + a, c + b, Ink::solid(SECONDARY), u(1.6))?;
+    }
+    Ok(())
+}
 /// A small square button of a shortcut row.
-fn square_button<C: Canvas>(canvas: &mut C, r: Rect, scale: f64) -> Result<(), C::Error> {
+pub fn square_button<C: Canvas>(canvas: &mut C, r: Rect, scale: f64) -> Result<(), C::Error> {
     canvas.fill_round_rect(r, scale * 5., Ink::solid(BUTTON))?;
     canvas.stroke_round_rect(
         r.expanded(-scale * 0.5),
@@ -783,7 +822,7 @@ fn square_button<C: Canvas>(canvas: &mut C, r: Rect, scale: f64) -> Result<(), C
     )
 }
 /// The arrow that turns back: the default keys, or the keys from before.
-fn restore_glyph<C: Canvas>(
+pub fn restore_glyph<C: Canvas>(
     canvas: &mut C,
     c: Point,
     rgb: [u8; 3],

@@ -107,7 +107,8 @@ impl App {
                 invalidate(hwnd);
             }
             WM_HOTKEY if self.setup && self.setup_ui.inline => {
-                // A registered shortcut pressed while a Settings row listens is that row's keys.
+                // A registered shortcut pressed while a Settings or menu row listens is that
+                // row's keys.
                 self.row_edit_record(hwnd, (l.0 as u32) & 0xffff, (l.0 as u32) >> 16)?;
             }
             WM_HOTKEY if self.setup => {
@@ -364,6 +365,11 @@ impl App {
             }
             tray_menu::COMMAND => self.menu_command(hwnd, w.0 as u32, l.0 != 0)?,
             tray_menu::CLOSED => self.menu_closed(HWND(l.0 as _), w.0 != 0),
+            tray_menu::EDIT => {
+                if let Some(op) = tray_menu::EditOp::unpack(l.0) {
+                    self.menu_edit(hwnd, w.0 as u32, op)?;
+                }
+            }
             WM_QUERYENDSESSION => {
                 // Windows is logging off or shutting down: the notes go to disk now, the
                 // wallpaper waits for the resident's next start. Never a message box here.

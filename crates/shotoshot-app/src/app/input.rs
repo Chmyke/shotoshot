@@ -149,7 +149,12 @@ impl App {
             .menu_closed_on_icon
             .take()
             .is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(1));
-        if self.menu.take().is_some() || closed_by_press {
+        if self.menu.is_some() {
+            self.menu_closing(hwnd);
+            self.menu = None;
+            return Ok(());
+        }
+        if closed_by_press {
             return Ok(());
         }
         self.menu(hwnd)
@@ -157,6 +162,7 @@ impl App {
     /// The menu window closed itself; `on_icon` when a press on the notification icon did it.
     pub(super) fn menu_closed(&mut self, root: HWND, on_icon: bool) {
         if self.menu.as_ref().is_some_and(|menu| menu.root() == root) {
+            self.menu_closing(self.tray.hWnd);
             self.menu = None;
             if on_icon {
                 self.menu_closed_on_icon = Some(std::time::Instant::now());
@@ -198,6 +204,7 @@ impl App {
     /// A row chosen in the menu; `stays_open` for a setting, which the menu then shows.
     pub(super) fn menu_command(&mut self, hwnd: HWND, chosen: u32, stays_open: bool) -> Result<()> {
         if !stays_open {
+            self.menu_closing(hwnd);
             self.menu = None;
         }
         self.run_menu_command(hwnd, chosen)?;

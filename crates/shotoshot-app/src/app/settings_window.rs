@@ -6,6 +6,7 @@
 //! INVARIANTS: Every change applies at once; a pointer change is saved when it is complete (a
 //! dragged slider saves on release). The window opens on the screen of the pointer, inside its
 //! work area.
+use super::row_edit::Place;
 use super::*;
 use crate::render::{D2dCanvas, Renderer};
 use crate::resources::OwnedWindow;
@@ -18,12 +19,15 @@ use shotoshot_ui::settings_panel::{
 const PREVIEW_TIMER: usize = 1;
 const CLASS: PCWSTR = w!("Shotoshot.Settings");
 
+/// A shortcut changed in its row, where, and its keys before.
+pub(super) type Before = (Place, ShortcutRow, Option<(u32, u32)>);
+
 /// The Settings window while it is open, and the page it showed last.
 pub(super) struct SettingsUi {
     pub(super) window: Option<SettingsWindow>,
     page: Page,
     /// The last shortcut changed in its row and its keys before, offered back by the row.
-    pub(super) before: Option<(ShortcutRow, Option<(u32, u32)>)>,
+    pub(super) before: Option<Before>,
 }
 impl Default for SettingsUi {
     fn default() -> Self {
@@ -338,8 +342,11 @@ impl App {
         }
     }
     fn close_settings_window(&mut self) {
-        self.settings_ui.before = None;
-        if self.setup && self.setup_ui.inline {
+        // What the menu offers back stays with the menu.
+        if matches!(self.settings_ui.before, Some((Place::Settings, ..))) {
+            self.settings_ui.before = None;
+        }
+        if matches!(self.editing_row(), Some((Place::Settings, _))) {
             let _ = self.row_edit_cancel(self.tray.hWnd);
         }
         // The switch that fixes the keyboard and the mouse goes with the window.
@@ -552,10 +559,10 @@ impl App {
         match command {
             Command::Startup => self.run_menu_command(owner, 4)?,
             Command::Live => self.run_menu_command(owner, 5)?,
-            Command::EditShortcut(row) => self.row_edit_begin(owner, row)?,
+            Command::EditShortcut(row) => self.row_edit_begin(owner, Place::Settings, row)?,
             Command::CancelEdit => self.row_edit_cancel(owner)?,
-            Command::DefaultShortcut(row) => self.row_edit_default(owner, row)?,
-            Command::UndoShortcut(row) => self.row_edit_undo(owner, row)?,
+            Command::DefaultShortcut(row) => self.row_edit_default(owner, Place::Settings, row)?,
+            Command::UndoShortcut(row) => self.row_edit_undo(owner, Place::Settings, row)?,
             Command::InputScale(value) => {
                 if let Some(id) = menu_id(&crate::settings::INPUT_SCALES, value, 141) {
                     self.run_menu_command(owner, id)?;

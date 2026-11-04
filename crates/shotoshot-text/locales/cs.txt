@@ -103,6 +103,7 @@ menu.instant_screenshot = Okamžitý snímek obrazovky
 menu.live_capture_default = Výchozí živé snímání
 menu.start_with_windows = Spouštět s Windows
 menu.quit = Ukončit Shotoshot
+menu.press_keys = Stiskni klávesy
 menu.seconds = {n} s
 menu.percent = {n} %
 menu.language_auto = Jazyk Windows

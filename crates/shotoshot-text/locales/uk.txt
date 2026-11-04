@@ -103,6 +103,7 @@ menu.instant_screenshot = Миттєвий знімок екрана
 menu.live_capture_default = Знімання в реальному часі за замовчуванням
 menu.start_with_windows = Запускати разом з Windows
 menu.quit = Вийти з Shotoshot
+menu.press_keys = Натисни клавіші
 menu.seconds = {n} с
 menu.percent = {n} %
 menu.language_auto = Мова Windows

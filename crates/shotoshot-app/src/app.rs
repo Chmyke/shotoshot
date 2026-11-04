@@ -431,8 +431,11 @@ impl App {
             }
         }
         // The Settings window shows the shortcut as recorded, or as it stays, and comes back
-        // to the front when the shortcut window was opened from it.
-        self.front_settings_window();
+        // to the front when the shortcut window was opened from it. A row changed in place
+        // already is where it was: fronting Settings would close the menu around it.
+        if !self.setup_ui.inline {
+            self.front_settings_window();
+        }
         self.refresh_settings_window()
     }
     fn save_shape_shortcut(
