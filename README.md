@@ -21,8 +21,8 @@ Windows SmartScreen may ask for confirmation; the SHA-256 of each download is pu
 site.
 
 On Linux (x86_64 and ARM64, glibc 2.31 or later, Wayland and X11), Shotoshot comes as a
-`tar.gz` with its own `README.txt`. Presentation mode, the Board, crop-size fields, Google Lens
-and live capture are not on Linux yet. It runs on a Raspberry Pi (ARM64); the x86_64 build is
+`tar.gz` with its own `README.txt`. Presentation mode (except the Magnifier, on labwc), the
+Board, crop-size fields, Google Lens and live capture are not on Linux yet. It runs on a Raspberry Pi (ARM64); the x86_64 build is
 compiled and tested on GitHub's Linux machines but has not yet been run on a regular PC, so a
 report from yours is welcome.
 
@@ -124,16 +124,18 @@ drawn keep theirs. Ctrl+Z undoes the whole stroke.
 | V | Selection: click, Shift+click to add or remove, rubber band |
 | R | Rectangle from corner to corner; Alt from its center; Shift for a square |
 | C | Circle from its center; Alt for an ellipse |
-| L | Straight line; Shift keeps the angle in 45° steps; Ctrl or Alt snaps its ends to closed shapes |
-| A | Arrow; Shift constrains to 45°; holding Ctrl or Alt snaps its ends to closed shapes, which then carry it along |
+| L | Straight line; Shift keeps the angle in 45° steps; Ctrl or Alt snaps its ends to closed shapes; drag the blue middle dot to bend it |
+| A | Arrow; Shift constrains to 45°; holding Ctrl or Alt snaps its ends to closed shapes, which then carry it along; drag the blue middle dot to bend it |
 | P / H | Pencil / highlighter; Shift draws a straight line in 45° steps |
+| X | Blur: drag a rectangle; the wheel sets the strength; the hidden pixels are destroyed in saved files too |
+| B | Text box: click and type, or drag first to set the width; hover it and pull one of its four dots to draw an arrow hooked to it |
 | T | Text; click an existing text with this tool to edit it |
 | E | Eraser: pen and highlighter ink goes where the disc passes, other objects go whole; the wheel sizes the disc; Ctrl+Z brings everything back |
 | I | Eyedropper: pick a color and copy its hex code |
 | G | Bucket: each click recolors the stroke or outline under it, fills the rectangle or circle, or else the whole capture, stopping at the outlines already drawn; right-click or Alt+click clears a fill |
 | F | Whole screen / back to the previous selection |
 | S / 1–6 | Color wheel / six quick colors |
-| Wheel | Stroke width; text size while typing it, with it selected or with the Text tool |
+| Wheel | Stroke width; text size while typing it, with it selected or with the Text tool; over a selected shape, resizes it; blur strength |
 | Arrows / Shift+arrows | Move the selected objects by 1 / 10 pixels |
 | Page Up / Page Down | Bring the selection forward / send it back, past the next object it overlaps; with Shift, to the front / to the back |
 | Del | Delete the selection |
@@ -194,10 +196,11 @@ click restores the previous selection; after the frame has been adjusted, it ext
 
 While typing text, the usual keys remain those of Windows. **Ctrl+Enter** confirms and **Esc**
 cancels the entry; a click on the capture also confirms the text. Text appears directly on the
-image with no opaque box: a click inside places the caret, a drag selects. The caret is currently
-steady, without blinking.
+image with no opaque box: a click inside places the caret, a drag selects. The caret blinks.
 
-Swatches, wheel and eyedropper also change the text color while typing. Confirming records text,
+Swatches, wheel and eyedropper also change the text color while typing. While a text box is
+held or selected, **Box color** and **Text color** appear before the swatches; right-click
+**Text color** to go back to automatic black or white. Confirming records text,
 size and color together as a single undoable action. The wheel adjusts text in steps between 8 and
 300 pixels: 2 px up to 24, 4 px up to 48, 8 px up to 96, then always six notches per doubling. A
 wheel gesture applied to several selected texts is also undone as a single action.
@@ -254,7 +257,7 @@ follows it; a name typed with `.png`, `.jpg` or `.jpeg` is written in that forma
 always written at their best, so there is no quality setting: PNG is lossless, JPEG uses the
 highest quality with color at full resolution. On an interface capture a JPEG is usually larger
 than the PNG; it is there for photos, video frames and sites that refuse PNG. The last format
-used is remembered, `Shot NNN` numbers are shared by both formats, and the instant screenshot
+used is remembered, the `001`, `002`… numbers are shared by both formats, and the instant screenshot
 stays a PNG. Linux has no Save dialog: **Ctrl+S** writes a PNG into the Pictures folder.
 
 ### Editable images (`.shoto`)
@@ -287,7 +290,7 @@ opens full screen on it, a smaller one in a window of its size.
 ![The Board on a desktop: two zones are drawn, filled and titled behind groups of icons that stay in front, a to-do is typed and an arrow points at a folder. After Esc the notes are part of the wallpaper: a window opens over them and closes, and an icon is dragged across them.](https://shotoshot.com/assets/board.gif)
 
 **Board** keeps notes, drawn or typed, on your desktop, below the icons. Press **Alt+B** (the
-**Board** row of the Shortcuts group changes it; it needs Ctrl or Alt) or choose **Edit board**
+**Edit board** row of the Capture group, in **Settings**, **Shortcuts**, changes it; it needs Ctrl or Alt) or choose **Edit board**
 in the tray menu. The editor opens on a picture of your desktop, background and icons but no
 window, with its usual tools; live capture is greyed. The toolbar sits on the screen under the
 pointer and follows it from screen to screen, and your icons are drawn in front of the notes, as
@@ -306,7 +309,7 @@ copy or save the picture and also end the session.
   gives your own background back at once, turning it on bakes the notes again in the background.
   The notes stay on the desktop when Shotoshot is not running.
 - **Clear board** removes every note. In the tray menu it acts at once, without asking, on every
-  screen, unplugged ones included; it is refused while a session is open. In a session, the broom
+  screen, unplugged ones included; it is refused while a session is open. In a session, the bin
   button before **Close** removes the notes shown and a painted background in one step:
   **Ctrl+Z** brings them back.
 - Uninstalling Shotoshot gives your own background back if the Board is shown. The notes stay in
@@ -332,13 +335,18 @@ Left or right click the Shotoshot icon: the switches are in the menu. Turn on **
 how each one looks. Halo, keyboard and mouse are off at
 launch; the shape shortcuts are available.
 
+**Pointer effects** has one card per effect in **Settings**: Halo, Trail, Clicks (ripples and a
+sound), Spotlight and Magnifier. **Show a click**, **Spotlight** and **Magnifier** can each get
+their own shortcut in **Settings**, **Shortcuts** (none by default). The Magnifier also runs on
+Linux with labwc (Raspberry Pi OS).
+
 | Command | Action |
 |---|---|
 | Alt+A | Draw an arrow; Shift for 45° angles |
 | Alt+R | Draw a rectangle; Shift for a square |
 | Alt+C | Draw a circle from its center; Alt while drawing for an ellipse |
 | Esc or right click while drawing | Cancel the gesture |
-| Ctrl+Alt+Esc | Hide everything and turn the three features off |
+| Ctrl+Alt+Esc | Turn everything off: pointer effects, magnifier, keyboard, mouse and shapes |
 
 Each shape keeps its letter from the capture editor (A, R, C), preceded by Alt. The drawing
 shortcuts work while **Temporary shapes** is on. **Settings**, **Shortcuts** changes each of the
@@ -357,28 +365,18 @@ The halo changes during a click, with a short pulse: red while pressed, back to 
 at once. The mini keyboard shows letters, digits and special keys while they are pressed, then
 fades them out over 600 ms. Space, Shift, Enter, Tab and the arrows use symbols; Ctrl, Alt and Num
 use short labels. Key color returns to rest at once; mouse buttons keep a 180 ms afterglow. You
-can drag the keyboard and lock it with the padlock key in its top right corner. It is unlocked by
-default; the free position and the lock are remembered. The background and the mouse are more
-transparent than the keys. No keystroke is written to a file. Keyboard and mouse keep working in
+can move the keyboard and mouse: turn on **Move keyboard and mouse** in **Settings**,
+**Presentation**, drag them, then turn it off; the position is remembered. There is no frame and
+no background: only the keys and buttons pressed appear. No keystroke is written to a file. Keyboard and mouse keep working in
 your applications.
 
 **Keyboard** and **Mouse** are turned on separately: keyboard alone, mouse alone or both in the
-same block, which shrinks to what is displayed. **Keyboard layout** picks the shape of the
-keyboard:
+same block. The keyboard is always the full one, numeric keypad included, but only the keys
+pressed appear; it follows the physical position of the keys, so AZERTY shows ZQSD.
+**Keyboard and mouse size** scales the block to 100, 150 or 200 %. Size is remembered; a
+keyboard that is off is not listened to, a mouse that is off is not drawn.
 
-| Shape | Content |
-|---|---|
-| Full | The whole keyboard, numeric keypad included |
-| Compact | Without the numeric keypad |
-| Gaming | Left-hand block: Esc, F1 to F4, the key left of 1, 1 to 5, then each row up to T, G and B, Ctrl, Win, Alt and a shortened space bar |
-
-The shapes follow the physical position of the keys: on AZERTY the Gaming block shows ZQSD with no
-setting. A key pressed outside the chosen shape is not displayed. **Keyboard and mouse size**
-scales the block to 100, 150 or 200 %. Shape and size are remembered; a keyboard that is off is
-not listened to, a mouse that is off is not drawn. The padlock takes the highest free key slot at
-the right of the keyboard, or the top of the mouse when the mouse is alone.
-
-Duration, position, shape, size and shortcuts are remembered; activations are not. Presentation
+Duration, position, size and shortcuts are remembered; activations are not. Presentation
 hides during a capture, then gets its previous activations back when the capture is closed or
 cancelled. A change in the display configuration keeps each feature's choice and brings the
 keyboard back onto a work area. Finish a capture in progress before turning these tools back on.
@@ -390,8 +388,7 @@ A **Display Capture** already shows the halo, the shapes and the keyboard. A **G
 the **Window Capture** of a single application, does not see them: add a **Window Capture** source
 above it, window `[shotoshot.exe]: Shotoshot overlay`, capture method **Windows 10 (1903 and
 up)**. It reproduces the halo, the shapes and the keyboard with their transparency, aligned on the
-whole set of screens: with several screens, crop the source to the game's screen. The padlock
-stays visible to you only. This off-screen window exists only while a presentation feature is on;
+whole set of screens: with several screens, crop the source to the game's screen. This off-screen window exists only while a presentation feature is on;
 OBS finds it again on reactivation.
 
 ## Labels, keyboard layouts and confirmations
@@ -453,7 +450,7 @@ delay until the first pixel shown on screen.
   screen holding the selection (Per-Monitor-V2). This is checked by tests and a 200 % reference
   render, not yet on a real high-density screen; IMEs still need validation on real setups.
 - Objects stay editable during the session, and later in an editable `.shoto` image saved on
-  purpose. No automatic history, detached editor, blur or share by link yet. Pinning captures
+  purpose. No automatic history, detached editor or share by link yet. Pinning captures
   was ruled out.
 
 ## License and contributing
