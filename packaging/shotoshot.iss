@@ -3,7 +3,7 @@
 ; Test:  powershell -NoProfile -ExecutionPolicy Bypass -File packaging\test-installer.ps1
 ; RULE: keep AppVersion equal to [workspace.package] version in Cargo.toml (checked by the build script).
 
-#define AppVersion "0.3.31"
+#define AppVersion "0.3.32"
 #define AppName "Shotoshot"
 #define AppExeName "shotoshot.exe"
 #define AppPublisher "Mickaël Mancini"
@@ -123,7 +123,8 @@ Root: HKCU; Subkey: "Software\Classes\Shotoshot.Document\shell\open\command"; Va
 ; unelevated even when setup was run as administrator. Silent installs launch nothing
 ; (test-installer.ps1, delivery step 6).
 ; The language chosen on our page is handed over just before (WriteLanguageChoice).
-Filename: "{app}\{#AppExeName}"; Flags: nowait runasoriginaluser skipifsilent; BeforeInstall: WriteLanguageChoice
+; --choose-shortcut opens the capture shortcut window at the end of every install.
+Filename: "{app}\{#AppExeName}"; Parameters: "--choose-shortcut"; Flags: nowait runasoriginaluser skipifsilent; BeforeInstall: WriteLanguageChoice
 
 ; Gives back to Windows what Shotoshot took, before the files are removed; the app owns the logic.
 ; - Print Screen goes back to the Snipping Tool if Shotoshot took it

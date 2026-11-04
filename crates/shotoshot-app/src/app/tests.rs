@@ -771,8 +771,12 @@ fn native_window_messages_edit_export_and_recover_after_failure() {
         {
             let mut app = state.borrow_mut();
             app.setup = true;
-            app.setup_ui.recording = true;
+            app.setup_ui = super::setup::Setup::first_run();
         }
+        // The window after an install: pressing a key replaces the proposed one at once.
+        send(hwnd, WM_KEYDOWN, 0x77, 0, 0);
+        assert_eq!(state.borrow().setup_ui.pending, Some((0, 0x77)));
+        state.borrow_mut().setup_ui.recording = true;
         send(hwnd, WM_KEYDOWN, 19, 0, 0);
         assert_eq!(state.borrow().setup_ui.pending, Some((0, 19)));
         assert_eq!(state.borrow().settings.key, 0, "recording is not saving");

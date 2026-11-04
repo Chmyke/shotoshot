@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.32 · 2026-11-04
+
+- Every install, updates included, now ends on the screenshot key: Print Screen is ready to go, Save keeps it, or just press the key you'd rather use.
+
 ## 0.3.31 · 2026-11-04
 
 - The installer no longer offers a vague "Windows language" option: your own language is simply ticked already, Polish for a Polish Windows, Spanish for a Spanish one.

@@ -284,10 +284,15 @@ impl Setup {
             ..Default::default()
         }
     }
-    /// First launch proposes Print Screen; Save confirms it, clicking the field changes it.
+    /// First launch proposes Print Screen; Save confirms it, any other key replaces it.
     pub fn first_run() -> Self {
+        Self::confirm((0, crate::print_screen::KEY))
+    }
+    /// Shown at the end of every install: the capture shortcut as it is, Save keeps it and
+    /// pressing another key replaces it (Mickael, 2026-11-04).
+    pub fn confirm(current: (u32, u32)) -> Self {
         Self {
-            pending: Some((0, crate::print_screen::KEY)),
+            pending: Some(current),
             focus: 2,
             ..Default::default()
         }

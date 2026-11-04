@@ -107,11 +107,11 @@ impl App {
                 invalidate(hwnd);
             }
             WM_HOTKEY if self.setup => {
-                if self.setup_ui.recording {
-                    self.setup_ui
-                        .record((l.0 as u32) & 0xffff, (l.0 as u32) >> 16);
-                    invalidate(hwnd);
-                }
+                // A registered shortcut pressed in the window is recorded, listening or not.
+                self.setup_ui.recording = true;
+                self.setup_ui
+                    .record((l.0 as u32) & 0xffff, (l.0 as u32) >> 16);
+                invalidate(hwnd);
             }
             WM_HOTKEY if self.board_hotkey.matches(w.0) => super::board::spawn_session()?,
             WM_HOTKEY if self.instant.hotkey.matches(w.0) => self.start_instant_capture(hwnd),
@@ -125,9 +125,7 @@ impl App {
                 self.recall.offer(recall::unpack(l));
                 self.start_capture(hwnd)?;
             }
-            WM_KEYUP | WM_SYSKEYUP
-                if self.setup && self.setup_ui.recording && w.0 == VK_SNAPSHOT.0 as usize =>
-            {
+            WM_KEYUP | WM_SYSKEYUP if self.setup && w.0 == VK_SNAPSHOT.0 as usize => {
                 // Print Screen may arrive only on release; other keys record on key-down.
                 self.setup_key(hwnd, w.0 as u32)?;
             }

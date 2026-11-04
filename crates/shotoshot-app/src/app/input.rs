@@ -67,7 +67,13 @@ impl App {
                 }
                 13 | 32 => self.setup_activate(hwnd, self.setup_ui.focus)?,
                 27 => self.setup_activate(hwnd, 1)?,
-                _ => {}
+                // Any other key is the new shortcut: no need to click the field first.
+                _ => {
+                    self.setup_ui.recording = true;
+                    self.setup_ui.error.clear();
+                    self.setup_ui.held = held_modifiers();
+                    self.setup_ui.record(self.setup_ui.held, key);
+                }
             }
         }
         invalidate(hwnd);
