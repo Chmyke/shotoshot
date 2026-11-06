@@ -393,8 +393,6 @@ impl Capture {
                 self.editor.eraser_size,
             ),
             Tool::Highlight => (self.editor.style.width * 5., self.editor.style.width * 5.),
-            // How far a pixel may land: the shuffle's reach either side.
-            Tool::Blur => (self.editor.blur_radius * 2., self.editor.blur_radius),
             _ => (self.editor.style.width, self.editor.style.width),
         }
     }

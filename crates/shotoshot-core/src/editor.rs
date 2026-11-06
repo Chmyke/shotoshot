@@ -144,8 +144,6 @@ pub struct Editor {
     pub ui_scale: f64,
     /// Diameter of the eraser's disc, in frame pixels.
     pub eraser_size: f64,
-    /// Strength of the next blur: its shuffle radius in frame pixels.
-    pub blur_radius: f64,
     objects: Vec<Object>,
     /// Coats over the captured pixels of the region, bottom first, under every object.
     background: Vec<Paint>,
@@ -167,7 +165,6 @@ impl Default for Editor {
             selected: Vec::new(),
             ui_scale: 1.,
             eraser_size: ERASER_SIZE,
-            blur_radius: BLUR_RADIUS,
             objects: Vec::new(),
             background: Vec::new(),
             undo: Vec::new(),

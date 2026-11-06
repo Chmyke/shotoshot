@@ -9,12 +9,35 @@
 //! at its edges, and is opaque.
 use crate::{Object, Rect, Shape};
 
-/// Shuffle radius of a new blur at 100 %, in pixels: text of about 20 px becomes unreadable
-/// (`tests/blur.rs`), the board of real renders validated by Mickaël on 2026-10-30.
+/// Shuffle radius of a blur drawn snugly around a line of text of about 20 px (a zone 26 px
+/// tall): that text becomes unreadable (`tests/blur.rs`), the board of real renders validated
+/// by Mickaël on 2026-10-30.
 pub const BLUR_RADIUS: f64 = 7.;
-/// Smallest and largest radius the format accepts; the wheel's ladder stays inside.
+/// A blur's strength is its zone's smaller side times this (Mickaël, 2026-11-06): one gesture,
+/// the zone, sets both. Every length of the effect scales with the radius, so text twice as
+/// big under a zone twice as big is hidden exactly as much (`tests/blur.rs`).
+pub const STRENGTH_PER_SIDE: f64 = BLUR_RADIUS / 26.;
+/// Bounds of a strength drawn: a zone thinner than 11 px still veils, and a wide block of
+/// text tops out at a soft cloud. Validated by Mickaël on 2026-11-06.
+pub const MIN_STRENGTH: f64 = 3.;
+pub const MAX_STRENGTH: f64 = 32.;
+/// Smallest and largest radius the format accepts.
 pub const MIN_BLUR_RADIUS: f64 = 1.;
 pub const MAX_BLUR_RADIUS: f64 = 64.;
+
+/// The strength of a blur over `zone`, from its smaller side: rounded up, never weaker than
+/// the proportion.
+pub fn strength(zone: Rect) -> f64 {
+    let size = zone.size();
+    let side = size.x.abs().min(size.y.abs());
+    if side.is_finite() {
+        (side * STRENGTH_PER_SIDE)
+            .ceil()
+            .clamp(MIN_STRENGTH, MAX_STRENGTH)
+    } else {
+        BLUR_RADIUS
+    }
+}
 
 /// Whole pixels of the frame, `width` × `height` from (`x`, `y`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -50,7 +73,8 @@ impl Zone {
     }
 }
 
-/// One blur over a frame: where, how strong, and the seed of its shuffle.
+/// One blur over a frame: where, how strong (from its zone, whatever the object's width says),
+/// and the seed of its shuffle.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct BlurPatch {
     /// The object's id: it seeds the shuffle, so a blur never flickers between frames.
@@ -69,7 +93,7 @@ impl BlurPatch {
         Some(Self {
             id: object.id,
             zone: Zone::of(r, width, height)?,
-            radius: whole_radius(object.style.width),
+            radius: strength(r) as u32,
         })
     }
     /// Every blur of `objects` over a frame of `width` × `height`, bottom first.
@@ -94,15 +118,6 @@ impl BlurPatch {
     /// The patch's opaque pixels, top-down, from the frame `pixels` `width` wide.
     pub fn pixels(&self, pixels: &[u8], width: u32) -> Vec<u8> {
         patch(pixels, width, self.zone, self.radius, self.id)
-    }
-}
-
-/// A radius as the effect uses it: whole pixels within the accepted range.
-fn whole_radius(radius: f64) -> u32 {
-    if radius.is_finite() {
-        radius.round().clamp(MIN_BLUR_RADIUS, MAX_BLUR_RADIUS) as u32
-    } else {
-        BLUR_RADIUS as u32
     }
 }
 

@@ -455,7 +455,6 @@ mod tests {
         let image = c.image.clone();
         c.region = Some(rect(42., 1., 78., 19.));
         let zone = rect(50., 4., 70., 14.);
-        c.editor.blur_radius = 3.;
         let id = draw(&mut c, Tool::Blur, zone.min, zone.max, none());
         let (scene, frame) = c.document(&c.image).unwrap();
         // The kept screen is the right one, from x = 40 of the frame.
@@ -492,7 +491,11 @@ mod tests {
         // The blur stays, still a blur, and blurs again once reopened.
         assert_eq!(scene.version(), 7);
         assert!(matches!(scene.objects[0].shape, Shape::Blur(_)));
-        assert_eq!(scene.objects[0].style.width, 3.);
+        assert_eq!(
+            shotoshot_core::blur::strength(zone),
+            3.,
+            "the weakest strength, from a zone 10 px tall"
+        );
         let screens = vec![rect(0., 0., 40., 20.).into()];
         let reopened =
             Capture::reopen(scene, frame.clone(), screens, |_, _, _| Some(point(1., 1.))).unwrap();

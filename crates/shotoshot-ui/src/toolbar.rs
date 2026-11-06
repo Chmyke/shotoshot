@@ -341,7 +341,10 @@ fn hint_in(label: Key, action: Action, language: Language) -> String {
     let template = match action {
         // Drawn from its centre, Alt frees it: nobody guessed (blind test of 2026-11-05).
         Action::Tool(Tool::Ellipse) => Key::TooltipEllipse,
-        Action::Tool(tool) if tool != Tool::Select => Key::TooltipWithShortcutAndWheel,
+        // The blur's strength follows its zone: the wheel does not change it.
+        Action::Tool(tool) if !matches!(tool, Tool::Select | Tool::Blur) => {
+            Key::TooltipWithShortcutAndWheel
+        }
         _ => Key::TooltipWithShortcut,
     };
     Text::with_in(language, template, &args).to_string()
@@ -779,7 +782,7 @@ mod tests {
         "Arrow · A · Scroll to resize",
         "Pen · P · Scroll to resize",
         "Highlighter · H · Scroll to resize",
-        "Blur · X · Scroll to resize",
+        "Blur · X",
         "Text box · B · Scroll to resize",
         "Text · T · Scroll to resize",
         "Eraser · E · Scroll to resize",
@@ -950,12 +953,10 @@ mod tests {
         assert_eq!(blur.panel, 0, "among the drawing tools");
         assert_eq!(
             tooltip_in(blur, Language::En),
-            "Blur · X · Scroll to resize"
+            "Blur · X",
+            "its strength follows its zone, not the wheel"
         );
-        assert_eq!(
-            tooltip_in(blur, Language::Fr),
-            "Flou · X · Molette pour la taille"
-        );
+        assert_eq!(tooltip_in(blur, Language::Fr), "Flou · X");
         let board = tools(true);
         assert!(board.iter().all(|(t, _)| *t != Tool::Blur));
         assert_eq!(board.len() + 1, capture.len());

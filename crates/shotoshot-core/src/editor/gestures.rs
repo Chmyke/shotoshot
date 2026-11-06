@@ -64,8 +64,9 @@ impl Editor {
                 return;
             }
             let style = match shape {
+                // Its strength follows its zone; the width only fills the format's field.
                 Shape::Blur(_) => Style {
-                    width: self.blur_radius,
+                    width: crate::BLUR_RADIUS,
                     ..self.style
                 },
                 _ => self.style,

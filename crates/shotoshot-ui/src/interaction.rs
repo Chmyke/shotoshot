@@ -395,6 +395,9 @@ impl Capture {
                     self.editor.apply_color();
                 }
             }
+            // A blur's strength follows its zone (Mickaël, 2026-11-06): the wheel has nothing
+            // to set with the blur tool in hand, nor on a selection of blurs only.
+            Action::Thinner | Action::Thicker if self.wheel_meets_only_blurs() => {}
             Action::Thinner | Action::Thicker => {
                 let notch = if a == Action::Thicker { 1 } else { -1 };
                 self.width_preview = true;
@@ -402,24 +405,12 @@ impl Capture {
                     // The eraser has a size of its own: the pen keeps its width.
                     self.editor.eraser_size =
                         wheel::eraser_size_after(self.editor.eraser_size, notch);
-                } else if let Some((width, blur)) = self.editor.step_selected_widths(|w, blur| {
-                    if blur {
-                        wheel::blur_radius_after(w, notch)
-                    } else {
-                        wheel::stroke_width_after(w, notch)
-                    }
-                }) {
+                } else if let Some(width) = self
+                    .editor
+                    .step_selected_widths(|w| wheel::stroke_width_after(w, notch))
+                {
                     // A selection grows from its own widths and keeps its colours.
-                    if blur {
-                        self.editor.blur_radius = width;
-                    } else {
-                        self.editor.style.width = width;
-                    }
-                } else if self.editor.tool == Tool::Blur {
-                    // So does the blur's strength, the one being drawn included.
-                    self.editor.blur_radius =
-                        wheel::blur_radius_after(self.editor.blur_radius, notch);
-                    self.editor.apply_style();
+                    self.editor.style.width = width;
                 } else {
                     self.editor.style.width =
                         wheel::stroke_width_after(self.editor.style.width, notch);
@@ -1036,48 +1027,44 @@ mod tests {
         c.editor.objects().last().unwrap().id
     }
     #[test]
-    fn the_blur_tool_drags_a_zone_at_the_strength_the_wheel_set() {
+    fn the_blur_tool_drags_a_zone_and_the_wheel_changes_nothing() {
         let (mut c, mut host) = selected();
         c.action(&mut host, Action::Tool(Tool::Blur));
         let pen = c.editor.style.width;
         c.wheel(&mut host, 120).unwrap();
-        assert_eq!(c.editor.blur_radius, 8., "one rung up from 7");
         assert_eq!(c.editor.style.width, pen, "the pen keeps its width");
+        assert!(!c.width_ring_visible(), "no ring: there is no size to show");
+        assert!(!c.wheel_hint_visible(), "nor a hint to scroll");
         blur(&mut c, &mut host, p(150., 150.), p(350., 220.));
-        let o = &c.editor.objects()[0];
         assert_eq!(
-            o.shape,
+            c.editor.objects()[0].shape,
             Shape::Blur(Rect::new(p(150., 150.), p(350., 220.)).unwrap())
         );
-        assert_eq!(o.style.width, 8.);
         assert!(!host.captured, "the pointer is let go");
-        // The wheel while dragging sets the strength of the blur being drawn.
+        // The wheel while dragging changes nothing either: one gesture, the zone.
         let m = Modifiers::default();
         c.pointer_down(&mut host, p(400., 150.), m).unwrap();
         c.pointer_move(&mut host, p(500., 250.), m);
+        let before = c.editor.objects().to_vec();
         c.wheel(&mut host, 240).unwrap();
+        assert_eq!(c.editor.objects(), before);
         c.pointer_up(&mut host, p(500., 250.), m);
-        assert_eq!(c.editor.objects()[1].style.width, 12.);
+        assert_eq!(c.editor.style.width, pen);
         c.action(&mut host, Action::Undo);
-        assert_eq!(
-            c.editor.objects().len(),
-            1,
-            "drawn and strengthened: one step"
-        );
+        assert_eq!(c.editor.objects().len(), 1, "drawn: one step");
     }
     #[test]
-    fn the_wheel_strengthens_the_selected_blurs_in_one_step() {
+    fn the_wheel_leaves_selected_blurs_alone() {
         let (mut c, mut host) = selected();
         let id = blur(&mut c, &mut host, p(150., 150.), p(350., 220.));
         c.action(&mut host, Action::Tool(Tool::Select));
         c.editor.select_only(id);
+        let before = c.editor.objects().to_vec();
         c.wheel(&mut host, -120).unwrap();
-        assert_eq!(c.editor.objects()[0].style.width, 6.);
-        assert_eq!(c.editor.blur_radius, 6., "the next blur follows");
+        assert_eq!(c.editor.objects(), before);
         assert_eq!(c.editor.style.width, Style::default().width);
         c.action(&mut host, Action::Undo);
-        assert_eq!(c.editor.objects()[0].style.width, 7.);
-        assert_eq!(c.editor.objects().len(), 1);
+        assert!(c.editor.objects().is_empty(), "the wheel added no step");
     }
     #[test]
     fn the_palette_and_the_bucket_leave_a_blur_alone() {

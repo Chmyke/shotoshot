@@ -229,7 +229,7 @@ impl Capture {
         }
     }
     /// Brings the editor in line with the screen under the region: handle sizes, and the
-    /// current stroke width, eraser, blur strength and text size, so an annotation looks the
+    /// current stroke width, eraser and text size, so an annotation looks the
     /// same at every scale.
     pub(crate) fn adopt_scale(&mut self) {
         let scale = self.ui_scale();
@@ -240,7 +240,6 @@ impl Capture {
         let factor = scale / self.style_scale;
         self.editor.style.width = wheel::stroke_width_scaled(self.editor.style.width, factor);
         self.editor.eraser_size = wheel::eraser_size_scaled(self.editor.eraser_size, factor);
-        self.editor.blur_radius = wheel::blur_radius_scaled(self.editor.blur_radius, factor);
         self.text_size = wheel::text_size_scaled(self.text_size.into(), factor) as f32;
         self.style_scale = scale;
     }
@@ -515,6 +514,19 @@ impl Capture {
                     && !self.selecting
                     && matches!(self.editor.tool, Tool::Pen | Tool::Highlight | Tool::Eraser)))
     }
+    /// True when a wheel notch would land on blurs alone, which have no width to change: the
+    /// blur tool in hand with nothing selected, or a selection of blurs only.
+    pub(crate) fn wheel_meets_only_blurs(&self) -> bool {
+        let selected = &self.editor.selected;
+        if selected.is_empty() {
+            return self.editor.tool == Tool::Blur;
+        }
+        self.editor
+            .objects()
+            .iter()
+            .filter(|o| selected.contains(&o.id))
+            .all(Object::is_blur)
+    }
     /// The wheel hint shows where a wheel notch would resize the tool about to draw.
     pub fn wheel_hint_visible(&self) -> bool {
         self.wheel_hint
@@ -523,7 +535,8 @@ impl Capture {
             && self.picker.is_none()
             && self.region.is_some()
             && !self.selecting
-            && self.editor.tool != Tool::Select
+            // Nothing to resize: the select tool, and the blur, whose strength is its zone's.
+            && !matches!(self.editor.tool, Tool::Select | Tool::Blur)
             && !self.toolbar_contains(self.pointer)
             // A pointer gone from the window would pin the badge to a corner.
             && (0. ..self.image.width as f64).contains(&self.pointer.x)

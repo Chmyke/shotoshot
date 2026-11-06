@@ -1,6 +1,8 @@
 //! The blur tool: what its effect does to the capture, and how its objects behave in the
 //! editor. No screen is read: every frame is painted here.
-use shotoshot_core::blur::{Zone, box_radius, flatten, patch};
+use shotoshot_core::blur::{
+    MAX_STRENGTH, MIN_STRENGTH, Zone, box_radius, flatten, patch, strength,
+};
 use shotoshot_core::{
     BLUR_RADIUS, BlurPatch, Editor, Modifiers, Object, Point, Rect, Shape, Style, Tool,
 };
@@ -260,18 +262,17 @@ fn drag(e: &mut Editor, tool: Tool, from: Point, to: Point) -> u64 {
 }
 
 #[test]
-fn a_drag_of_the_blur_tool_sets_down_a_zone_at_the_blur_strength() {
+fn a_drag_of_the_blur_tool_sets_down_a_zone_whose_strength_follows_it() {
     let mut e = Editor::default();
     e.style.width = 3.;
-    e.blur_radius = 10.;
     let id = drag(&mut e, Tool::Blur, at(80., 60.), at(20., 10.));
     let o = &e.objects()[0];
     assert_eq!(o.id, id);
-    assert_eq!(
-        o.shape,
-        Shape::Blur(Rect::new(at(20., 10.), at(80., 60.)).unwrap())
-    );
-    assert_eq!(o.style.width, 10., "the blur strength, not the pen's width");
+    let zone = Rect::new(at(20., 10.), at(80., 60.)).unwrap();
+    assert_eq!(o.shape, Shape::Blur(zone));
+    // 50 px tall, 60 wide: the smaller side sets it, the pen's width plays no part.
+    let patch = BlurPatch::of(o, 200, 200).unwrap();
+    assert_eq!(patch.radius, 14);
     assert_eq!(e.style.width, 3.);
     // A click sets nothing down.
     e.tool = Tool::Blur;
@@ -350,19 +351,108 @@ fn colours_and_the_bucket_pass_a_blur_by() {
 }
 
 #[test]
-fn the_wheel_step_tells_a_blur_from_a_stroke() {
+fn a_width_step_passes_a_blur_by() {
     let mut e = Editor::default();
     e.style.width = 4.;
     let blur = drag(&mut e, Tool::Blur, at(20., 20.), at(120., 80.));
     let line = drag(&mut e, Tool::Line, at(200., 20.), at(300., 20.));
+    let before = e.objects()[0].clone();
     e.selected = vec![blur, line];
-    let first = e.step_selected_widths(|w, blur| if blur { w * 2. } else { w + 1. });
-    assert_eq!(first, Some((14., true)));
-    assert_eq!(e.objects()[0].style.width, 14.);
+    assert_eq!(e.step_selected_widths(|w| w + 1.), Some(5.));
+    assert_eq!(e.objects()[0], before, "the blur is untouched");
     assert_eq!(e.objects()[1].style.width, 5.);
+    e.selected = vec![blur];
+    assert_eq!(e.step_selected_widths(|w| w + 1.), None, "blurs alone");
     e.undo();
-    assert_eq!(e.objects()[0].style.width, BLUR_RADIUS, "one undo step");
     assert_eq!(e.objects()[1].style.width, 4.);
+}
+
+#[test]
+fn the_strength_is_the_smaller_side_in_proportion_within_its_bounds() {
+    let zone = |w: f64, h: f64| Rect::new(at(0., 0.), at(w, h)).unwrap();
+    // A snug zone around a line of 20 px text keeps the board's strength.
+    assert_eq!(strength(zone(400., 26.)), BLUR_RADIUS);
+    // Twice the zone, twice the strength, whichever side is the smaller.
+    assert_eq!(strength(zone(52., 400.)), 2. * BLUR_RADIUS);
+    assert_eq!(strength(zone(78., 78.)), 3. * BLUR_RADIUS);
+    // Rounded up: never weaker than the proportion.
+    assert_eq!(strength(zone(400., 27.)), 8.);
+    assert_eq!(strength(zone(400., 4.)), MIN_STRENGTH);
+    assert_eq!(strength(zone(2000., 1000.)), MAX_STRENGTH);
+    // Resizing a blur changes its strength with it.
+    let mut e = Editor::default();
+    drag(&mut e, Tool::Blur, at(20., 20.), at(420., 46.));
+    let radius = |e: &Editor| BlurPatch::of(&e.objects()[0], 1000, 1000).unwrap().radius;
+    assert_eq!(radius(&e), 7);
+    e.tool = Tool::Select;
+    e.select_only(e.objects()[0].id);
+    e.begin(at(420., 46.), Modifiers::default());
+    e.update(at(420., 72.));
+    e.finish();
+    assert_eq!(radius(&e), 14);
+}
+
+/// `pixels` (`width` wide) blown up `k` times by repeating each pixel: the same picture,
+/// exactly, at `k` times the size.
+fn scaled(pixels: &[u8], width: u32, height: u32, k: u32) -> Vec<u8> {
+    let quads = pixels.as_chunks::<4>().0;
+    let mut out = Vec::with_capacity(pixels.len() * (k * k) as usize);
+    for y in 0..height * k {
+        for x in 0..width * k {
+            out.extend_from_slice(&quads[((y / k) * width + x / k) as usize]);
+        }
+    }
+    out
+}
+
+#[test]
+fn text_twice_as_big_under_a_zone_twice_as_big_is_hidden_as_much() {
+    // Mickaël, 2026-11-06: masking must be proportional. Two pages of different text, each
+    // blurred by a zone in proportion to it; what is left to tell them apart stays the same
+    // share of what told them apart, at 20, 40 and 80 px.
+    let (width, height) = (160u32, 84u32);
+    let (a, b) = (text_frame(width, height, 42), text_frame(width, height, 43));
+    let survives = |k: u32| {
+        let (w, h) = (width * k, height * k);
+        let (a, b) = (scaled(&a, width, height, k), scaled(&b, width, height, k));
+        // A zone as tall as a snug line around text of 20k px, over the whole page.
+        let radius = strength(Rect::new(at(0., 0.), at(f64::from(w), f64::from(26 * k))).unwrap());
+        let z = zone(0, 0, w, h);
+        let (blur_a, blur_b) = (
+            patch(&a, w, z, radius as u32, 9),
+            patch(&b, w, z, radius as u32, 9),
+        );
+        let difference = |x: &[u8], y: &[u8]| {
+            let d: Vec<f64> = luma(x).iter().zip(luma(y)).map(|(p, q)| p - q).collect();
+            energy(&d)
+        };
+        difference(&blur_a, &blur_b) / difference(&a, &b)
+    };
+    let base = survives(1);
+    assert!(base < 0.1, "{base:.4} survives at 20 px");
+    for k in [2, 4] {
+        let s = survives(k);
+        // 0.0929, 0.0984 and 0.1060 for 20, 40 and 80 px measured on 2026-11-06.
+        assert!(
+            (s / base - 1.).abs() < 0.2,
+            "{s:.4} at {}x against {base:.4}",
+            k
+        );
+    }
+    // While a fixed strength, as the wheel set it before, lets big text through.
+    let fixed = |k: u32| {
+        let (w, h) = (width * k, height * k);
+        let (a, b) = (scaled(&a, width, height, k), scaled(&b, width, height, k));
+        let z = zone(0, 0, w, h);
+        let d: Vec<f64> = luma(&patch(&a, w, z, 7, 9))
+            .iter()
+            .zip(luma(&patch(&b, w, z, 7, 9)))
+            .map(|(p, q)| p - q)
+            .collect();
+        let o: Vec<f64> = luma(&a).iter().zip(luma(&b)).map(|(p, q)| p - q).collect();
+        energy(&d) / energy(&o)
+    };
+    assert!(fixed(4) > 2. * base, "a fixed strength hides big text less");
 }
 
 #[test]
@@ -389,7 +479,6 @@ fn the_eraser_takes_a_blur_by_its_edge_only() {
 #[test]
 fn a_copied_blur_pastes_as_a_blur() {
     let mut e = Editor::default();
-    e.blur_radius = 12.;
     let id = drag(&mut e, Tool::Blur, at(20., 20.), at(120., 80.));
     e.select_only(id);
     let copied = e.copy_selected();
@@ -400,7 +489,11 @@ fn a_copied_blur_pastes_as_a_blur() {
         pasted.shape,
         Shape::Blur(Rect::new(at(30., 30.), at(130., 90.)).unwrap())
     );
-    assert_eq!(pasted.style.width, 12.);
+    assert_eq!(
+        BlurPatch::of(pasted, 400, 400).unwrap().radius,
+        17,
+        "the same strength"
+    );
 }
 
 /// Cost of blurring a whole 4K frame, the worst a drag can ask. Run by hand:

@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.40 · 2026-11-06
+
+- The blur no longer asks twice: draw the zone and its strength follows its size, so a big title gets a thick fog and a small line just enough.
+
 ## 0.3.39 · 2026-11-06
 
 - A mini toolbar for quick captures: switch it on in Settings, and each capture opens with just the pen, copy and save, while the three dots bring back every other tool. Thanks to moondling for the idea.
