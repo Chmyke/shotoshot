@@ -63,6 +63,8 @@ toolbar.google_lens = 使用 Google 智慧鏡頭搜尋
 toolbar.copy_image = 複製影像
 toolbar.save = 儲存
 toolbar.close = 關閉
+toolbar.more_tools = 更多工具
+toolbar.fewer_tools = 收起工具
 toolbar.clear_board = 清除 Board · {shortcut} 可復原
 
 capture.nothing_to_undo = 沒有可復原的動作
@@ -293,4 +295,6 @@ settings.edit_more = 再加一個字母或按鍵
 settings.edit_saved = 已儲存，之前：{keys}
 settings.start_with_windows_note = 登入後即可擷取。
 settings.live_capture_note = 擷取畫面會持續更新，直到你複製或儲存為止。
+settings.mini_toolbar = 迷你工具列
+settings.mini_toolbar_note = 擷取畫面只顯示畫筆、複製和儲存。⋯ 顯示其餘工具。
 settings.shape_duration_note = 暫時圖形在螢幕上停留的時間。

@@ -416,6 +416,7 @@ impl Editor {
         self.capture.editor.style.width = self.settings.capture_stroke_width as f64;
         self.capture.editor.eraser_size = self.settings.capture_eraser_size as f64;
         self.capture.wheel_hint = !self.settings.wheel_learned;
+        self.capture.use_mini_toolbar(self.settings.mini_toolbar);
     }
     /// Replaces the capture being edited, and the frozen frame behind it.
     fn show(&mut self, capture: Capture) -> Result<(), Box<dyn Error>> {

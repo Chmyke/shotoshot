@@ -365,6 +365,7 @@ impl Capture {
             );
         match a {
             Action::Fill => self.bucket = !armed,
+            Action::MoreTools => self.toolbar_unfolded = !self.toolbar_unfolded,
             Action::CustomColor => {
                 self.picker = Some(ColorPicker::new(
                     self.custom_color,
@@ -1114,6 +1115,46 @@ mod tests {
                 .iter()
                 .all(|b| b.action != Action::Tool(Tool::Blur))
         );
+    }
+    #[test]
+    fn the_mini_toolbar_opens_folded_on_the_pen_and_keys_reach_every_tool() {
+        let (mut c, mut host) = selected();
+        c.use_mini_toolbar(true);
+        assert_eq!(c.editor.tool, Tool::Pen, "the one drawing tool it shows");
+        assert_eq!(c.fold(), crate::toolbar::Fold::Folded);
+        let shown = |c: &Capture| c.buttons().iter().map(|b| b.action).collect::<Vec<_>>();
+        assert!(!shown(&c).contains(&Action::Tool(Tool::Rectangle)));
+        // R still picks the rectangle, hidden or not.
+        assert_eq!(
+            c.key(&mut host, 82, Modifiers::default()),
+            crate::keys::KeyOutcome::Action(Action::Tool(Tool::Rectangle))
+        );
+        c.action(&mut host, Action::MoreTools);
+        assert_eq!(c.fold(), crate::toolbar::Fold::Unfolded);
+        assert!(shown(&c).contains(&Action::Tool(Tool::Rectangle)));
+        assert!(
+            c.buttons()
+                .iter()
+                .any(|b| b.action == Action::MoreTools && b.active),
+            "lit while unfolded"
+        );
+        c.action(&mut host, Action::MoreTools);
+        assert_eq!(c.fold(), crate::toolbar::Fold::Folded);
+        // The next capture opens folded again.
+        c.action(&mut host, Action::MoreTools);
+        c.use_mini_toolbar(true);
+        assert_eq!(c.fold(), crate::toolbar::Fold::Folded);
+        c.use_mini_toolbar(false);
+        assert_eq!(c.fold(), crate::toolbar::Fold::Full);
+    }
+    #[test]
+    fn a_board_keeps_the_full_toolbar_and_its_tool_with_the_mini_one_on() {
+        let (mut c, _) = selected();
+        c.board = true;
+        c.editor.tool = Tool::Arrow;
+        c.use_mini_toolbar(true);
+        assert_eq!(c.editor.tool, Tool::Arrow);
+        assert_eq!(c.fold(), crate::toolbar::Fold::Full);
     }
     #[test]
     fn escape_puts_the_bucket_down_first() {

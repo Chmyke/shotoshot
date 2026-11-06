@@ -233,6 +233,7 @@ impl App {
         Ok(Values {
             startup: crate::startup::enabled()?,
             live: s.live_capture,
+            mini_toolbar: s.mini_toolbar,
             shortcuts: SHORTCUT_ROWS.map(shortcut),
             input_scale: s.presentation.input_scale,
             duration_ms: s.presentation.duration_ms,
@@ -559,6 +560,15 @@ impl App {
         match command {
             Command::Startup => self.run_menu_command(owner, 4)?,
             Command::Live => self.run_menu_command(owner, 5)?,
+            // Not in the menu: what is set once lives here (Mickael, 2026-10-30).
+            Command::MiniToolbar => {
+                let previous = self.settings.mini_toolbar;
+                self.settings.mini_toolbar = !previous;
+                if let Err(error) = self.settings.save() {
+                    self.settings.mini_toolbar = previous;
+                    return Err(crate::settings::unsaved(error));
+                }
+            }
             Command::EditShortcut(row) => self.row_edit_begin(owner, Place::Settings, row)?,
             Command::CancelEdit => self.row_edit_cancel(owner)?,
             Command::DefaultShortcut(row) => self.row_edit_default(owner, Place::Settings, row)?,

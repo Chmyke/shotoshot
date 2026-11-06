@@ -435,6 +435,13 @@ fn paint<C: Canvas>(
             g.box_at(6., 1., 7., 6.)?;
             g.box_at(6., 12., 9., 7.)?;
         }
+        // Three dots: what the folded toolbar keeps out of sight.
+        Action::MoreTools => {
+            for x in [4., 10., 16.] {
+                let (center, radius) = (g.p(x, 10.), g.r(1.9, 1.9));
+                g.canvas.fill_ellipse(center, radius, g.ink)?;
+            }
+        }
         Action::Close => {
             g.line((4., 4.), (16., 16.))?;
             g.line((16., 4.), (4., 16.))?;

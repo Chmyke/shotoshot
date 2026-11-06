@@ -39,8 +39,33 @@ pub enum Action {
     SaveAs,
     /// Board sessions only: every note and the background gone, one undo step. No key.
     ClearBoard,
+    /// Mini toolbar only: shows the full toolbar, or folds it back (`Fold`). No key.
+    MoreTools,
     Close,
 }
+
+/// How much of the toolbar a capture shows. The mini toolbar is a setting; whether it is
+/// unfolded belongs to the capture alone, which always opens folded.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Fold {
+    /// The mini toolbar is off: every button, as always.
+    #[default]
+    Full,
+    /// Only `MINI` and the button that unfolds the rest.
+    Folded,
+    /// Every button, and the lit button that folds them back.
+    Unfolded,
+}
+
+/// What the folded mini toolbar keeps (issue #6): the pen, then undo, copy, save and close;
+/// Google Lens went too (Mickael, 2026-11-06). Every key still reaches every other action.
+const MINI: [Action; 5] = [
+    Action::Tool(Tool::Pen),
+    Action::Undo,
+    Action::Copy,
+    Action::Save,
+    Action::Close,
+];
 #[derive(Clone)]
 pub struct Button {
     pub bounds: Rect,
@@ -329,6 +354,7 @@ fn all_hints() -> impl Iterator<Item = (Key, Action)> {
         .map(|&(label, action, ..)| (label, action))
         .chain(LABEL_ACTIONS)
         .chain(BOARD_ACTIONS)
+        .chain(FOLD_ACTIONS)
         .chain(STATE_HINTS)
 }
 
@@ -353,11 +379,17 @@ pub fn buttons(region: Rect, width: u32, height: u32) -> Vec<Button> {
         1.,
         false,
         false,
+        Fold::Full,
     )
 }
 
 /// Buttons a board session adds to the action panel, before Close. They have no key.
 const BOARD_ACTIONS: [(Key, Action); 1] = [(Key::ToolbarClearBoard, Action::ClearBoard)];
+/// The mini toolbar's last tool button, folded then unfolded. It has no key.
+const FOLD_ACTIONS: [(Key, Action); 2] = [
+    (Key::ToolbarMoreTools, Action::MoreTools),
+    (Key::ToolbarFewerTools, Action::MoreTools),
+];
 /// What the palette colours, box or text: buttons the action panel shows just before the
 /// swatches while a text box is in hand or selected. They have no key.
 const LABEL_ACTIONS: [(Key, Action); 2] = [
@@ -367,7 +399,7 @@ const LABEL_ACTIONS: [(Key, Action); 2] = [
 
 /// Both panels beside `region`, clear of `badge` (the size badge and its button) and kept on
 /// `screen`, with the board's own buttons when `board` and the box and text colour buttons
-/// when `label_colors`. The layout is in 96-DPI logical pixels and scaled once here, so
+/// when `label_colors`, as much of it as `fold` shows. The layout is in 96-DPI logical pixels and scaled once here, so
 /// buttons keep their apparent size on every screen.
 pub(crate) fn buttons_in(
     region: Rect,
@@ -376,6 +408,7 @@ pub(crate) fn buttons_in(
     scale: f64,
     board: bool,
     label_colors: bool,
+    fold: Fold,
 ) -> Vec<Button> {
     let resized = |r: Rect, factor: f64| Rect {
         min: r.min * factor,
@@ -387,6 +420,7 @@ pub(crate) fn buttons_in(
         resized(screen, 1. / scale),
         board,
         label_colors,
+        fold,
     );
     for b in &mut buttons {
         b.bounds = resized(b.bounds, scale);
@@ -400,12 +434,13 @@ fn layout(
     screen: Rect,
     board: bool,
     label_colors: bool,
+    fold: Fold,
 ) -> Vec<Button> {
     let cell = 32.;
     let entries = SHORTCUTS.map(|(label, action, _, _, _)| (label, action));
     let is_tool = |a: Action| matches!(a, Action::Tool(_));
     // A board has no capture under its notes to blur.
-    let tools: Vec<_> = entries
+    let mut tools: Vec<_> = entries
         .iter()
         .copied()
         .filter(|(_, a)| is_tool(*a) && !(board && *a == Action::Tool(Tool::Blur)))
@@ -427,6 +462,18 @@ fn layout(
     {
         actions.splice(swatches..swatches, LABEL_ACTIONS);
     }
+    match fold {
+        Fold::Full => {}
+        // One bar: the button that unfolds, then what the mini toolbar keeps.
+        Fold::Folded => {
+            actions = std::iter::once(FOLD_ACTIONS[0])
+                .chain(tools.iter().chain(&actions).copied())
+                .filter(|(_, a)| *a == Action::MoreTools || MINI.contains(a))
+                .collect();
+            tools.clear();
+        }
+        Fold::Unfolded => actions.insert(0, FOLD_ACTIONS[1]),
+    }
     let columns = ((screen.size().x - 36.) / cell)
         .floor()
         .clamp(1., actions.len() as f64) as usize;
@@ -436,11 +483,17 @@ fn layout(
     };
     let rows = ((screen.size().y - action_size.y - 40.) / cell)
         .floor()
-        .clamp(1., tools.len() as f64) as usize;
-    let tool_size = Point {
-        x: tools.len().div_ceil(rows) as f64 * cell + 8.,
-        y: rows as f64 * cell + 8.,
+        .clamp(1., tools.len().max(1) as f64) as usize;
+    // The folded mini toolbar has no tool panel: nothing for the actions to keep clear of.
+    let tool_size = if tools.is_empty() {
+        Point::default()
+    } else {
+        Point {
+            x: tools.len().div_ceil(rows) as f64 * cell + 8.,
+            y: rows as f64 * cell + 8.,
+        }
     };
+    let crowds = |a: Rect, tools: Rect| tools.size().x > 0. && overlaps(a, tools);
     let clamp = |p: Point, size: Point| Point {
         x: p.x.clamp(
             screen.min.x + 4.,
@@ -490,7 +543,7 @@ fn layout(
         match slid {
             _ if clear(level) => level,
             Some(slid)
-                if clear(slid) && !overlaps(rect(slid, action_size), rect(tool_min, tool_size)) =>
+                if clear(slid) && !crowds(rect(slid, action_size), rect(tool_min, tool_size)) =>
             {
                 slid
             }
@@ -507,13 +560,7 @@ fn layout(
         )
     };
     let action_rect = rect(action_min, action_size);
-    if overlaps(
-        Rect {
-            min: tool_min,
-            max: tool_min + tool_size,
-        },
-        action_rect,
-    ) {
+    if crowds(action_rect, rect(tool_min, tool_size)) {
         tool_min.y = if action_min.y - tool_size.y - 8. >= screen.min.y + 4. {
             action_min.y - tool_size.y - 8.
         } else {
@@ -724,7 +771,7 @@ mod tests {
     use shotoshot_text::Language;
 
     /// The English hints as they were written before translation, in listing order.
-    const ENGLISH_HINTS: [&str; 39] = [
+    const ENGLISH_HINTS: [&str; 41] = [
         "Select · V · Page Up/Down forward or back",
         "Rectangle · R · Scroll to resize",
         "Ellipse · C · Drawn from its centre, Alt to stretch it · Scroll to resize",
@@ -755,6 +802,8 @@ mod tests {
         "Box color",
         "Text color · Right-click for automatic black or white",
         "Clear board · Ctrl+Z restores",
+        "More tools",
+        "Fewer tools",
         "Nothing to undo · Ctrl+Z",
         "Nothing to redo · Ctrl+Y / Ctrl+Shift+Z",
         "Google search in progress · Ctrl+G",
@@ -772,7 +821,7 @@ mod tests {
         let region = Rect::new(Point { x: 100., y: 100. }, Point { x: 400., y: 300. }).unwrap();
         let screen = Rect::new(Point::default(), Point { x: 1920., y: 1080. }).unwrap();
         for board in [false, true] {
-            for button in buttons_in(region, None, screen, 1., board, board) {
+            for button in buttons_in(region, None, screen, 1., board, board, Fold::Full) {
                 let hint = tooltip_in(&button, Language::En);
                 assert!(ENGLISH_HINTS.contains(&hint.as_str()), "{hint}");
             }
@@ -801,8 +850,8 @@ mod tests {
     fn box_and_text_colour_sit_just_before_the_swatches_only_when_asked() {
         let region = Rect::new(Point { x: 100., y: 100. }, Point { x: 400., y: 300. }).unwrap();
         let screen = Rect::new(Point::default(), Point { x: 1920., y: 1080. }).unwrap();
-        let plain = buttons_in(region, None, screen, 1., false, false);
-        let with = buttons_in(region, None, screen, 1., false, true);
+        let plain = buttons_in(region, None, screen, 1., false, false, Fold::Full);
+        let with = buttons_in(region, None, screen, 1., false, true, Fold::Full);
         assert!(
             !plain
                 .iter()
@@ -853,7 +902,7 @@ mod tests {
         let region = Rect::new(Point { x: 100., y: 100. }, Point { x: 400., y: 300. }).unwrap();
         let screen = Rect::new(Point::default(), Point { x: 1920., y: 1080. }).unwrap();
         for board in [false, true] {
-            let buttons = buttons_in(region, None, screen, 1., board, false);
+            let buttons = buttons_in(region, None, screen, 1., board, false, Fold::Full);
             let tools: Vec<Tool> = buttons
                 .iter()
                 .filter_map(|b| match b.action {
@@ -883,7 +932,7 @@ mod tests {
         let region = Rect::new(Point { x: 100., y: 100. }, Point { x: 400., y: 300. }).unwrap();
         let screen = Rect::new(Point::default(), Point { x: 1920., y: 1080. }).unwrap();
         let tools = |board| {
-            buttons_in(region, None, screen, 1., board, false)
+            buttons_in(region, None, screen, 1., board, false, Fold::Full)
                 .into_iter()
                 .filter_map(|b| match b.action {
                     Action::Tool(t) => Some((t, b)),
@@ -1145,5 +1194,43 @@ mod tests {
         assert!(panels[1].min.y > r.max.y);
         assert_eq!(panels[0].max.y, r.max.y);
         assert_eq!(panels[1].max.x, r.max.x);
+    }
+    #[test]
+    fn the_folded_mini_toolbar_is_one_bar_and_unfolds_to_every_button() {
+        let screen = Rect::new(Point::default(), Point { x: 1920., y: 1080. }).unwrap();
+        let region = Rect::new(Point { x: 300., y: 200. }, Point { x: 1300., y: 800. }).unwrap();
+        let layout = |fold| buttons_in(region, None, screen, 1., false, false, fold);
+        let folded = layout(Fold::Folded);
+        let actions: Vec<_> = folded.iter().map(|b| b.action).collect();
+        assert_eq!(
+            actions,
+            [
+                Action::MoreTools,
+                Action::Tool(Tool::Pen),
+                Action::Undo,
+                Action::Copy,
+                Action::Save,
+                Action::Close,
+            ]
+        );
+        assert!(folded.iter().all(|b| b.panel == 1), "a single bar");
+        assert_eq!(panels(&folded, 1.).len(), 1);
+        assert_eq!(folded[0].label, Key::ToolbarMoreTools);
+        // Right under the region, against its right edge, as the full action bar.
+        let bar = panels(&folded, 1.)[0];
+        assert_eq!(bar.max.x, region.max.x);
+        assert!(bar.min.y > region.max.y);
+
+        let full = layout(Fold::Full);
+        let unfolded = layout(Fold::Unfolded);
+        assert_eq!(unfolded.len(), full.len() + 1);
+        let more = unfolded
+            .iter()
+            .find(|b| b.action == Action::MoreTools)
+            .unwrap();
+        assert_eq!((more.panel, more.label), (1, Key::ToolbarFewerTools));
+        let first_action = unfolded.iter().find(|b| b.panel == 1).unwrap();
+        assert_eq!(first_action.action, Action::MoreTools, "first in its bar");
+        assert!(full.iter().all(|b| b.action != Action::MoreTools));
     }
 }

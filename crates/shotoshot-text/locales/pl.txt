@@ -63,6 +63,8 @@ toolbar.google_lens = Szukaj w Obiektywie Google
 toolbar.copy_image = Kopiuj obraz
 toolbar.save = Zapisz
 toolbar.close = Zamknij
+toolbar.more_tools = Więcej narzędzi
+toolbar.fewer_tools = Mniej narzędzi
 toolbar.clear_board = Wyczyść Board · {shortcut} przywraca
 
 capture.nothing_to_undo = Nie ma czego cofnąć
@@ -293,4 +295,6 @@ settings.edit_more = Dodaj literę lub klawisz
 settings.edit_saved = Zapisano, wcześniej: {keys}
 settings.start_with_windows_note = Gotowy do przechwytywania zaraz po zalogowaniu.
 settings.live_capture_note = Zrzut odświeża się, dopóki go nie skopiujesz lub nie zapiszesz.
+settings.mini_toolbar = Mini pasek narzędzi
+settings.mini_toolbar_note = Zrzuty pokazują tylko pióro, kopiowanie i zapis. ⋯ pokazuje resztę.
 settings.shape_duration_note = Jak długo kształty tymczasowe pozostają na ekranie.

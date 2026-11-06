@@ -263,7 +263,7 @@ mod tests {
     fn panel() -> Vec<Button> {
         let region = Rect::new(Point { x: 100., y: 100. }, Point { x: 400., y: 300. }).unwrap();
         let screen = Rect::new(Point::default(), Point { x: 1920., y: 1080. }).unwrap();
-        buttons_in(region, None, screen, 1., false, false)
+        buttons_in(region, None, screen, 1., false, false, super::Fold::Full)
     }
     fn chosen(tool: Tool, current: [u8; 3]) -> Chosen {
         Chosen {

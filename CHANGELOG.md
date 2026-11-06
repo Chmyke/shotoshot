@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.39 · 2026-11-06
+
+- A mini toolbar for quick captures: switch it on in Settings, and each capture opens with just the pen, copy and save, while the three dots bring back every other tool. Thanks to moondling for the idea.
+
 ## 0.3.38 · 2026-11-06
 
 - Pasting a capture into tools that used to come up empty, like Claude Code or PowerShell scripts, now works: the image finally arrives the right way up for them too.

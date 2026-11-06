@@ -287,6 +287,7 @@ pub struct Keys {
 pub struct Values {
     pub startup: bool,
     pub live: bool,
+    pub mini_toolbar: bool,
     /// In the order of `SHORTCUT_ROWS`.
     pub shortcuts: [Keys; 9],
     /// One of `INPUT_SCALES`.
@@ -307,6 +308,7 @@ impl Default for Values {
         Self {
             startup: true,
             live: false,
+            mini_toolbar: false,
             shortcuts: Default::default(),
             input_scale: INPUT_SCALES[0],
             duration_ms: DURATIONS[1],
@@ -334,6 +336,7 @@ pub struct RowEdit {
 pub enum Command {
     Startup,
     Live,
+    MiniToolbar,
     /// Starts changing it in its row.
     EditShortcut(ShortcutRow),
     /// Gives it its default keys, or none for a shortcut that has no default.
@@ -600,6 +603,7 @@ pub enum Item {
     Nav(Page),
     Startup,
     Live,
+    MiniToolbar,
     Shortcut(ShortcutRow),
     InputScale,
     Duration,
@@ -618,6 +622,7 @@ impl Item {
             Self::Nav(page) => page.icon(),
             Self::Startup => Icon::SignIn,
             Self::Live => Icon::Toolbar(Action::Live),
+            Self::MiniToolbar => Icon::Toolbar(Action::MoreTools),
             Self::Shortcut(row) => row.icon(),
             Self::InputScale => Icon::Size,
             Self::Duration => Icon::Clock,
@@ -632,6 +637,7 @@ impl Item {
         match self {
             Self::Startup => Some(Key::SettingsStartWithWindowsNote),
             Self::Live => Some(Key::SettingsLiveCaptureNote),
+            Self::MiniToolbar => Some(Key::SettingsMiniToolbarNote),
             Self::Duration => Some(Key::SettingsShapeDurationNote),
             _ => None,
         }
@@ -825,6 +831,7 @@ impl Panel {
             Item::Nav(page) => self.text(page.name()).into(),
             Item::Startup => self.text(Key::MenuStartWithWindows).into(),
             Item::Live => self.text(Key::MenuLiveCaptureDefault).into(),
+            Item::MiniToolbar => self.text(Key::SettingsMiniToolbar).into(),
             Item::Shortcut(row) => self.text(row.label()).into(),
             Item::InputScale => self.text(Key::MenuInputSize).into(),
             Item::Duration => self.text(Key::MenuShapeDuration).into(),
@@ -882,6 +889,7 @@ impl Panel {
         for item in [
             Item::Startup,
             Item::Live,
+            Item::MiniToolbar,
             Item::InputScale,
             Item::Duration,
             Item::MoveInput,
@@ -1002,7 +1010,9 @@ impl Panel {
     /// The width a control needs.
     fn control_width(&self, item: Item) -> f64 {
         match item {
-            Item::Startup | Item::Live | Item::MoveInput | Item::Shown(_) => SWITCH.x,
+            Item::Startup | Item::Live | Item::MiniToolbar | Item::MoveInput | Item::Shown(_) => {
+                SWITCH.x
+            }
             Item::Shortcut(row) => {
                 let keys = &self.values.shortcuts[row.index()];
                 let caps = if keys.caps.is_empty() {
@@ -1096,7 +1106,12 @@ impl Panel {
             Page::General | Page::Presentation => {
                 // Presentation: what is on screen first, as the menu lists it, then how it shows.
                 let blocks: Vec<Vec<Item>> = if self.page == Page::General {
-                    vec![vec![Item::Startup, Item::Live, Item::Shown(Shown::Board)]]
+                    vec![vec![
+                        Item::Startup,
+                        Item::Live,
+                        Item::MiniToolbar,
+                        Item::Shown(Shown::Board),
+                    ]]
                 } else {
                     vec![
                         PRESENTATION_SHOWN.map(Item::Shown).to_vec(),
@@ -1566,6 +1581,9 @@ impl Panel {
                 Action::Command(Command::Startup)
             }
             Item::Live if (steps > 0) != self.values.live => Action::Command(Command::Live),
+            Item::MiniToolbar if (steps > 0) != self.values.mini_toolbar => {
+                Action::Command(Command::MiniToolbar)
+            }
             Item::MoveInput if (steps > 0) != self.values.moving_input => {
                 Action::Command(Command::MoveInput)
             }
@@ -1737,6 +1755,7 @@ impl Panel {
             Item::Nav(_) => Action::Repaint,
             Item::Startup => Action::Command(Command::Startup),
             Item::Live => Action::Command(Command::Live),
+            Item::MiniToolbar => Action::Command(Command::MiniToolbar),
             Item::Shortcut(row) => {
                 if let Some(index) = row.pointer_index()
                     && !self.values.shortcuts[row.index()].caps.is_empty()
@@ -1919,6 +1938,7 @@ impl Panel {
                 }
                 Item::Startup => Action::Command(Command::Startup),
                 Item::Live => Action::Command(Command::Live),
+                Item::MiniToolbar => Action::Command(Command::MiniToolbar),
                 Item::Shortcut(row) => Action::Command(Command::EditShortcut(row)),
                 Item::MoveInput => Action::Command(Command::MoveInput),
                 Item::Shown(shown) => Action::Command(Command::Show(shown)),

@@ -63,6 +63,8 @@ toolbar.google_lens = Google Lens ile ara
 toolbar.copy_image = Görüntüyü kopyala
 toolbar.save = Kaydet
 toolbar.close = Kapat
+toolbar.more_tools = Daha fazla araç
+toolbar.fewer_tools = Daha az araç
 toolbar.clear_board = Board’u temizle · {shortcut} geri getirir
 
 capture.nothing_to_undo = Geri alınacak bir şey yok
@@ -293,4 +295,6 @@ settings.edit_more = Bir harf veya tuş ekle
 settings.edit_saved = Kaydedildi, önceki: {keys}
 settings.start_with_windows_note = Oturum açar açmaz yakalamaya hazır.
 settings.live_capture_note = Yakalama, kopyalayana veya kaydedene kadar güncellenir.
+settings.mini_toolbar = Mini araç çubuğu
+settings.mini_toolbar_note = Yakalamalarda yalnızca kalem, kopyala ve kaydet görünür. ⋯ gerisini gösterir.
 settings.shape_duration_note = Geçici şekillerin ekranda ne kadar kalacağı.

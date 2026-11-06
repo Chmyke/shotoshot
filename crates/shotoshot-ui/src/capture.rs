@@ -96,6 +96,10 @@ pub struct Capture {
     pub(crate) wheel_travel: crate::wheel::Notches,
     pub region_resize: Option<usize>,
     pub toolbar_visible: bool,
+    /// The mini toolbar setting (issue #6); a board ignores it and shows every tool.
+    pub mini_toolbar: bool,
+    /// The mini toolbar unfolded by its button, for this capture only.
+    pub toolbar_unfolded: bool,
     pub picker: Option<crate::color_picker::ColorPicker>,
     /// Monitors in frame coordinates; empty when the frame is a single screen at 100 %.
     pub monitors: Vec<Monitor>,
@@ -169,6 +173,8 @@ impl Capture {
             wheel_travel: Default::default(),
             region_resize: None,
             toolbar_visible: true,
+            mini_toolbar: false,
+            toolbar_unfolded: false,
             picker: None,
             monitors: Vec::new(),
             style_scale: 1.,
@@ -246,6 +252,23 @@ impl Capture {
     pub fn eraser_size_setting(&self) -> u32 {
         wheel::eraser_size_scaled(self.editor.eraser_size, 1. / self.style_scale) as u32
     }
+    /// Opens with the mini toolbar when `on` (issue #6): folded, on the pen, the one drawing
+    /// tool it shows. A board keeps every tool, and its own.
+    pub fn use_mini_toolbar(&mut self, on: bool) {
+        self.mini_toolbar = on;
+        self.toolbar_unfolded = false;
+        if on && !self.board {
+            self.editor.tool = Tool::Pen;
+        }
+    }
+    /// How much of the toolbar this capture shows.
+    pub fn fold(&self) -> toolbar::Fold {
+        match (self.mini_toolbar && !self.board, self.toolbar_unfolded) {
+            (false, _) => toolbar::Fold::Full,
+            (true, false) => toolbar::Fold::Folded,
+            (true, true) => toolbar::Fold::Unfolded,
+        }
+    }
     pub fn buttons(&self) -> Vec<Button> {
         if !self.toolbar_visible || self.selecting {
             return Vec::new();
@@ -263,11 +286,13 @@ impl Capture {
                     self.ui_scale(),
                     self.board,
                     self.label_context(),
+                    self.fold(),
                 )
             })
             .unwrap_or_default();
         for b in &mut buttons {
             match b.action {
+                Action::MoreTools => b.active = self.toolbar_unfolded,
                 Action::BoxColor => b.active = !self.ink_target,
                 Action::TextColor => b.active = self.ink_target,
                 Action::Undo => {

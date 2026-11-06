@@ -63,6 +63,8 @@ toolbar.google_lens = Cerca con Google Lens
 toolbar.copy_image = Copia immagine
 toolbar.save = Salva
 toolbar.close = Chiudi
+toolbar.more_tools = Altri strumenti
+toolbar.fewer_tools = Meno strumenti
 toolbar.clear_board = Svuota il Board · {shortcut} lo ripristina
 
 capture.nothing_to_undo = Niente da annullare
@@ -293,4 +295,6 @@ settings.edit_more = Aggiungi una lettera o un tasto
 settings.edit_saved = Salvato, prima: {keys}
 settings.start_with_windows_note = Pronto a catturare appena accedi.
 settings.live_capture_note = L'acquisizione si aggiorna finché non la copi o la salvi.
+settings.mini_toolbar = Mini barra degli strumenti
+settings.mini_toolbar_note = Le catture mostrano solo la penna, copia e salva. ⋯ mostra il resto.
 settings.shape_duration_note = Per quanto tempo le forme temporanee restano sullo schermo.

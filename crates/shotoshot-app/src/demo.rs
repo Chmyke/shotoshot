@@ -175,6 +175,7 @@ pub fn render_demo() -> Result<()> {
     let preview = paint_image(1100, 680, |hdc| boxes.paint(hdc))?;
     save_png(&preview, &path.with_file_name("shotoshot-label-colors.png"))?;
     dense_interface(&path.with_file_name("shotoshot-interface-200.png"))?;
+    mini_toolbar(&path.with_file_name("shotoshot-mini-toolbar.png"))?;
     shape_samples::render(&path.with_file_name("shotoshot-shape-scales.png"))?;
     labels(&renderer, &path.with_file_name("shotoshot-labels.png"))?;
     elbows(
@@ -449,4 +450,56 @@ fn dense_interface(path: &std::path::Path) -> Result<()> {
     session.mouse_move(window, Point { x: 1500., y: 1000. });
     let preview = paint_image(2200, 1360, |hdc| session.paint(hdc))?;
     save_png(&preview, path)
+}
+
+/// The mini toolbar (issue #6) on a capture with a pen stroke: folded as every capture opens,
+/// then unfolded by its button, which stays lit, side by side.
+fn mini_toolbar(path: &std::path::Path) -> Result<()> {
+    use shotoshot_ui::toolbar::Action;
+    let (width, height) = (900, 560);
+    let mut image = Image::solid(width, height, [36, 29, 24, 255]);
+    for y in 60..500 {
+        for x in 60..840 {
+            let index = (y * width as usize + x) * 4;
+            image.pixels[index..index + 4].copy_from_slice(&[248, 245, 242, 255]);
+        }
+    }
+    let window = windows::Win32::Foundation::HWND::default();
+    let mut halves = Vec::new();
+    for unfold in [false, true] {
+        let mut session = crate::session::Session::new(image.clone())?;
+        session.capture.mini_toolbar = true;
+        session.capture.editor.tool = shotoshot_core::Tool::Pen;
+        session.capture.region = Rect::new(Point { x: 120., y: 110. }, Point { x: 640., y: 380. });
+        session.capture.selecting = false;
+        let curve: Vec<_> = (0..=30)
+            .map(|i| {
+                let t = i as f64 / 30.;
+                Point {
+                    x: 200. + t * 330.,
+                    y: 300. - (t * std::f64::consts::PI).sin() * 120.,
+                }
+            })
+            .collect();
+        session.mouse_down(window, curve[0])?;
+        for point in &curve[1..] {
+            session.mouse_move(window, *point);
+        }
+        session.mouse_up(window, curve[curve.len() - 1]);
+        if unfold {
+            session.action(window, Action::MoreTools);
+        }
+        session.capture.pointer = Point { x: -100., y: -100. };
+        halves.push(paint_image(width, height, |hdc| session.paint(hdc))?);
+    }
+    let mut board = Image::solid(width * 2 + 20, height, [20, 20, 20, 255]);
+    for (offset, half) in [0, width as usize + 20].into_iter().zip(&halves) {
+        for y in 0..height as usize {
+            let from = y * width as usize * 4;
+            let to = (y * board.width as usize + offset) * 4;
+            board.pixels[to..to + width as usize * 4]
+                .copy_from_slice(&half.pixels[from..from + width as usize * 4]);
+        }
+    }
+    save_png(&board, path)
 }

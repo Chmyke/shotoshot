@@ -63,6 +63,8 @@ toolbar.google_lens = Google 렌즈로 검색
 toolbar.copy_image = 이미지 복사
 toolbar.save = 저장
 toolbar.close = 닫기
+toolbar.more_tools = 도구 더 보기
+toolbar.fewer_tools = 도구 접기
 toolbar.clear_board = Board 지우기 · 복원: {shortcut}
 
 capture.nothing_to_undo = 실행 취소할 작업 없음
@@ -293,4 +295,6 @@ settings.edit_more = 글자나 키를 추가하세요
 settings.edit_saved = 저장됨, 이전: {keys}
 settings.start_with_windows_note = 로그인하자마자 캡처할 수 있습니다.
 settings.live_capture_note = 복사하거나 저장할 때까지 캡처가 계속 업데이트됩니다.
+settings.mini_toolbar = 미니 도구 모음
+settings.mini_toolbar_note = 캡처에 펜, 복사, 저장만 표시합니다. ⋯ 를 누르면 나머지가 보입니다.
 settings.shape_duration_note = 임시 도형이 화면에 표시되는 시간입니다.

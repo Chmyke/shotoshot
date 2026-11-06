@@ -591,6 +591,7 @@ impl App {
         session.capture.editor.style.width = self.settings.capture_stroke_width as f64;
         session.capture.editor.eraser_size = self.settings.capture_eraser_size as f64;
         session.capture.wheel_hint = !self.settings.wheel_learned;
+        session.capture.use_mini_toolbar(self.settings.mini_toolbar);
         let mut pointer = POINT::default();
         if unsafe { GetCursorPos(&mut pointer) }.is_ok() {
             session.capture.pointer = Point {

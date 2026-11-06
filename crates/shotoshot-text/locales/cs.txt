@@ -63,6 +63,8 @@ toolbar.google_lens = Hledat pomocí Google Lens
 toolbar.copy_image = Kopírovat obrázek
 toolbar.save = Uložit
 toolbar.close = Zavřít
+toolbar.more_tools = Další nástroje
+toolbar.fewer_tools = Méně nástrojů
 toolbar.clear_board = Vymazat Board · {shortcut} jej obnoví
 
 capture.nothing_to_undo = Není co vrátit
@@ -293,4 +295,6 @@ settings.edit_more = Přidej písmeno nebo klávesu
 settings.edit_saved = Uloženo, dříve: {keys}
 settings.start_with_windows_note = Připraveno k snímání hned po přihlášení.
 settings.live_capture_note = Snímek se aktualizuje, dokud ho nezkopírujete nebo neuložíte.
+settings.mini_toolbar = Mini panel nástrojů
+settings.mini_toolbar_note = Snímky ukazují jen pero, kopírování a uložení. ⋯ ukáže zbytek.
 settings.shape_duration_note = Jak dlouho dočasné tvary zůstanou na obrazovce.

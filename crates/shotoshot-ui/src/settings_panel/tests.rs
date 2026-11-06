@@ -124,6 +124,11 @@ fn general_rows_ask_the_platform() {
         panel.press(live.row.center()),
         Action::Command(Command::Live)
     );
+    let mini = zone(&panel, Item::MiniToolbar);
+    assert_eq!(
+        panel.press(mini.control.center()),
+        Action::Command(Command::MiniToolbar)
+    );
 }
 
 #[test]
@@ -546,7 +551,7 @@ fn explanations_stand_under_the_labels_that_need_one() {
     );
     panel.fit(measure).unwrap();
     panel.show_page(Page::General);
-    for item in [Item::Startup, Item::Live] {
+    for item in [Item::Startup, Item::Live, Item::MiniToolbar] {
         let row = panel.layout.zone(item).unwrap().row;
         assert_eq!(row.size().y, NOTE_ROW, "{item:?}");
     }

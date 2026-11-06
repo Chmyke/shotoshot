@@ -63,6 +63,8 @@ toolbar.google_lens = Google レンズで検索
 toolbar.copy_image = 画像をコピー
 toolbar.save = 保存
 toolbar.close = 閉じる
+toolbar.more_tools = その他のツール
+toolbar.fewer_tools = ツールを折りたたむ
 toolbar.clear_board = Board を消去 · {shortcut} で元に戻せます
 
 capture.nothing_to_undo = 元に戻す操作はありません
@@ -293,4 +295,6 @@ settings.edit_more = 文字かキーを追加してください
 settings.edit_saved = 保存しました（以前: {keys}）
 settings.start_with_windows_note = サインインしてすぐにキャプチャできます。
 settings.live_capture_note = コピーまたは保存するまでキャプチャが更新され続けます。
+settings.mini_toolbar = ミニツールバー
+settings.mini_toolbar_note = キャプチャにはペン、コピー、保存だけを表示します。⋯ で残りを表示します。
 settings.shape_duration_note = 一時的な図形を画面に表示しておく時間です。

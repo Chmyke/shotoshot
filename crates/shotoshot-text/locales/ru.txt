@@ -63,6 +63,8 @@ toolbar.google_lens = Поиск через Google Объектив
 toolbar.copy_image = Копировать изображение
 toolbar.save = Сохранить
 toolbar.close = Закрыть
+toolbar.more_tools = Больше инструментов
+toolbar.fewer_tools = Меньше инструментов
 toolbar.clear_board = Очистить Board · {shortcut} вернёт
 
 capture.nothing_to_undo = Нечего отменять
@@ -293,4 +295,6 @@ settings.edit_more = Добавьте букву или клавишу
 settings.edit_saved = Сохранено, было: {keys}
 settings.start_with_windows_note = Готов к съёмке сразу после входа в систему.
 settings.live_capture_note = Снимок обновляется, пока вы его не скопируете или не сохраните.
+settings.mini_toolbar = Мини-панель инструментов
+settings.mini_toolbar_note = В снимке видны только перо, копирование и сохранение. ⋯ покажет остальное.
 settings.shape_duration_note = Сколько времени временные фигуры остаются на экране.
