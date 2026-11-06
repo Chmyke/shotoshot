@@ -1,5 +1,7 @@
 # Builds packaging/out/Shotoshot-Setup-<version>.exe from target/release/shotoshot.exe.
 # Does not run cargo: build the release binary first (check.ps1 does it).
+# -Binary checks another file instead (used to test the version guard), then stops.
+param([string]$Binary)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $iss = Join-Path $PSScriptRoot 'shotoshot.iss'
@@ -34,6 +36,15 @@ if ($version -ne $cargoMatch.Groups[1].Value) {
     throw "Version mismatch: shotoshot.iss says $version, Cargo.toml says $($cargoMatch.Groups[1].Value)."
 }
 if (-not (Test-Path $exe)) { throw "Missing $exe. Build the release binary first." }
+# A binary left from before the version bump would ship under the new number (2026-11-05:
+# the first 0.3.36 setup carried a 0.3.35 binary).
+if ($Binary) { $exe = $Binary }
+$full = (Resolve-Path -LiteralPath $exe).Path
+$built = "$([System.Diagnostics.FileVersionInfo]::GetVersionInfo($full).ProductVersion)".Trim()
+if ($built -ne "$version.0") {
+    throw "$full is version '$built', not '$version.0'. Rebuild it (check.ps1) first."
+}
+if ($Binary) { Write-Output "Version guard: $full is $version."; return }
 
 $iscc = Find-Iscc
 & $iscc /Q $iss

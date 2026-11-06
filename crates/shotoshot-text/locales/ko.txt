@@ -4,6 +4,7 @@ language.menu = 언어
 
 tooltip.with_shortcut = {label} · {shortcut}
 tooltip.with_shortcut_and_wheel = {label} · {shortcut} · 휠로 크기 조절
+tooltip.ellipse = {label} · {shortcut} · 중심에서 그리기, Alt로 자유롭게 늘이기 · 휠로 크기 조절
 
 key.ctrl == Ctrl
 key.shift == Shift
@@ -74,7 +75,7 @@ capture.full_screen = 전체 화면
 capture.restore_selection = 이전 선택 영역으로
 capture.edit_dimensions = 크기 편집 · 수식: 800+20, 1920/2
 
-overlay.select_area = 영역 선택
+overlay.select_area = 드래그해서 영역 선택
 overlay.cancel = 취소: {shortcut}
 overlay.stroke_width == {width} px
 overlay.wheel_hint = 휠로 크기 조절
@@ -89,7 +90,8 @@ menu.edit_board = Board 편집
 menu.show_board = Board 표시
 menu.clear_board = Board 지우기
 menu.presentation = 프레젠테이션
-menu.board = ==
+menu.board == Board
+menu.board_note = 바탕 화면에 그리는 메모
 menu.pointer_effects = 포인터 효과
 menu.magnifier = 돋보기
 menu.keyboard = 키보드
@@ -100,6 +102,7 @@ menu.temporary_shapes = 임시 도형
 menu.shape_duration = 도형 표시 시간
 menu.capture = 캡처
 menu.instant_screenshot = 즉시 스크린샷
+menu.instant_screenshot_note = 전체 화면을 바탕 화면에 저장
 menu.live_capture_default = 기본으로 실시간 캡처
 menu.start_with_windows = Windows 시작 시 실행
 menu.quit = Shotoshot 종료
@@ -153,6 +156,10 @@ notice.saved = 이미지를 저장했습니다.
 notice.searching = Google 검색 중…
 notice.preferences = 설정을 저장했습니다.
 notice.saved_editable = 화면을 포함해 편집 가능한 이미지를 저장했습니다.
+notice.color_copied = 색상 코드를 복사했습니다.
+notice.instant_saved = 바탕 화면에 저장했습니다: {name}
+notice.ready = Shotoshot이 실행 중입니다. {shortcut} 키로 스크린샷을 찍습니다. 메뉴는 시계 옆에 있습니다.
+notice.shape_armed = 마우스로 그리세요. Esc로 취소합니다.
 notice.instant_unavailable = 즉시 스크린샷 바로 가기 키를 쓸 수 없습니다. Shotoshot 설정에서 변경하세요.
 notice.board_unavailable = Board 바로 가기 키를 쓸 수 없습니다. Shotoshot 설정에서 변경하세요.
 notice.shortcuts_unavailable = 바로 가기 키를 사용할 수 없음: {names}

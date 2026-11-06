@@ -1,12 +1,16 @@
 //! On-demand capture and PNG encoding off the resident thread; no focus change or idle polling.
 use super::*;
 use shotoshot_text::{Key, Text};
-use std::{path::Path, sync::mpsc};
+use std::{
+    path::{Path, PathBuf},
+    sync::mpsc,
+};
 
 pub(super) const FINISHED: u32 = WM_APP + 6;
 pub(super) const RETRY_TIMER: usize = 0x5353;
 struct Pending {
-    receiver: mpsc::Receiver<std::result::Result<(), String>>,
+    /// The file written, or why none was.
+    receiver: mpsc::Receiver<std::result::Result<PathBuf, String>>,
     bounds: RECT,
 }
 pub(super) struct InstantCapture {
@@ -43,7 +47,7 @@ impl InstantCapture {
         std::thread::Builder::new()
             .name("instant-screenshot".into())
             .spawn(move || {
-                let outcome = std::panic::catch_unwind(|| -> Result<()> {
+                let outcome = std::panic::catch_unwind(|| -> Result<PathBuf> {
                     let _com = ComApartment::new()?;
                     let image = crate::game_capture::capture_monitor(HMONITOR(monitor as *mut _))?;
                     let desktop = crate::settings::known_folder(&FOLDERID_Desktop)?;
@@ -66,13 +70,13 @@ impl InstantCapture {
     }
 }
 
-fn save_to(image: &Image, folder: &Path) -> Result<()> {
+fn save_to(image: &Image, folder: &Path) -> Result<PathBuf> {
     // No dialog, so no format choice: the instant capture stays lossless.
     let format = crate::settings::SaveFormat::Png;
     let path = crate::capture_name::next_path(folder, format)
         .map_err(|e| Error::new(E_FAIL, e.to_string()))?;
     crate::save_numbered(image, &path, format)?;
-    Ok(())
+    Ok(path)
 }
 
 impl App {
@@ -99,17 +103,20 @@ impl App {
         };
         let pending = self.instant.pending.take().unwrap();
         let success = result.is_ok();
-        // Success is confirmed by the border pulse and sound only; text is reserved for failures.
-        self.toast = if success {
-            None
-        } else {
-            notice::Toast::new_at(
-                &Text::new(Key::NoticeScreenshotFailed),
-                self.persist_preferences,
-                Some(pending.bounds),
-            )
-            .ok()
+        // The pulse and the sound confirm the capture; the notice says where it went, which
+        // nobody found on their own (blind test of 2026-11-05: "did it work at all?").
+        let text = match &result {
+            Ok(path) => Text::with(
+                Key::NoticeInstantSaved,
+                &[(
+                    "name",
+                    &path.file_name().unwrap_or_default().to_string_lossy(),
+                )],
+            ),
+            Err(_) => Text::new(Key::NoticeScreenshotFailed),
         };
+        self.toast =
+            notice::Toast::new_at(&text, self.persist_preferences, Some(pending.bounds)).ok();
         self.instant.pulse = if success {
             pulse::Pulse::new(pending.bounds, self.persist_preferences).ok()
         } else {
@@ -281,10 +288,14 @@ mod tests {
         app.finish_instant_capture();
         assert!(app.toast.is_none());
         assert!(app.instant.pending.is_some());
-        sender.send(Ok(())).unwrap();
+        sender
+            .send(Ok(PathBuf::from("C:/Desktop/003.png")))
+            .unwrap();
         app.finish_instant_capture();
         assert!(app.instant.pending.is_none());
-        assert!(app.toast.is_none(), "success is confirmed without text");
+        // The notice names the file written (blind test of 2026-11-05).
+        let notice = app.toast.as_ref().expect("a notice").text();
+        assert!(notice.ends_with("003.png"), "{notice}");
         assert!(app.instant.pulse.is_some());
         assert!(crate::app::nothing_activated_on_this_thread());
         let original = app.settings.instant_shortcut;
@@ -323,7 +334,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("Capture 001.png"), b"old").unwrap();
         let image = Image::solid(3, 2, [30, 90, 180, 255]);
-        save_to(&image, &root).unwrap();
+        assert_eq!(save_to(&image, &root).unwrap(), root.join("002.png"));
         assert_eq!(
             crate::load_png(&root.join("002.png")).unwrap().pixels,
             image.pixels

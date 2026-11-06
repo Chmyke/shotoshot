@@ -4,6 +4,7 @@ language.menu = 語言
 
 tooltip.with_shortcut = {label} · {shortcut}
 tooltip.with_shortcut_and_wheel = {label} · {shortcut} · 滾輪調整大小
+tooltip.ellipse = {label} · {shortcut} · 從中心繪製，按 Alt 自由拉伸 · 滾輪調整大小
 
 key.ctrl == Ctrl
 key.shift == Shift
@@ -74,7 +75,7 @@ capture.full_screen = 全螢幕
 capture.restore_selection = 還原上一個選取範圍
 capture.edit_dimensions = 編輯尺寸 · 運算式：800+20, 1920/2
 
-overlay.select_area = 選取區域
+overlay.select_area = 拖曳以選取區域
 overlay.cancel = {shortcut} 取消
 overlay.stroke_width == {width} px
 overlay.wheel_hint = 滾輪調整大小
@@ -89,7 +90,8 @@ menu.edit_board = 編輯 Board
 menu.show_board = 顯示 Board
 menu.clear_board = 清除 Board
 menu.presentation = 簡報
-menu.board = ==
+menu.board == Board
+menu.board_note = 畫在桌面上的筆記
 menu.pointer_effects = 指標效果
 menu.magnifier = 放大鏡
 menu.keyboard = 鍵盤
@@ -100,6 +102,7 @@ menu.temporary_shapes = 暫時圖形
 menu.shape_duration = 圖形顯示時間
 menu.capture = 擷取
 menu.instant_screenshot = 即時擷取畫面
+menu.instant_screenshot_note = 整個畫面，儲存到桌面
 menu.live_capture_default = 預設即時擷取
 menu.start_with_windows = 隨 Windows 啟動
 menu.quit = 結束 Shotoshot
@@ -153,6 +156,10 @@ notice.saved = 影像已儲存。
 notice.searching = 正在搜尋 Google…
 notice.preferences = 設定已儲存。
 notice.saved_editable = 可編輯影像已儲存，包含整個畫面。
+notice.color_copied = 已複製顏色代碼。
+notice.instant_saved = 截圖已儲存到桌面：{name}
+notice.ready = Shotoshot 已執行：按 {shortcut} 擷取畫面。選單在時鐘旁邊。
+notice.shape_armed = 用滑鼠畫出來。按 Esc 取消。
 notice.instant_unavailable = 即時擷取快速鍵無法使用。請在 Shotoshot 設定中變更。
 notice.board_unavailable = Board 快速鍵無法使用。請在 Shotoshot 設定中變更。
 notice.shortcuts_unavailable = 快速鍵無法使用：{names}

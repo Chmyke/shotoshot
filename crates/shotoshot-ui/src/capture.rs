@@ -530,6 +530,11 @@ impl Capture {
     /// Badge and full-screen button, side by side above the region's top-right corner;
     /// the badge as wide as its text, within the frame.
     fn region_badges(&self) -> Option<Badges> {
+        // A board spans every screen: its size ("5760 × 1080") and a full-screen button said
+        // nothing there (blind test of 2026-11-05).
+        if self.board {
+            return None;
+        }
         let r = self.region?;
         let s = self.ui_scale();
         let (frame_width, frame_height) = (self.image.width as f64, self.image.height as f64);
@@ -1385,8 +1390,9 @@ mod tests {
         let mut seen = Vec::new();
         for (live, reopened, searching, board) in [
             (false, false, false, false),
-            (true, false, true, true),
+            (true, false, true, false),
             (false, true, false, false),
+            (false, false, false, true),
         ] {
             (c.live, c.reopened, c.searching, c.board) = (live, reopened, searching, board);
             for filled in [false, true] {

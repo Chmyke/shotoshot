@@ -269,6 +269,42 @@ fn one_card_opens_at_a_time_and_its_switch_turns_its_effect_off_and_back() {
 }
 
 #[test]
+fn switching_the_last_card_off_turns_the_pointer_effects_off() {
+    let mut panel = panel();
+    on(&mut panel, Page::Pointer);
+    for card in CARDS {
+        if card != Card::Loupe {
+            panel.set_card(card, false);
+        }
+    }
+    panel.halo_on = false;
+    panel.toggle_card(Card::Halo);
+    assert!(panel.halo_on, "on with its card");
+    panel.toggle_card(Card::Halo);
+    assert!(
+        !panel.halo_on,
+        "off with the last card (blind test of 2026-11-05)"
+    );
+    // Another card still on keeps them on.
+    panel.toggle_card(Card::Trail);
+    panel.toggle_card(Card::Halo);
+    panel.toggle_card(Card::Halo);
+    assert!(panel.halo_on);
+}
+
+#[test]
+fn a_card_switched_off_still_shows_the_style_it_comes_back_with() {
+    let mut panel = panel();
+    on(&mut panel, Page::Pointer);
+    panel.set_card(Card::Spotlight, true);
+    let shown = panel.segment(Item::Field(Field::Spotlight));
+    assert!(shown.is_some());
+    panel.set_card(Card::Spotlight, false);
+    assert_eq!(panel.settings.spotlight, SpotlightShape::Off);
+    assert_eq!(panel.segment(Item::Field(Field::Spotlight)), shown);
+}
+
+#[test]
 fn a_change_in_a_card_turns_its_effect_and_the_pointer_effects_on() {
     let mut panel = panel();
     on(&mut panel, Page::Pointer);

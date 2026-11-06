@@ -13,6 +13,7 @@ language.menu = Language
 # Hints: a label, then the keys it answers to (`{shortcut}`, assembled by the code).
 tooltip.with_shortcut = {label} · {shortcut}
 tooltip.with_shortcut_and_wheel = {label} · {shortcut} · Scroll to resize
+tooltip.ellipse = {label} · {shortcut} · Drawn from its centre, Alt to stretch it · Scroll to resize
 
 # Key names, as printed on keyboards of the language. Letters, digits and F1-F24 stay as is;
 # keys Windows names (letters, punctuation) follow the keyboard layout. `{key}` is a digit or
@@ -92,7 +93,7 @@ capture.edit_dimensions = Edit dimensions · expressions: 800+20, 1920/2
 # Pointer hints, loupe and colour wheel. A zone keeps its English size and grows only for a
 # longer text, except the loupe and the wheel, which a text must fit (`text_fit` tests):
 # loupe at most 110 px at 10 px, wheel labels at most 230 px. `{shortcut}` is the Esc key.
-overlay.select_area = Select an area
+overlay.select_area = Drag to select an area
 overlay.cancel = {shortcut} to cancel
 overlay.stroke_width = {width} px
 overlay.wheel_hint = Scroll to resize
@@ -111,6 +112,7 @@ menu.show_board = Show board
 menu.clear_board = Clear board
 menu.presentation = Presentation
 menu.board = Board
+menu.board_note = Notes drawn on your desktop
 menu.pointer_effects = Pointer effects
 menu.magnifier = Magnifier
 menu.keyboard = Keyboard
@@ -121,6 +123,7 @@ menu.temporary_shapes = Temporary shapes
 menu.shape_duration = Shape duration
 menu.capture = Capture
 menu.instant_screenshot = Instant screenshot
+menu.instant_screenshot_note = Whole screen, saved to the Desktop
 menu.live_capture_default = Live capture by default
 menu.start_with_windows = Start with Windows
 menu.quit = Quit Shotoshot
@@ -182,6 +185,10 @@ notice.saved = Image saved.
 notice.searching = Searching Google…
 notice.preferences = Settings saved.
 notice.saved_editable = Editable image saved, screen included.
+notice.color_copied = Color code copied.
+notice.instant_saved = Screenshot saved to the Desktop: {name}
+notice.ready = Shotoshot is running: {shortcut} takes a screenshot. Its menu is by the clock.
+notice.shape_armed = Draw it with the mouse. Esc to cancel.
 notice.instant_unavailable = Instant screenshot shortcut unavailable. Change it in Shotoshot settings.
 notice.board_unavailable = Board shortcut unavailable. Change it in Shotoshot settings.
 notice.shortcuts_unavailable = Shortcut unavailable: {names}

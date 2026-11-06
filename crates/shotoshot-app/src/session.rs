@@ -28,7 +28,7 @@ use windows::{
     Win32::{
         Foundation::*,
         Graphics::{Direct2D::*, Gdi::*},
-        UI::{Controls::Dialogs::*, Input::KeyboardAndMouse::*, WindowsAndMessaging::*},
+        UI::{Input::KeyboardAndMouse::*, WindowsAndMessaging::*},
     },
     core::*,
 };
@@ -168,9 +168,9 @@ impl Session {
         {
             return false;
         }
-        // A board loses nothing: Escape settles the text being typed instead of dropping it.
-        let commit = key != 27 || self.board.is_some();
-        self.native.finish_text(&mut self.capture, hwnd, commit);
+        // Escape settles the text being typed instead of dropping it, in a capture as on the
+        // board (blind test of 2026-11-05: typed text lost to Escape, beyond Ctrl+Z's reach).
+        self.native.finish_text(&mut self.capture, hwnd, true);
         true
     }
     pub(crate) fn host(&mut self, hwnd: HWND) -> (&mut Capture, WinHost<'_>) {

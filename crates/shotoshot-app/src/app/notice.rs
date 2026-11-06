@@ -422,15 +422,17 @@ pub(super) enum Notice {
     Searching = 3,
     Preferences = 4,
     SavedEditable = 5,
+    ColorCopied = 6,
 }
 impl Notice {
     #[cfg(test)]
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::Copied,
         Self::Saved,
         Self::Searching,
         Self::Preferences,
         Self::SavedEditable,
+        Self::ColorCopied,
     ];
     pub fn from_code(code: usize) -> Option<Self> {
         Some(match code {
@@ -439,6 +441,7 @@ impl Notice {
             3 => Self::Searching,
             4 => Self::Preferences,
             5 => Self::SavedEditable,
+            6 => Self::ColorCopied,
             _ => return None,
         })
     }
@@ -449,6 +452,7 @@ impl Notice {
             Self::Searching => Key::NoticeSearching,
             Self::Preferences => Key::NoticePreferences,
             Self::SavedEditable => Key::NoticeSavedEditable,
+            Self::ColorCopied => Key::NoticeColorCopied,
         }
     }
 }

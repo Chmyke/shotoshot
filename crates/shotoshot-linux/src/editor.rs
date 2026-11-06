@@ -717,7 +717,8 @@ impl Editor {
         }
         if let Some(field) = &mut self.native.field {
             match vk {
-                Some(27) => return self.native.finish_text(&mut self.capture, false),
+                // Escape settles the text, as on Windows: typed text is never dropped.
+                Some(27) => return self.native.finish_text(&mut self.capture, true),
                 Some(13) if m.ctrl => return self.native.finish_text(&mut self.capture, true),
                 _ => {}
             }

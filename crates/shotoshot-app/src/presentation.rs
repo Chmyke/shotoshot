@@ -429,6 +429,10 @@ impl Presentation {
             self.bindings.conflicts[3],
         ]
     }
+    /// Whether a temporary shape waits for its gesture.
+    pub fn armed(&self) -> bool {
+        self.scene.armed.is_some()
+    }
     fn arm_inner(&mut self, tool: LiveTool) -> Result<()> {
         if !self.enabled.shapes {
             return Ok(());

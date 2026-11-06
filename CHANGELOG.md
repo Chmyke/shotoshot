@@ -2,6 +2,15 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.37 · 2026-11-06
+
+- Esc no longer throws away the text you are typing: it keeps it, and a click beside it just finishes it instead of starting an empty one.
+- Saving opens the modern Windows dialog, on the screen you are working on rather than the main one.
+- The menu now says what Instant screenshot and Board are, and an instant screenshot tells you the name of the file it just left on your Desktop.
+- Started from the Start menu, Shotoshot says it is running and which key takes a screenshot, instead of hiding quietly by the clock.
+- The eraser outlines in red what it is about to remove, so a neighbouring arrow no longer leaves without warning.
+- Small mysteries solved: the Ellipse hint mentions Alt, a shape picked from the menu says to draw it, the eyedropper confirms the colour code is copied, and the menu lost a stray "==".
+
 ## 0.3.36 · 2026-11-04
 
 - In the tray menu, the name and the keys of a command light up on their own: the name runs it, the keys change it. Arrow, Rectangle and Ellipse now draw their shape when clicked.

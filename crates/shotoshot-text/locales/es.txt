@@ -4,6 +4,7 @@ language.menu = Idioma
 
 tooltip.with_shortcut = {label} · {shortcut}
 tooltip.with_shortcut_and_wheel = {label} · {shortcut} · Rueda para cambiar el tamaño
+tooltip.ellipse = {label} · {shortcut} · Se traza desde el centro, Alt para estirarla · Rueda para cambiar el tamaño
 
 key.ctrl == Ctrl
 key.shift = Mayús
@@ -74,7 +75,7 @@ capture.full_screen = Pantalla completa
 capture.restore_selection = Volver a la selección anterior
 capture.edit_dimensions = Editar dimensiones · expresiones: 800+20, 1920/2
 
-overlay.select_area = Selecciona un área
+overlay.select_area = Arrastra para elegir una zona
 overlay.cancel = {shortcut} para cancelar
 overlay.stroke_width == {width} px
 overlay.wheel_hint = Rueda para cambiar el tamaño
@@ -89,7 +90,8 @@ menu.edit_board = Editar el Board
 menu.show_board = Mostrar el Board
 menu.clear_board = Vaciar el Board
 menu.presentation = Presentación
-menu.board = ==
+menu.board == Board
+menu.board_note = Notas dibujadas en tu escritorio
 menu.pointer_effects = Efectos del puntero
 menu.magnifier = Lupa
 menu.keyboard = Teclado
@@ -100,6 +102,7 @@ menu.temporary_shapes = Formas temporales
 menu.shape_duration = Duración de las formas
 menu.capture = Captura
 menu.instant_screenshot = Captura instantánea
+menu.instant_screenshot_note = Pantalla completa, guardada en el Escritorio
 menu.live_capture_default = Captura en vivo por defecto
 menu.start_with_windows = Iniciar con Windows
 menu.quit = Salir de Shotoshot
@@ -153,6 +156,10 @@ notice.saved = Imagen guardada.
 notice.searching = Buscando en Google…
 notice.preferences = Configuración guardada.
 notice.saved_editable = Imagen editable guardada, con la pantalla incluida.
+notice.color_copied = Código de color copiado.
+notice.instant_saved = Captura guardada en el Escritorio: {name}
+notice.ready = Shotoshot está en marcha: {shortcut} hace una captura. Su menú está junto al reloj.
+notice.shape_armed = Dibújala con el ratón. Esc para cancelar.
 notice.instant_unavailable = Atajo de captura instantánea no disponible. Cámbialo en la configuración de Shotoshot.
 notice.board_unavailable = Atajo del Board no disponible. Cámbialo en la configuración de Shotoshot.
 notice.shortcuts_unavailable = Atajo no disponible: {names}

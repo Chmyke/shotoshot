@@ -26,8 +26,8 @@ impl Session {
         let mut canvas = crate::render::D2dCanvas::direct(renderer, &renderer.dc)?;
         self.paint_chrome(&mut canvas)
     }
-    /// What a view transforms: shade, background, notes, the text being typed, the icons over
-    /// them, then the selection chrome at `scale`. `begin` painted the backdrop at 1:1; a
+    /// What a view transforms: shade, background, notes, the icons over them, the text being
+    /// typed, then the selection chrome at `scale`. `begin` painted the backdrop at 1:1; a
     /// zoomed pass paints its own, `smooth`.
     fn paint_scene(
         &self,
@@ -39,11 +39,12 @@ impl Session {
         capture.draw_underlay(canvas)?;
         if capture.region.is_some() {
             let editing = self.native.text.as_ref().and_then(|t| t.object);
-            let result = capture.draw_annotations(canvas, editing);
-            result.and_then(|_| self.native.draw_text_input(scale))?;
+            capture.draw_annotations(canvas, editing)?;
             // What the desktop lays over the notes (a board's icons) goes over them here too,
-            // under the editor's own chrome.
+            // under the editor's own chrome; the text being typed stays above, readable
+            // (blind test of 2026-11-05: icons crossed it).
             self.native.renderer.paint_overlay(smooth);
+            self.native.draw_text_input(scale)?;
             capture.draw_frame_scaled(canvas, self.native.text.is_none(), scale)?;
         }
         Ok(())

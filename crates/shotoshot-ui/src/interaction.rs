@@ -97,6 +97,11 @@ impl Capture {
         }
         if host.text_active() {
             host.finish_text(self, true);
+            // A click off the text being typed settles it, nothing more: it used to open an
+            // empty text (or box) at once, read as a stray caret (blind test of 2026-11-05).
+            if matches!(self.editor.tool, Tool::Text | Tool::Label) && !self.selecting {
+                return Ok(None);
+            }
         }
         if self.editor.tool == Tool::Select
             && !self.bucket

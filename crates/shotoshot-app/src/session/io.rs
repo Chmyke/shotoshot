@@ -1,28 +1,32 @@
 use super::*;
 use crate::settings::SaveFormat;
 use std::path::{Path, PathBuf};
+use windows::Win32::Foundation::ERROR_CANCELLED;
+use windows::Win32::Graphics::Gdi::{
+    GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
+};
+use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance, CoTaskMemFree};
+use windows::Win32::System::Ole::IOleWindow;
+use windows::Win32::UI::Shell::Common::COMDLG_FILTERSPEC;
+use windows::Win32::UI::Shell::{
+    FDE_OVERWRITE_RESPONSE, FDE_SHAREVIOLATION_RESPONSE, FDEOR_DEFAULT, FDESVR_DEFAULT,
+    FOS_FORCEFILESYSTEM, FOS_NOCHANGEDIR, FOS_OVERWRITEPROMPT, FOS_PATHMUSTEXIST, FileSaveDialog,
+    IFileDialog, IFileDialogEvents, IFileDialogEvents_Impl, IFileSaveDialog, IShellItem,
+    SHCreateItemFromParsingName, SIGDN_FILESYSPATH,
+};
+use windows::core::{HSTRING, Interface};
 
-/// Posted to the hook with the one-based entry of the type list as WPARAM.
-const UPDATE_CAPTURE_NAME: u32 = WM_APP + 83;
 /// The type list of the Save dialog in `language`: one entry per `SaveFormat::ALL`, in that
 /// order, then the editable document, whose label says what such a file keeps at the moment it
-/// is chosen. Each label and pattern ends with a null, the list with an empty string.
-fn save_filter_in(language: shotoshot_text::Language) -> Vec<u16> {
+/// is chosen.
+fn save_types_in(language: shotoshot_text::Language) -> [(String, &'static str); 3] {
     use shotoshot_text::{Key, tr_in};
-    let entries = [
+    [
         (Key::SavePng, "*.png"),
         (Key::SaveJpeg, "*.jpg;*.jpeg"),
         (Key::SaveShoto, "*.shoto"),
-    ];
-    let mut filter = Vec::new();
-    for (label, pattern) in entries {
-        for part in [tr_in(language, label), pattern] {
-            filter.extend(part.encode_utf16());
-            filter.push(0);
-        }
-    }
-    filter.push(0);
-    filter
+    ]
+    .map(|(label, pattern)| (tr_in(language, label).to_string(), pattern))
 }
 
 fn listed_format(filter_index: u32) -> SaveFormat {
@@ -74,100 +78,188 @@ impl Listed {
 fn chosen(path: &Path, filter_index: u32) -> Listed {
     Listed::of(path).unwrap_or_else(|| Listed::entry(filter_index))
 }
-/// The path the dialog left in its null-terminated buffer.
-fn chosen_path(buffer: &[u16]) -> PathBuf {
-    use std::os::windows::ffi::OsStringExt;
-    let length = buffer.iter().position(|v| *v == 0).unwrap_or(buffer.len());
-    PathBuf::from(std::ffi::OsString::from_wide(&buffer[..length]))
+/// The name the dialog should propose once the folder or the listed type changes, or `None`
+/// to leave the name as it stands. A name the user typed is kept, and only an extension Save
+/// writes follows the type list; a numbered or empty name is renumbered for `folder`.
+fn proposed_name(name: &str, folder: &Path, listed: Listed) -> Option<PathBuf> {
+    let typed = Path::new(name);
+    if !name.is_empty() && crate::capture_name::number(typed).is_none() && !typed.is_dir() {
+        return match Listed::of(typed) {
+            Some(current) if current != listed => Some(typed.with_extension(listed.extension())),
+            _ => None,
+        };
+    }
+    let path = listed.next_path(folder).ok()?;
+    Some(PathBuf::from(path.file_name()?))
 }
 
-// Defer until Explorer has finished updating its filename field.
-unsafe extern "system" fn save_dialog_hook(
-    hwnd: HWND,
-    message: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-) -> usize {
+/// Text the shell allocated, read then freed.
+unsafe fn taken(text: PWSTR) -> std::ffi::OsString {
+    use std::os::windows::ffi::OsStringExt;
     unsafe {
-        if message == WM_NOTIFY && lparam.0 != 0 {
-            let notification = &*(lparam.0 as *const OFNOTIFYW);
-            if matches!(notification.hdr.code, CDN_FOLDERCHANGE | CDN_TYPECHANGE)
-                && !notification.lpOFN.is_null()
-            {
-                let listed = (*notification.lpOFN).nFilterIndex as usize;
-                let _ = PostMessageW(Some(hwnd), UPDATE_CAPTURE_NAME, WPARAM(listed), LPARAM(0));
-            }
-        }
-        if message != UPDATE_CAPTURE_NAME {
-            return 0;
-        }
-        let listed = Listed::entry(wparam.0 as u32);
-        let Ok(dialog) = GetParent(hwnd) else {
-            return 0;
-        };
-        // A name typed without an extension takes the listed entry's.
-        let extension = crate::wide(Path::new(listed.extension()));
-        SendMessageW(
-            dialog,
-            CDM_SETDEFEXT,
-            Some(WPARAM(0)),
-            Some(LPARAM(extension.as_ptr() as isize)),
-        );
-        let mut folder = vec![0u16; 32768];
-        let length = SendMessageW(
-            dialog,
-            CDM_GETFOLDERPATH,
-            Some(WPARAM(folder.len())),
-            Some(LPARAM(folder.as_mut_ptr() as isize)),
-        )
-        .0;
-        if length <= 1 || length as usize > folder.len() {
-            return 0;
-        }
-        let mut name = vec![0u16; 32768];
-        let name_length = SendMessageW(
-            dialog,
-            CDM_GETSPEC,
-            Some(WPARAM(name.len())),
-            Some(LPARAM(name.as_mut_ptr() as isize)),
-        )
-        .0;
-        if name_length <= 0 || name_length as usize > name.len() {
-            return 0;
-        }
-        let name = String::from_utf16_lossy(
-            &name[..name.iter().position(|c| *c == 0).unwrap_or(name.len())],
-        );
-        let typed = Path::new(&name);
-        let name = if !name.is_empty()
-            && crate::capture_name::number(typed).is_none()
-            && !typed.is_dir()
-        {
-            // Preserve a name the user has typed themselves: only an extension Save
-            // writes follows the type list.
-            match Listed::of(typed) {
-                Some(current) if current != listed => typed.with_extension(listed.extension()),
-                _ => return 0,
-            }
-        } else {
-            use std::os::windows::ffi::OsStringExt;
-            let folder = PathBuf::from(std::ffi::OsString::from_wide(
-                &folder[..length as usize - 1],
+        let value = std::ffi::OsString::from_wide(text.as_wide());
+        CoTaskMemFree(Some(text.0 as *const _));
+        value
+    }
+}
+
+/// Keeps the proposed name in step with the folder and the type list, and opens the dialog on
+/// the screen of the capture: owned by the capture window, which spans every screen, Windows
+/// centred it on the primary one (blind test of 2026-11-05).
+#[windows_core::implement(IFileDialogEvents)]
+struct SaveDialogEvents {
+    /// A point of the screen the dialog opens on.
+    near: POINT,
+    placed: std::cell::Cell<bool>,
+}
+
+impl SaveDialogEvents {
+    fn follow(&self, dialog: &IFileDialog) -> windows::core::Result<()> {
+        unsafe {
+            let listed = Listed::entry(dialog.GetFileTypeIndex()?);
+            dialog.SetDefaultExtension(&HSTRING::from(listed.extension()))?;
+            let folder = PathBuf::from(taken(
+                dialog.GetFolder()?.GetDisplayName(SIGDN_FILESYSPATH)?,
             ));
-            match listed.next_path(&folder) {
-                Ok(path) => PathBuf::from(path.file_name().unwrap()),
-                Err(_) => return 0,
+            let name = taken(dialog.GetFileName()?).to_string_lossy().into_owned();
+            if let Some(name) = proposed_name(&name, &folder, listed) {
+                dialog.SetFileName(&HSTRING::from(name.as_os_str()))?;
             }
-        };
-        let name = crate::wide(&name);
-        // edt1 is the standard filename field of the Explorer-style save dialog.
-        SendMessageW(
-            dialog,
-            CDM_SETCONTROLTEXT,
-            Some(WPARAM(0x480)),
-            Some(LPARAM(name.as_ptr() as isize)),
-        );
-        0
+            Ok(())
+        }
+    }
+    fn place(&self, dialog: &IFileDialog) {
+        if self.placed.replace(true) {
+            return;
+        }
+        unsafe {
+            let Ok(window) = dialog.cast::<IOleWindow>().and_then(|w| w.GetWindow()) else {
+                return;
+            };
+            let monitor = MonitorFromPoint(self.near, MONITOR_DEFAULTTONEAREST);
+            let mut info = MONITORINFO {
+                cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+                ..Default::default()
+            };
+            let mut frame = RECT::default();
+            if !GetMonitorInfoW(monitor, &mut info).as_bool()
+                || GetWindowRect(window, &mut frame).is_err()
+            {
+                return;
+            }
+            let work = info.rcWork;
+            let (width, height) = (frame.right - frame.left, frame.bottom - frame.top);
+            let x = work.left + ((work.right - work.left - width) / 2).max(0);
+            let y = work.top + ((work.bottom - work.top - height) / 2).max(0);
+            let _ = SetWindowPos(
+                window,
+                None,
+                x,
+                y,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+            );
+        }
+    }
+}
+
+impl IFileDialogEvents_Impl for SaveDialogEvents_Impl {
+    fn OnFileOk(&self, _: windows::core::Ref<IFileDialog>) -> windows::core::Result<()> {
+        Ok(())
+    }
+    fn OnFolderChanging(
+        &self,
+        _: windows::core::Ref<IFileDialog>,
+        _: windows::core::Ref<IShellItem>,
+    ) -> windows::core::Result<()> {
+        Ok(())
+    }
+    fn OnFolderChange(&self, dialog: windows::core::Ref<IFileDialog>) -> windows::core::Result<()> {
+        let dialog = dialog.ok()?;
+        self.place(dialog);
+        // A failure only leaves the name as it was.
+        let _ = self.follow(dialog);
+        Ok(())
+    }
+    fn OnSelectionChange(&self, _: windows::core::Ref<IFileDialog>) -> windows::core::Result<()> {
+        Ok(())
+    }
+    fn OnShareViolation(
+        &self,
+        _: windows::core::Ref<IFileDialog>,
+        _: windows::core::Ref<IShellItem>,
+    ) -> windows::core::Result<FDE_SHAREVIOLATION_RESPONSE> {
+        Ok(FDESVR_DEFAULT)
+    }
+    fn OnTypeChange(&self, dialog: windows::core::Ref<IFileDialog>) -> windows::core::Result<()> {
+        let _ = self.follow(dialog.ok()?);
+        Ok(())
+    }
+    fn OnOverwrite(
+        &self,
+        _: windows::core::Ref<IFileDialog>,
+        _: windows::core::Ref<IShellItem>,
+    ) -> windows::core::Result<FDE_OVERWRITE_RESPONSE> {
+        Ok(FDEOR_DEFAULT)
+    }
+}
+
+/// The Windows Save dialog, modern style, on the screen holding `near`: proposes `name` in
+/// `folder` with `format` listed. Returns the path chosen and the one-based type list entry,
+/// or `None` when cancelled.
+fn ask_save_path(
+    owner: Option<HWND>,
+    folder: &Path,
+    name: &str,
+    format: SaveFormat,
+    near: POINT,
+    language: shotoshot_text::Language,
+) -> windows::core::Result<Option<(PathBuf, u32)>> {
+    unsafe {
+        let dialog: IFileSaveDialog =
+            CoCreateInstance(&FileSaveDialog, None, CLSCTX_INPROC_SERVER)?;
+        let entries = save_types_in(language)
+            .map(|(label, pattern)| (HSTRING::from(label), HSTRING::from(pattern)));
+        let specs: Vec<COMDLG_FILTERSPEC> = entries
+            .iter()
+            .map(|(label, pattern)| COMDLG_FILTERSPEC {
+                pszName: PCWSTR(label.as_ptr()),
+                pszSpec: PCWSTR(pattern.as_ptr()),
+            })
+            .collect();
+        dialog.SetFileTypes(&specs)?;
+        dialog.SetFileTypeIndex(format.index() as u32 + 1)?;
+        dialog.SetDefaultExtension(&HSTRING::from(format.extension()))?;
+        let start: IShellItem =
+            SHCreateItemFromParsingName(&HSTRING::from(folder.as_os_str()), None)?;
+        dialog.SetFolder(&start)?;
+        dialog.SetFileName(&HSTRING::from(name))?;
+        let options = dialog.GetOptions()?;
+        dialog.SetOptions(
+            options
+                | FOS_OVERWRITEPROMPT
+                | FOS_PATHMUSTEXIST
+                | FOS_NOCHANGEDIR
+                | FOS_FORCEFILESYSTEM,
+        )?;
+        let events: IFileDialogEvents = SaveDialogEvents {
+            near,
+            placed: std::cell::Cell::new(false),
+        }
+        .into();
+        let cookie = dialog.Advise(&events)?;
+        let shown = dialog.Show(owner);
+        let _ = dialog.Unadvise(cookie);
+        match shown {
+            Ok(()) => {}
+            Err(e) if e.code() == HRESULT::from_win32(ERROR_CANCELLED.0) => return Ok(None),
+            Err(e) => return Err(e),
+        }
+        let path = PathBuf::from(taken(
+            dialog.GetResult()?.GetDisplayName(SIGDN_FILESYSPATH)?,
+        ));
+        Ok(Some((path, dialog.GetFileTypeIndex()?)))
     }
 }
 
@@ -367,48 +459,35 @@ impl Session {
             return Ok(Saved::Document);
         }
         let output = self.flatten(background)?;
+        let folder = settings.save_folder()?;
+        let suggested = crate::capture_name::next_path(&folder, settings.save_format)
+            .map_err(|e| Error::new(E_FAIL, e.to_string()))?;
+        let filename = suggested.file_name().unwrap().to_string_lossy();
+        // The screen the user works on: the toolbar's Save or the keys, the pointer is there.
+        let mut near = POINT::default();
         unsafe {
-            let folder = settings.save_folder()?;
-            let folder_wide = crate::wide(&folder);
-            let suggested = crate::capture_name::next_path(&folder, settings.save_format)
-                .map_err(|e| Error::new(E_FAIL, e.to_string()))?;
-            let filename = suggested.file_name().unwrap().to_string_lossy();
-            let mut buffer = vec![0u16; 32768];
-            for (i, c) in filename.encode_utf16().enumerate() {
-                buffer[i] = c;
-            }
-            let extension = crate::wide(Path::new(settings.save_format.extension()));
-            let filter = save_filter_in(shotoshot_text::language());
-            let mut dialog = OPENFILENAMEW {
-                lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
-                hwndOwner: hwnd,
-                lpstrFilter: PCWSTR(filter.as_ptr()),
-                nFilterIndex: settings.save_format.index() as u32 + 1,
-                lpstrFile: PWSTR(buffer.as_mut_ptr()),
-                nMaxFile: buffer.len() as u32,
-                lpstrInitialDir: PCWSTR(folder_wide.as_ptr()),
-                lpstrDefExt: PCWSTR(extension.as_ptr()),
-                Flags: OFN_OVERWRITEPROMPT
-                    | OFN_PATHMUSTEXIST
-                    | OFN_NOCHANGEDIR
-                    | OFN_EXPLORER
-                    | OFN_ENABLEHOOK,
-                lpfnHook: Some(save_dialog_hook),
-                ..Default::default()
-            };
-            if !GetSaveFileNameW(&mut dialog).as_bool() {
-                let error = CommDlgExtendedError().0;
-                if error != 0 {
-                    return Err(crate::failure::visible(
-                        shotoshot_text::Key::ErrorSaveDialog,
-                        &[("code", &error.to_string())],
-                    ));
-                }
-                return Ok(Saved::Cancelled);
-            }
-            let path = chosen_path(&buffer);
+            let _ = GetCursorPos(&mut near);
+        }
+        let asked = ask_save_path(
+            Some(hwnd),
+            &folder,
+            &filename,
+            settings.save_format,
+            near,
+            shotoshot_text::language(),
+        )
+        .map_err(|e| {
+            crate::failure::visible(
+                shotoshot_text::Key::ErrorSaveDialog,
+                &[("code", &format!("{:#010x}", e.code().0))],
+            )
+        })?;
+        let Some((path, listed)) = asked else {
+            return Ok(Saved::Cancelled);
+        };
+        {
             let numbered = crate::capture_name::number(&path).is_some();
-            let saved = match chosen(&path, dialog.nFilterIndex) {
+            let saved = match chosen(&path, listed) {
                 Listed::Document => {
                     save_bytes(&self.document_bytes(background)?, &path, numbered)?;
                     Saved::Document
@@ -436,182 +515,109 @@ impl Session {
 #[cfg(test)]
 mod save_dialog_tests {
     use super::*;
-    /// What the probe does each time the dialog shows a name, in order.
-    enum Step {
-        /// Types this folder and confirms, which navigates there.
-        Navigate(PathBuf),
-        /// Types this name, if any, then picks this entry of the type list.
-        List(Option<&'static str>, usize),
-        /// Presses Save.
-        Confirm,
+    #[test]
+    fn the_proposed_name_follows_the_folder_and_the_type_list() {
+        let root =
+            std::env::temp_dir().join(format!("shotoshot-save-names-{}", std::process::id()));
+        let old = root.join("old");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("Capture 008.png"), b"keep").unwrap();
+        std::fs::write(old.join("Shot 011.jpg"), b"keep").unwrap();
+        let png = Listed::Image(SaveFormat::Png);
+        let jpeg = Listed::Image(SaveFormat::Jpeg);
+        let named = |name: &str, listed| {
+            proposed_name(name, &old, listed).map(|p| p.to_string_lossy().into_owned())
+        };
+        // Renumbered for the folder reached, where a JPEG holds the largest number.
+        assert_eq!(named("002.png", png).as_deref(), Some("012.png"));
+        assert_eq!(named("", png).as_deref(), Some("012.png"));
+        // The proposed name follows the type list, to the editable document too.
+        assert_eq!(
+            named("012.png", Listed::Document).as_deref(),
+            Some("012.shoto")
+        );
+        assert_eq!(named("012.shoto", jpeg).as_deref(), Some("012.jpg"));
+        // A typed name is kept; only an extension Save writes follows.
+        assert_eq!(
+            named("Invoice May.jpg", png).as_deref(),
+            Some("Invoice May.png")
+        );
+        assert_eq!(named("Invoice May.png", png), None);
+        assert_eq!(named("Invoice May", jpeg), None);
+        assert_eq!(named("notes.txt", jpeg), None);
+        std::fs::remove_dir_all(root).unwrap();
     }
-    struct Probe {
-        steps: Vec<Step>,
-        names: Vec<String>,
-    }
-    unsafe fn type_name(dialog: HWND, name: &str) {
-        let name: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
-        unsafe {
-            SendMessageW(
-                dialog,
-                CDM_SETCONTROLTEXT,
-                Some(WPARAM(0x480)),
-                Some(LPARAM(name.as_ptr() as isize)),
-            );
-        }
-    }
-    unsafe extern "system" fn timeout(hwnd: HWND, _: u32, _: usize, _: u32) {
-        unsafe {
-            let _ = PostMessageW(Some(hwnd), WM_COMMAND, WPARAM(2), LPARAM(0));
-        }
-    }
-    unsafe extern "system" fn probe(
-        hwnd: HWND,
-        message: u32,
-        wparam: WPARAM,
-        lparam: LPARAM,
-    ) -> usize {
-        unsafe {
-            save_dialog_hook(hwnd, message, wparam, lparam);
-            if message == WM_NOTIFY
-                && lparam.0 != 0
-                && (*(lparam.0 as *const OFNOTIFYW)).hdr.code == CDN_INITDONE
-            {
-                // Once placed, move the dialog off the screens other tests read pixels from.
-                let dialog = GetParent(hwnd).unwrap();
-                let flags = SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE;
-                SetWindowPos(dialog, None, -30000, -30000, 0, 0, flags).unwrap();
-            }
-            if message == WM_INITDIALOG {
-                let data = (*(lparam.0 as *const OPENFILENAMEW)).lCustData.0;
-                SetWindowLongPtrW(hwnd, GWLP_USERDATA, data);
-                let dialog = GetParent(hwnd).unwrap();
-                SetTimer(Some(dialog), 123, 5000, Some(timeout));
-            }
-            if message == UPDATE_CAPTURE_NAME {
-                let state = &mut *(GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Probe);
-                let dialog = GetParent(hwnd).unwrap();
-                let mut name = vec![0u16; 32768];
-                SendMessageW(
-                    dialog,
-                    CDM_GETSPEC,
-                    Some(WPARAM(name.len())),
-                    Some(LPARAM(name.as_mut_ptr() as isize)),
-                );
-                state.names.push(String::from_utf16_lossy(
-                    &name[..name.iter().position(|v| *v == 0).unwrap_or(0)],
-                ));
-                match state.steps.get(state.names.len() - 1) {
-                    Some(Step::Navigate(folder)) => {
-                        type_name(dialog, &format!("{}\\", folder.display()));
-                        let _ = PostMessageW(Some(dialog), WM_COMMAND, WPARAM(1), LPARAM(0));
+    // The real dialog takes the foreground, which the tests of windows that must not
+    // activate are watching: it runs apart.
+    #[test]
+    #[ignore = "real desktop: opens the Windows Save dialog, run alone by check.ps1"]
+    fn real_desktop_save_dialog_opens_on_the_screen_of_the_capture() {
+        let _com = crate::ComApartment::new().unwrap();
+        let screen = crate::image::probe_screen();
+        let near = POINT {
+            x: (screen.left + screen.right) / 2,
+            y: (screen.top + screen.bottom) / 2,
+        };
+        let thread = unsafe { windows::Win32::System::Threading::GetCurrentThreadId() };
+        // Reads where the dialog stands, then cancels it.
+        let watcher = std::thread::spawn(move || -> Option<RECT> {
+            unsafe extern "system" fn dialog_of(window: HWND, found: LPARAM) -> BOOL {
+                unsafe {
+                    let mut class = [0u16; 16];
+                    let length = GetClassNameW(window, &mut class) as usize;
+                    if IsWindowVisible(window).as_bool()
+                        && class[..length] == *w!("#32770").as_wide()
+                    {
+                        *(found.0 as *mut HWND) = window;
+                        return false.into();
                     }
-                    Some(Step::List(typed, entry)) => {
-                        if let Some(typed) = typed {
-                            type_name(dialog, typed);
-                        }
-                        // cmb1 is the standard type list. The dialog only reads it once
-                        // it closes, so the probe sends what a click on an entry sends.
-                        let list = GetDlgItem(Some(dialog), 0x470).unwrap();
-                        let notify = |code: u32| {
-                            SendMessageW(
-                                dialog,
-                                WM_COMMAND,
-                                Some(WPARAM(((code as usize) << 16) | 0x470)),
-                                Some(LPARAM(list.0 as isize)),
-                            );
-                        };
-                        notify(CBN_DROPDOWN);
-                        SendMessageW(list, CB_SETCURSEL, Some(WPARAM(*entry)), None);
-                        notify(CBN_SELENDOK);
-                        notify(CBN_CLOSEUP);
-                        notify(CBN_SELCHANGE);
-                    }
-                    last => {
-                        let _ = KillTimer(Some(dialog), 123);
-                        let button = if last.is_some() { 1 } else { 2 };
-                        let _ = PostMessageW(Some(dialog), WM_COMMAND, WPARAM(button), LPARAM(0));
+                    true.into()
+                }
+            }
+            for _ in 0..100 {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                let mut found = HWND::default();
+                unsafe {
+                    let _ = EnumThreadWindows(
+                        thread,
+                        Some(dialog_of),
+                        LPARAM(&mut found as *mut HWND as isize),
+                    );
+                    if !found.is_invalid() {
+                        // Let the dialog settle where it opens before reading it.
+                        std::thread::sleep(std::time::Duration::from_millis(300));
+                        let mut frame = RECT::default();
+                        GetWindowRect(found, &mut frame).ok()?;
+                        let _ = PostMessageW(Some(found), WM_COMMAND, WPARAM(2), LPARAM(0));
+                        return Some(frame);
                     }
                 }
             }
-            0
-        }
-    }
-    /// Opens the real dialog on `root`, listing PNG, and plays `steps`. Returns every name
-    /// it showed and, when Save was pressed, the path and type list entry chosen.
-    fn shown(root: &Path, steps: Vec<Step>) -> (Vec<String>, Option<(PathBuf, u32)>) {
-        let _com = crate::ComApartment::new().unwrap();
-        let mut state = Probe {
-            steps,
-            names: vec![],
+            None
+        });
+        let folder = std::env::temp_dir();
+        let asked = ask_save_path(
+            None,
+            &folder,
+            "001.png",
+            SaveFormat::Png,
+            near,
+            shotoshot_text::Language::En,
+        )
+        .unwrap();
+        let frame = watcher.join().unwrap().expect("the Save dialog showed");
+        assert_eq!(asked, None, "cancelled");
+        let centre = POINT {
+            x: (frame.left + frame.right) / 2,
+            y: (frame.top + frame.bottom) / 2,
         };
-        let folder = crate::wide(root);
-        let filter = save_filter_in(shotoshot_text::Language::En);
-        let mut buffer = vec![0u16; 32768];
-        let name = crate::wide(Path::new("Capture 001.png"));
-        buffer[..name.len()].copy_from_slice(&name);
-        let mut dialog = OPENFILENAMEW {
-            lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
-            lpstrInitialDir: PCWSTR(folder.as_ptr()),
-            lpstrFile: PWSTR(buffer.as_mut_ptr()),
-            nMaxFile: buffer.len() as u32,
-            lpstrFilter: PCWSTR(filter.as_ptr()),
-            nFilterIndex: 1,
-            lpstrDefExt: w!("png"),
-            Flags: OFN_EXPLORER | OFN_ENABLEHOOK | OFN_NOCHANGEDIR | OFN_PATHMUSTEXIST,
-            lpfnHook: Some(probe),
-            lCustData: LPARAM(&mut state as *mut Probe as isize),
-            ..Default::default()
-        };
-        let saved = unsafe { GetSaveFileNameW(&mut dialog) }
-            .as_bool()
-            .then(|| (chosen_path(&buffer), dialog.nFilterIndex));
-        (state.names, saved)
-    }
-    // The real dialog takes the foreground, which the tests of windows that must not
-    // activate are watching: it runs apart, and one dialog plays the whole scenario.
-    #[test]
-    #[ignore = "real desktop: opens the Windows Save dialog, run alone by check.ps1"]
-    fn real_desktop_save_dialog_follows_the_folder_and_the_type_list() {
-        let root =
-            std::env::temp_dir().join(format!("shotoshot-save-dialog-{}", std::process::id()));
-        let old = root.join("old");
-        std::fs::create_dir_all(&old).unwrap();
-        std::fs::write(root.join("Capture 001.png"), b"keep").unwrap();
-        std::fs::write(old.join("Capture 008.png"), b"keep").unwrap();
-        std::fs::write(old.join("Shot 011.jpg"), b"keep").unwrap();
-        let (names, saved) = shown(
-            &root,
-            vec![
-                Step::Navigate(old.clone()),
-                Step::List(None, 2),
-                Step::List(None, 1),
-                Step::List(Some("Invoice May.jpg"), 0),
-                Step::List(Some("Invoice May"), 1),
-                Step::Confirm,
-            ],
+        assert!(
+            centre.x >= screen.left
+                && centre.x < screen.right
+                && centre.y >= screen.top
+                && centre.y < screen.bottom,
+            "{frame:?} is not on {screen:?}"
         );
-        std::fs::remove_dir_all(root).unwrap();
-        assert_eq!(
-            names,
-            [
-                "002.png",
-                // Renumbered for the folder reached, where a JPEG holds the largest number.
-                "012.png",
-                // The proposed name follows the type list, to the editable document too.
-                "012.shoto",
-                "012.jpg",
-                // A typed name is kept; only its image extension follows.
-                "Invoice May.png",
-                // The dialog reports a bare name with the extension it is about to append.
-                "Invoice May.jpg",
-            ]
-        );
-        let (path, listed) = saved.unwrap();
-        assert_eq!(path.file_name().unwrap(), "Invoice May.jpg");
-        assert_eq!(path.parent().unwrap().file_name().unwrap(), "old");
-        assert_eq!(listed, 2);
-        assert_eq!(chosen(&path, listed), Listed::Image(SaveFormat::Jpeg));
     }
     #[test]
     fn the_name_decides_the_format_and_the_type_list_settles_the_rest() {
@@ -625,56 +631,42 @@ mod save_dialog_tests {
         assert_eq!(named("bare", 3), Listed::Document);
         assert_eq!(named("Shot 001.png", 3), Listed::Image(SaveFormat::Png));
     }
-    /// The entries of a type list, up to the empty string that ends it.
-    fn entries(filter: &[u16]) -> Vec<String> {
-        let end = filter
-            .windows(2)
-            .position(|pair| pair == [0, 0])
-            .expect("a type list ends with an empty string");
-        filter[..end]
-            .split(|unit| *unit == 0)
-            .map(String::from_utf16_lossy)
-            .collect()
-    }
     #[test]
-    fn save_filter_is_translated() {
+    fn save_types_are_translated() {
         use shotoshot_text::{Key, Language, tr_in};
         for language in Language::ALL {
-            let filter = save_filter_in(language);
-            assert!(filter.ends_with(&[0, 0]));
             let labels =
                 [Key::SavePng, Key::SaveJpeg, Key::SaveShoto].map(|key| tr_in(language, key));
-            assert_eq!(
-                entries(&filter),
-                [
-                    labels[0],
-                    "*.png",
-                    labels[1],
-                    "*.jpg;*.jpeg",
-                    labels[2],
-                    "*.shoto"
-                ]
-            );
+            let types = save_types_in(language);
+            for ((label, _), expected) in types.iter().zip(labels) {
+                assert_eq!(label, expected);
+            }
         }
-        let english: Vec<u16> = "PNG image\0*.png\0JPEG image\0*.jpg;*.jpeg\0Editable Shotoshot image, keeps the whole screen\0*.shoto\0\0"
-            .encode_utf16()
-            .collect();
-        assert_eq!(save_filter_in(Language::En), english);
+        assert_eq!(
+            save_types_in(Language::En),
+            [
+                ("PNG image".to_string(), "*.png"),
+                ("JPEG image".to_string(), "*.jpg;*.jpeg"),
+                (
+                    "Editable Shotoshot image, keeps the whole screen".to_string(),
+                    "*.shoto"
+                ),
+            ]
+        );
     }
     #[test]
     fn type_list_entries_follow_the_save_formats() {
-        let entries = entries(&save_filter_in(shotoshot_text::Language::En));
+        let types = save_types_in(shotoshot_text::Language::En);
         // The editable document closes the list.
-        assert_eq!(entries.len(), SaveFormat::ALL.len() * 2 + 2);
-        assert_eq!(entries.last().unwrap(), "*.shoto");
+        assert_eq!(types.len(), SaveFormat::ALL.len() + 1);
+        assert_eq!(types.last().unwrap().1, "*.shoto");
         let document = SaveFormat::ALL.len() as u32 + 1;
         assert_eq!(Listed::entry(document), Listed::Document);
         assert_eq!(Listed::Document.extension(), "shoto");
-        for (format, entry) in SaveFormat::ALL.into_iter().zip(entries.chunks(2)) {
-            let pattern = format!("*.{}", format.extension());
+        for (format, (_, pattern)) in SaveFormat::ALL.into_iter().zip(types) {
             assert!(
-                entry[1].starts_with(&pattern),
-                "{entry:?} is not {format:?}"
+                pattern.starts_with(&format!("*.{}", format.extension())),
+                "{pattern} is not {format:?}"
             );
             assert_eq!(listed_format(format.index() as u32 + 1), format);
         }

@@ -4,6 +4,7 @@ language.menu = Język
 
 tooltip.with_shortcut = {label} · {shortcut}
 tooltip.with_shortcut_and_wheel = {label} · {shortcut} · Kółko zmienia rozmiar
+tooltip.ellipse = {label} · {shortcut} · Rysowana od środka, Alt ją rozciąga · Kółko zmienia rozmiar
 
 key.ctrl == Ctrl
 key.shift == Shift
@@ -74,7 +75,7 @@ capture.full_screen = Pełny ekran
 capture.restore_selection = Wróć do poprzedniego zaznaczenia
 capture.edit_dimensions = Edytuj wymiary · wyrażenia: 800+20, 1920/2
 
-overlay.select_area = Zaznacz obszar
+overlay.select_area = Przeciągnij, aby zaznaczyć obszar
 overlay.cancel = {shortcut} anuluje
 overlay.stroke_width == {width} px
 overlay.wheel_hint = Kółko zmienia rozmiar
@@ -89,7 +90,8 @@ menu.edit_board = Edytuj Board
 menu.show_board = Pokaż Board
 menu.clear_board = Wyczyść Board
 menu.presentation = Prezentacja
-menu.board = ==
+menu.board == Board
+menu.board_note = Notatki rysowane na pulpicie
 menu.pointer_effects = Efekty wskaźnika
 menu.magnifier = Lupa
 menu.keyboard = Klawiatura
@@ -100,6 +102,7 @@ menu.temporary_shapes = Kształty tymczasowe
 menu.shape_duration = Czas wyświetlania kształtów
 menu.capture = Przechwytywanie
 menu.instant_screenshot = Natychmiastowy zrzut ekranu
+menu.instant_screenshot_note = Cały ekran, zapis na pulpicie
 menu.live_capture_default = Domyślnie przechwytywanie na żywo
 menu.start_with_windows = Uruchamiaj z systemem Windows
 menu.quit = Zamknij Shotoshot
@@ -153,6 +156,10 @@ notice.saved = Obraz zapisany.
 notice.searching = Wyszukiwanie w Google…
 notice.preferences = Ustawienia zapisane.
 notice.saved_editable = Zapisano edytowalny obraz wraz z ekranem.
+notice.color_copied = Skopiowano kod koloru.
+notice.instant_saved = Zrzut zapisany na pulpicie: {name}
+notice.ready = Shotoshot działa: {shortcut} robi zrzut ekranu. Menu jest przy zegarze.
+notice.shape_armed = Narysuj ją myszą. Esc anuluje.
 notice.instant_unavailable = Skrót natychmiastowego zrzutu niedostępny. Zmień go w ustawieniach Shotoshot.
 notice.board_unavailable = Skrót Board niedostępny. Zmień go w ustawieniach Shotoshot.
 notice.shortcuts_unavailable = Skrót niedostępny: {names}

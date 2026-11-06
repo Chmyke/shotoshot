@@ -139,7 +139,7 @@ impl Column {
         let mut tops = vec![(PADDING * scale).round() as i32];
         for row in rows {
             let top = tops[tops.len() - 1];
-            tops.push(top + (height(row.kind) * scale).round() as i32);
+            tops.push(top + (height(row) * scale).round() as i32);
         }
         Ok(Self {
             rows,
@@ -1089,7 +1089,7 @@ mod tests {
             column.height(),
             8 + ROOT
                 .iter()
-                .map(|row| (height(row.kind) * 2.).round() as i32)
+                .map(|row| (height(row) * 2.).round() as i32)
                 .sum::<i32>()
                 + 8
         );

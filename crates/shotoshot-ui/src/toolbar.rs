@@ -314,6 +314,8 @@ fn hint_in(label: Key, action: Action, language: Language) -> String {
     let args = [("label", tr_in(language, label)), ("shortcut", &shortcut)];
     // A drawing tool also says that the wheel sizes it (issue #2: nobody guessed).
     let template = match action {
+        // Drawn from its centre, Alt frees it: nobody guessed (blind test of 2026-11-05).
+        Action::Tool(Tool::Ellipse) => Key::TooltipEllipse,
         Action::Tool(tool) if tool != Tool::Select => Key::TooltipWithShortcutAndWheel,
         _ => Key::TooltipWithShortcut,
     };
@@ -408,10 +410,11 @@ fn layout(
         .copied()
         .filter(|(_, a)| is_tool(*a) && !(board && *a == Action::Tool(Tool::Blur)))
         .collect();
+    // Nor a live screen: its button only said so, greyed (blind test of 2026-11-05).
     let mut actions: Vec<_> = entries
         .iter()
         .copied()
-        .filter(|(_, a)| !is_tool(*a))
+        .filter(|(_, a)| !is_tool(*a) && !(board && *a == Action::Live))
         .collect();
     if board {
         let close = actions.len().saturating_sub(1);
@@ -724,7 +727,7 @@ mod tests {
     const ENGLISH_HINTS: [&str; 39] = [
         "Select · V · Page Up/Down forward or back",
         "Rectangle · R · Scroll to resize",
-        "Ellipse · C · Scroll to resize",
+        "Ellipse · C · Drawn from its centre, Alt to stretch it · Scroll to resize",
         "Line · L · Scroll to resize",
         "Arrow · A · Scroll to resize",
         "Pen · P · Scroll to resize",

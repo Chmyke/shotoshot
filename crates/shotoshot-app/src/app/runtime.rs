@@ -22,6 +22,18 @@ const RESTORE_WALLPAPER: &str = "--restore-wallpaper";
 /// `[UninstallRun]`), in this order: each gives back to Windows something Shotoshot took.
 pub(super) const UNINSTALL_RESTORES: [&str; 2] = [RESTORE_PRINT_SCREEN, RESTORE_WALLPAPER];
 
+/// Passed by the Start menu shortcut (`[Icons]` in `packaging/shotoshot.iss`): a start by hand
+/// says that Shotoshot runs; the start with Windows, without it, stays silent.
+pub(super) const READY_ARG: &str = "--ready";
+/// The notice of a start by hand: the capture keys and where the menu is.
+pub(super) fn ready_text_in(
+    settings: &crate::settings::Settings,
+    language: shotoshot_text::Language,
+) -> Text {
+    let keys = setup::key_label_in(settings.modifiers, settings.key, language);
+    Text::with_in(language, Key::NoticeReady, &[("shortcut", &keys)])
+}
+
 /// Whether a process started with `args` has nobody to read a message box: its error goes to
 /// stderr with exit code 1 (see main.rs).
 pub fn reports_errors_on_stderr(mut args: impl Iterator<Item = String>) -> bool {
@@ -415,6 +427,14 @@ pub fn run() -> Result<()> {
             }
             if app.setup {
                 app.show_setup(hwnd)?;
+            } else if std::env::args().any(|a| a == READY_ARG) && app.toast.is_none() {
+                // Started by hand (the Start menu shortcut passes the flag): say it runs and how
+                // to use it. The start with Windows stays silent (blind test of 2026-11-05).
+                app.toast = notice::Toast::new(
+                    &ready_text_in(&app.settings, shotoshot_text::language()),
+                    true,
+                )
+                .ok();
             }
             if prepared_editor {
                 if !std::env::args().any(|a| a == "--cold-editor") {
@@ -502,4 +522,19 @@ pub fn run() -> Result<()> {
         app.hotkey = crate::hotkey::Hotkey::new(HWND::default());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod ready_tests {
+    use super::*;
+    #[test]
+    fn a_start_by_hand_names_the_capture_keys() {
+        let settings = crate::settings::Settings {
+            modifiers: 0,
+            key: 0x2C,
+            ..Default::default()
+        };
+        let said = ready_text_in(&settings, shotoshot_text::Language::En);
+        assert!(said.as_str().contains("Print Screen"), "{}", said.as_str());
+    }
 }

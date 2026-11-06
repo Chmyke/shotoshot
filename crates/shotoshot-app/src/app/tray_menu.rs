@@ -44,6 +44,8 @@ struct Row {
     label: Label,
     icon: Icon,
     kind: Kind,
+    /// A second, smaller line saying what the row is about.
+    note: Option<Key>,
 }
 const fn row(id: u32, label: Key, icon: Icon, kind: Kind) -> Row {
     Row {
@@ -51,10 +53,19 @@ const fn row(id: u32, label: Key, icon: Icon, kind: Kind) -> Row {
         label: Label::Text(label),
         icon,
         kind,
+        note: None,
     }
 }
 const fn title(id: u32, label: Key) -> Row {
     row(id, label, Icon::None, Kind::Title)
+}
+/// `row` with a line under its label: what "Instant screenshot" or "Board" mean was guessed
+/// by nobody (blind test of 2026-11-05).
+const fn noted(row: Row, note: Key) -> Row {
+    Row {
+        note: Some(note),
+        ..row
+    }
 }
 const fn choice(id: u32, label: Label) -> Row {
     Row {
@@ -62,6 +73,7 @@ const fn choice(id: u32, label: Label) -> Row {
         label,
         icon: Icon::None,
         kind: Kind::Choice,
+        note: None,
     }
 }
 
@@ -69,8 +81,11 @@ const fn choice(id: u32, label: Label) -> Row {
 /// The menu acts; what is set once lives in the Settings window (Mickaël, 2026-10-30).
 const ROOT: &[Row] = &[
     row(1, Key::MenuTakeScreenshot, Icon::Capture, Kind::Command),
-    row(7, Key::MenuInstantScreenshot, Icon::Instant, Kind::Command),
-    title(91, Key::MenuBoard),
+    noted(
+        row(7, Key::MenuInstantScreenshot, Icon::Instant, Kind::Command),
+        Key::MenuInstantScreenshotNote,
+    ),
+    noted(title(91, Key::MenuBoard), Key::MenuBoardNote),
     row(8, Key::MenuEditBoard, Icon::BoardEdit, Kind::Command),
     row(9, Key::MenuShowBoard, Icon::Eye, Kind::Toggle),
     row(
@@ -114,6 +129,7 @@ const ROOT: &[Row] = &[
         label: Label::Blank,
         icon: Icon::None,
         kind: Kind::Separator,
+        note: None,
     },
     row(170, Key::SettingsTitle, Icon::Gear, Kind::Command),
     // Right above Quit: a fixed place, found without reading the menu.
@@ -122,6 +138,7 @@ const ROOT: &[Row] = &[
         label: Label::Languages,
         icon: Icon::Globe,
         kind: Kind::Submenu,
+        note: None,
     },
     row(3, Key::MenuQuit, Icon::Power, Kind::Command),
 ];
@@ -290,12 +307,16 @@ const UNDO_GAP: f64 = 6.;
 /// Room for the submenu arrow.
 const ARROW: f64 = 14.;
 
-fn height(kind: Kind) -> f64 {
-    match kind {
+/// The size of a row's note and the room it adds under the label.
+const NOTE_SIZE: f64 = 12.;
+const NOTE_HEIGHT: f64 = 16.;
+fn height(row: &Row) -> f64 {
+    let base = match row.kind {
         Kind::Title => 28.,
         Kind::Separator => 9.,
         _ => 32.,
-    }
+    };
+    base + if row.note.is_some() { NOTE_HEIGHT } else { 0. }
 }
 /// Group titles are the only text at `TITLE_SIZE`, and the only semibold one.
 fn style(size: f64) -> TextStyle {
@@ -319,7 +340,25 @@ fn width_in(renderer: &Renderer, row: &Row, data: usize, language: Language) -> 
         )
     };
     let name = label_in(row, language);
-    Ok(match row.kind {
+    let note = match row.note {
+        Some(key) => {
+            (if row.kind == Kind::Title {
+                ICON_X
+            } else {
+                LABEL_X
+            }) + renderer
+                .measure_styled_text_in(
+                    tr_in(language, key),
+                    NOTE_SIZE as f32,
+                    TextStyle::Body,
+                    language,
+                )?
+                .x
+                + MARGIN
+        }
+        None => 0.,
+    };
+    Ok(note.max(match row.kind {
         Kind::Separator => 0.,
         Kind::Title => ICON_X + measure(&name, TITLE_SIZE)? + MARGIN,
         Kind::Toggle => LABEL_X + measure(&name, TEXT_SIZE)? + 2. * MARGIN + SWITCH.x + MARGIN,
@@ -348,7 +387,7 @@ fn width_in(renderer: &Renderer, row: &Row, data: usize, language: Language) -> 
             };
             LABEL_X + measure(&name, TEXT_SIZE)? + right + ARROW + MARGIN
         }
-    })
+    }))
 }
 
 /// The logical width of the keycaps of shortcut item data `data`; 0 without keys.
@@ -584,7 +623,40 @@ fn paint_row<C: Canvas>(
         Ink::solid(BACKGROUND),
     )?;
     let name = label(row);
-    let middle = size.y / 2.;
+    // A note takes the bottom of the row; the label and its icon centre on the rest.
+    let note_room = if row.note.is_some() {
+        u(NOTE_HEIGHT)
+    } else {
+        0.
+    };
+    let middle = (size.y - note_room) / 2.;
+    if let Some(key) = row.note {
+        let left = u(if row.kind == Kind::Title {
+            ICON_X
+        } else {
+            LABEL_X
+        });
+        let line = canvas
+            .measure_styled_text("X", u(NOTE_SIZE), TextStyle::Body)?
+            .y;
+        let bottom = size.y - u(if row.kind == Kind::Title { 3. } else { 7. });
+        canvas.styled_text(
+            tr_in(language(), key),
+            Rect {
+                min: Point {
+                    x: left,
+                    y: bottom - line,
+                },
+                max: Point {
+                    x: size.x,
+                    y: bottom,
+                },
+            },
+            u(NOTE_SIZE),
+            Ink::solid(MUTED),
+            TextStyle::Body,
+        )?;
+    }
     let text = |canvas: &mut C, text: &str, left: f64, right: f64, bottom: f64, size: f64, rgb| {
         let line = canvas.measure_styled_text("X", u(size), style(size))?.y;
         canvas.styled_text(
@@ -626,7 +698,7 @@ fn paint_row<C: Canvas>(
                 &name,
                 u(ICON_X),
                 size.x,
-                size.y - u(3.),
+                size.y - u(3.) - note_room,
                 TITLE_SIZE,
                 MUTED,
             );
@@ -958,7 +1030,7 @@ mod tests {
         let _open = Open;
         let (width, height) = (
             (WIDTH as f64 * scale) as i32,
-            (height(row.kind) * scale).round() as i32,
+            (height(row) * scale).round() as i32,
         );
         paint_image(width as u32, height as u32, |dc| {
             with_painter(|renderer| {
@@ -1137,7 +1209,7 @@ mod tests {
         let (normal, doubled) = (rendered(row, state, 1.), rendered(row, state, 2.));
         assert_eq!(
             (doubled.width, doubled.height),
-            (2 * normal.width, 2 * height(Kind::Toggle) as u32)
+            (2 * normal.width, 2 * height(row) as u32)
         );
         // Same layout at twice the size: four times the ink, give or take antialiasing.
         let ratio = accent(&doubled) as f64 / accent(&normal) as f64;
@@ -1149,7 +1221,8 @@ mod tests {
     #[test]
     fn width_leaves_room_for_the_shortcut() {
         let _open = Open;
-        let row = find(7).unwrap();
+        // The capture row: a shortcut row without a note, whose keys alone set the width.
+        let row = find(1).unwrap();
         let width_of = |data| with_painter(|renderer| width(renderer, row, data)).unwrap();
         let short = shortcut(
             Shortcut {
@@ -1401,7 +1474,7 @@ mod tests {
                 .unwrap();
                 let size = Point {
                     x: needed,
-                    y: height(row.kind),
+                    y: height(row),
                 };
                 let [waiting, default, cancel] = edit_parts(size, slot_width(placeholder));
                 let tag = language.tag();
@@ -1482,7 +1555,7 @@ mod tests {
         let cancel = edit_parts(
             Point {
                 x: WIDTH as f64,
-                y: height(row.kind),
+                y: height(row),
             },
             EDIT_SLOT,
         )[2];

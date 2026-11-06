@@ -983,6 +983,17 @@ mod tests {
         stage.type_text(field, "X")?;
         assert_eq!(String::from_utf16_lossy(&value(field)), "Xab \r\nde");
         stage.assert_nothing_painted();
+        // Escape settles the text instead of dropping it (blind test of 2026-11-05).
+        assert!(session.text_command(hwnd, 27, false));
+        assert!(session.native.text.is_none());
+        assert!(
+            session
+                .capture
+                .editor
+                .objects()
+                .iter()
+                .any(|o| matches!(&o.shape, Shape::Text { text, .. } if text.starts_with("Xab")))
+        );
         Ok(())
     }
 

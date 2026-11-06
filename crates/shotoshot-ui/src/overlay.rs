@@ -11,6 +11,8 @@ const ACCENT: Ink = Ink::solid([100, 170, 255]);
 pub(crate) const SHADE_ALPHA: f32 = 0.48;
 const SHADE: Ink = Ink::with_alpha([0, 0, 0], SHADE_ALPHA);
 const DARK: Ink = Ink::solid([32, 32, 32]);
+/// What the eraser's sweep removes on release.
+const ERASING: Ink = Ink::solid([235, 64, 52]);
 
 fn square(center: Point, half: f64) -> Rect {
     Rect {
@@ -122,6 +124,13 @@ impl Capture {
             canvas.stroke_rect(square(p, 4. * s), DARK, 1.5 * s)?;
         }
         self.draw_bucket_preview(canvas, s)?;
+        // What the sweep removes on release, framed in red: the fade alone went unseen and a
+        // neighbouring arrow left with the stroke (blind test of 2026-11-05, Mickaël's A1).
+        for &id in self.editor.erasing() {
+            if let Some(frame) = self.editor.frame_of(id) {
+                dashed(canvas, frame.outline(3. * s), ERASING, 1.5 * s)?;
+            }
+        }
         if show_selection {
             // Selectable, not selected: the selection's frame in dashes, without handles
             // (Mickaël's choice on the 2026-10-17 board: H2).
@@ -747,10 +756,42 @@ mod tests {
     use crate::magnifier_hint_in;
 
     #[test]
+    fn the_eraser_frames_in_red_what_its_sweep_will_remove() {
+        use shotoshot_core::{Modifiers, Tool};
+        let mut c = crate::Capture::new(crate::Image::solid(400, 300, [0, 0, 0, 255]));
+        c.region = Rect::new(Point { x: 0., y: 0. }, Point { x: 400., y: 300. });
+        c.selecting = false;
+        c.editor.tool = Tool::Line;
+        c.editor
+            .begin(Point { x: 50., y: 10. }, Modifiers::default());
+        c.editor.update(Point { x: 50., y: 200. });
+        c.editor.finish();
+        let red = |c: &crate::Capture| {
+            let mut canvas = crate::scale_tests::Recorder {
+                size: Point { x: 400., y: 300. },
+                ops: Vec::new(),
+            };
+            c.draw_frame(&mut canvas, true).unwrap();
+            canvas
+                .ops
+                .iter()
+                .filter(|op| op.fixed.contains("235, 64, 52"))
+                .count()
+        };
+        assert_eq!(red(&c), 0, "nothing framed outside a sweep");
+        c.editor.tool = Tool::Eraser;
+        c.editor
+            .begin(Point { x: 20., y: 100. }, Modifiers::default());
+        c.editor.update(Point { x: 80., y: 100. });
+        assert_eq!(c.editor.erasing().len(), 1);
+        assert!(red(&c) > 0, "the line about to go is framed");
+    }
+
+    #[test]
     fn english_hint_texts_are_unchanged() {
         assert_eq!(
             selection_hint_lines_in(Language::En),
-            ["Select an area", "Esc to cancel"]
+            ["Drag to select an area", "Esc to cancel"]
         );
         assert_eq!(magnifier_hint_in(Language::En), "Click to pick · Esc");
         assert_eq!(width_label_in(Language::En, 12.), "12 px");

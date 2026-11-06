@@ -4,6 +4,7 @@ language.menu = Мова
 
 tooltip.with_shortcut = {label} · {shortcut}
 tooltip.with_shortcut_and_wheel = {label} · {shortcut} · Коліщатко змінює розмір
+tooltip.ellipse = {label} · {shortcut} · Малюється від центру, Alt розтягує · Коліщатко змінює розмір
 
 key.ctrl == Ctrl
 key.shift == Shift
@@ -74,7 +75,7 @@ capture.full_screen = Увесь екран
 capture.restore_selection = Повернути попереднє виділення
 capture.edit_dimensions = Змінити розміри · вирази: 800+20, 1920/2
 
-overlay.select_area = Виділіть область
+overlay.select_area = Протягніть, щоб виділити область
 overlay.cancel = {shortcut}: скасувати
 overlay.stroke_width == {width} px
 overlay.wheel_hint = Коліщатко змінює розмір
@@ -89,7 +90,8 @@ menu.edit_board = Редагувати Board
 menu.show_board = Показувати Board
 menu.clear_board = Очистити Board
 menu.presentation = Презентація
-menu.board = ==
+menu.board == Board
+menu.board_note = Нотатки просто на робочому столі
 menu.pointer_effects = Ефекти вказівника
 menu.magnifier = Лупа
 menu.keyboard = Клавіатура
@@ -100,6 +102,7 @@ menu.temporary_shapes = Тимчасові фігури
 menu.shape_duration = Час показу фігур
 menu.capture = Знімок
 menu.instant_screenshot = Миттєвий знімок екрана
+menu.instant_screenshot_note = Увесь екран, зберігається на робочий стіл
 menu.live_capture_default = Знімання в реальному часі за замовчуванням
 menu.start_with_windows = Запускати разом з Windows
 menu.quit = Вийти з Shotoshot
@@ -153,6 +156,10 @@ notice.saved = Зображення збережено.
 notice.searching = Пошук у Google…
 notice.preferences = Налаштування збережено.
 notice.saved_editable = Зображення для редагування збережено разом з екраном.
+notice.color_copied = Код кольору скопійовано.
+notice.instant_saved = Знімок збережено на робочий стіл: {name}
+notice.ready = Shotoshot запущено: {shortcut} робить знімок екрана. Меню біля годинника.
+notice.shape_armed = Намалюйте її мишею. Esc для скасування.
 notice.instant_unavailable = Сполучення для миттєвого знімка недоступне. Змініть його в налаштуваннях Shotoshot.
 notice.board_unavailable = Сполучення для Board недоступне. Змініть його в налаштуваннях Shotoshot.
 notice.shortcuts_unavailable = Сполучення недоступне: {names}

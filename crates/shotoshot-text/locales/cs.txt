@@ -4,6 +4,7 @@ language.menu = Jazyk
 
 tooltip.with_shortcut = {label} · {shortcut}
 tooltip.with_shortcut_and_wheel = {label} · {shortcut} · Kolečko mění velikost
+tooltip.ellipse = {label} · {shortcut} · Kreslí se od středu, Alt ji roztáhne · Kolečko mění velikost
 
 key.ctrl == Ctrl
 key.shift == Shift
@@ -74,7 +75,7 @@ capture.full_screen = Celá obrazovka
 capture.restore_selection = Zpět na předchozí výběr
 capture.edit_dimensions = Upravit rozměry · výrazy: 800+20, 1920/2
 
-overlay.select_area = Vyberte oblast
+overlay.select_area = Tažením vyberte oblast
 overlay.cancel = {shortcut} zruší
 overlay.stroke_width == {width} px
 overlay.wheel_hint = Kolečko mění velikost
@@ -89,7 +90,8 @@ menu.edit_board = Upravit Board
 menu.show_board = Zobrazit Board
 menu.clear_board = Vymazat Board
 menu.presentation = Prezentace
-menu.board = ==
+menu.board == Board
+menu.board_note = Poznámky kreslené na plochu
 menu.pointer_effects = Efekty ukazatele
 menu.magnifier = Lupa
 menu.keyboard = Klávesnice
@@ -100,6 +102,7 @@ menu.temporary_shapes = Dočasné tvary
 menu.shape_duration = Doba zobrazení tvarů
 menu.capture = Snímání
 menu.instant_screenshot = Okamžitý snímek obrazovky
+menu.instant_screenshot_note = Celá obrazovka, uloží se na plochu
 menu.live_capture_default = Výchozí živé snímání
 menu.start_with_windows = Spouštět s Windows
 menu.quit = Ukončit Shotoshot
@@ -153,6 +156,10 @@ notice.saved = Obrázek uložen.
 notice.searching = Hledání na Googlu…
 notice.preferences = Nastavení uloženo.
 notice.saved_editable = Upravitelný obrázek uložen i s obrazovkou.
+notice.color_copied = Kód barvy zkopírován.
+notice.instant_saved = Snímek uložen na plochu: {name}
+notice.ready = Shotoshot běží: {shortcut} pořídí snímek. Jeho nabídka je u hodin.
+notice.shape_armed = Nakreslete ji myší. Esc zruší.
 notice.instant_unavailable = Zkratka okamžitého snímku není k dispozici. Změňte ji v nastavení Shotoshot.
 notice.board_unavailable = Zkratka Board není k dispozici. Změňte ji v nastavení Shotoshot.
 notice.shortcuts_unavailable = Zkratka není k dispozici: {names}

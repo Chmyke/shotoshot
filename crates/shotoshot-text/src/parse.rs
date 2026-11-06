@@ -105,6 +105,14 @@ pub fn parse(source: &str) -> Result<Vec<Entry>, Vec<String>> {
             Some(text) => (Same::Yes, text),
             None => (Same::No, rest),
         };
+        // `key = ==` once showed "==" as a menu title in 14 languages: an `=` that starts the
+        // text is always a misplaced "same as English" marker, never wording.
+        if same == Same::No && text.trim_start().starts_with('=') {
+            errors.push(format!(
+                "line {number}: key `{key}` starts with `=`; write `{key} == …` for a text kept from English"
+            ));
+            continue;
+        }
         let text = match unescape(text.trim()) {
             Ok(text) if text.is_empty() => {
                 errors.push(format!("line {number}: key `{key}` has no text"));
@@ -244,6 +252,16 @@ mod tests {
         let parsed = entries("a = C:\\\\x\r\nb = y\r\n");
         assert_eq!(parsed[0].1, "C:\\x");
         assert_eq!(parsed[1].1, "y");
+    }
+
+    #[test]
+    fn rejects_a_misplaced_same_marker() {
+        let errors = parse("menu.board = ==\n").unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("menu.board") && e.contains("starts with `=`"))
+        );
     }
 
     #[test]

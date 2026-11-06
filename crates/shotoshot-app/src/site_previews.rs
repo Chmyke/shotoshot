@@ -1082,8 +1082,9 @@ fn desktop_notes_film(desktop: &NotesDesktop, folder: &Path) -> Result<()> {
         film.click()?;
         film.hold(6)?;
     }
-    // Titles and to-do, in white. Picking the text tool puts the bucket down; a click elsewhere
-    // settles the note being typed and opens the next.
+    // Titles and to-do, in white. Picking the text tool puts the bucket down; Ctrl+Enter
+    // settles each title, so that the next click opens the next note (a click off a text only
+    // settles it since the blind test of 2026-11-05).
     film.pick(Action::Tool(Tool::Text))?;
     film.pick(Action::Color(WHITE))?;
     let written = ZONES
@@ -1097,6 +1098,9 @@ fn desktop_notes_film(desktop: &NotesDesktop, folder: &Path) -> Result<()> {
         // Return breaks the line in the text field, as on the keyboard.
         film.type_text(&text.replace('\n', "\r"), 2)?;
         film.hold(6)?;
+        if text != TODO {
+            film.session.text_command(film.window, 13, true);
+        }
     }
     // Picking the arrow settles the to-do. ORDER: the arrow comes last, so that nothing is
     // pending and one Escape ends the session.

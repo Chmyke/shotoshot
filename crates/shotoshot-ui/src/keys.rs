@@ -184,6 +184,24 @@ mod tests {
         assert_eq!(c.key(&mut host, KEY_C, ctrl()), KeyOutcome::CopyAnnotations);
     }
     #[test]
+    fn a_click_off_the_text_being_typed_settles_it_without_opening_another() {
+        let mut c = capture();
+        let mut host = FakeHost::default();
+        c.editor.tool = shotoshot_core::Tool::Text;
+        let first = Point { x: 200., y: 200. };
+        c.pointer_down(&mut host, first, Modifiers::default())
+            .unwrap();
+        assert!(host.text_open);
+        c.pointer_down(&mut host, Point { x: 400., y: 300. }, Modifiers::default())
+            .unwrap();
+        assert!(!host.text_open, "settled, no new empty text");
+        assert_eq!(host.text_at, Some(first));
+        // The next click on free space starts a new text, as before.
+        c.pointer_down(&mut host, Point { x: 400., y: 300. }, Modifiers::default())
+            .unwrap();
+        assert!(host.text_open);
+    }
+    #[test]
     fn escape_closes_only_when_nothing_is_pending() {
         let mut c = capture();
         let mut host = FakeHost::default();

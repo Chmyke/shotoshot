@@ -681,7 +681,8 @@ pub struct Panel {
     pub settings: PointerSettings,
     pub halo_color: [u8; 3],
     /// Whether the pointer effects are on screen. A change made on the Pointer effects page
-    /// turns them on: what is set here is meant to be seen. Only the menu turns them off.
+    /// turns them on: what is set here is meant to be seen. The menu turns them off, and so
+    /// does the last of their cards switched off.
     pub halo_on: bool,
     /// Whether the loupe is on screen: its card's switch, or a change of its settings.
     pub loupe_on: bool,
@@ -799,7 +800,17 @@ impl Panel {
                 .position(|v| *v == self.values.input_scale),
             Item::Duration => DURATIONS.iter().position(|v| *v == self.values.duration_ms),
             Item::Field(field) => {
-                let current = self.choice(field);
+                let mut current = self.choice(field);
+                // A card switched off still shows the style it comes back with: no segment
+                // lit read as "nothing chosen" (blind test of 2026-11-05, Spotlight).
+                if current == 0
+                    && let Some(card) = CARDS
+                        .iter()
+                        .copied()
+                        .find(|&card| Self::style_field(card) == Some(field))
+                {
+                    current = self.remembered[card.slot()];
+                }
                 field
                     .options()
                     .iter()
@@ -1614,8 +1625,13 @@ impl Panel {
     fn toggle_card(&mut self, card: Card) -> Action {
         let on = !self.card_on(card);
         self.set_card(card, on);
-        if on && card != Card::Loupe {
-            self.halo_on = true;
+        if card != Card::Loupe {
+            // The pointer effects follow their cards both ways: turning the last one off left
+            // them on, as if nothing was given back (blind test of 2026-11-05).
+            self.halo_on = on
+                || CARDS
+                    .iter()
+                    .any(|&other| other != Card::Loupe && self.card_on(other));
         }
         Self::changed(None)
     }

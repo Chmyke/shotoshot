@@ -364,10 +364,7 @@ mod tests {
                     .any(|o| matches!(&o.shape, Shape::Text { text, .. } if text == "Call Anna")),
             );
         }
-        assert_eq!(
-            kept,
-            [true, false],
-            "a board keeps the note, a capture drops it"
-        );
+        // Both keep it since the blind test of 2026-11-05: typed text is never dropped.
+        assert_eq!(kept, [true, true], "a board and a capture keep the note");
     }
 }

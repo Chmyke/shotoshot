@@ -4,6 +4,7 @@ language.menu = 言語
 
 tooltip.with_shortcut = {label} · {shortcut}
 tooltip.with_shortcut_and_wheel = {label} · {shortcut} · ホイールでサイズ変更
+tooltip.ellipse = {label} · {shortcut} · 中心から描画、Alt で自由に伸縮 · ホイールでサイズ変更
 
 key.ctrl == Ctrl
 key.shift == Shift
@@ -74,7 +75,7 @@ capture.full_screen = 全画面
 capture.restore_selection = 前の選択範囲に戻す
 capture.edit_dimensions = サイズを編集 · 計算式: 800+20, 1920/2
 
-overlay.select_area = 範囲を選択
+overlay.select_area = ドラッグして範囲を選択
 overlay.cancel = {shortcut} でキャンセル
 overlay.stroke_width == {width} px
 overlay.wheel_hint = ホイールでサイズ変更
@@ -89,7 +90,8 @@ menu.edit_board = Board を編集
 menu.show_board = Board を表示
 menu.clear_board = Board を消去
 menu.presentation = プレゼンテーション
-menu.board = ==
+menu.board == Board
+menu.board_note = デスクトップに描くメモ
 menu.pointer_effects = ポインター効果
 menu.magnifier = 拡大鏡
 menu.keyboard = キーボード
@@ -100,6 +102,7 @@ menu.temporary_shapes = 一時的な図形
 menu.shape_duration = 図形の表示時間
 menu.capture = キャプチャ
 menu.instant_screenshot = 即時スクリーンショット
+menu.instant_screenshot_note = 画面全体をデスクトップに保存
 menu.live_capture_default = 既定でライブキャプチャ
 menu.start_with_windows = Windows の起動時に開始
 menu.quit = Shotoshot を終了
@@ -153,6 +156,10 @@ notice.saved = 画像を保存しました。
 notice.searching = Google で検索しています…
 notice.preferences = 設定を保存しました。
 notice.saved_editable = 編集可能な画像を画面ごと保存しました。
+notice.color_copied = カラーコードをコピーしました。
+notice.instant_saved = デスクトップに保存しました: {name}
+notice.ready = Shotoshot を起動しました。{shortcut} でスクリーンショット。メニューは時計の近くです。
+notice.shape_armed = マウスで描いてください。Esc でキャンセル。
 notice.instant_unavailable = 即時スクリーンショットのショートカットが使えません。Shotoshot の設定で変更してください。
 notice.board_unavailable = Board のショートカットが使えません。Shotoshot の設定で変更してください。
 notice.shortcuts_unavailable = ショートカットを使用できません: {names}

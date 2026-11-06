@@ -4,6 +4,7 @@ language.menu = Langue
 
 tooltip.with_shortcut = {label} · {shortcut}
 tooltip.with_shortcut_and_wheel = {label} · {shortcut} · Molette pour la taille
+tooltip.ellipse = {label} · {shortcut} · Tracée depuis son centre, Alt pour l'étirer · Molette pour la taille
 
 key.ctrl == Ctrl
 key.shift = Maj
@@ -74,7 +75,7 @@ capture.full_screen = Plein écran
 capture.restore_selection = Revenir à la sélection précédente
 capture.edit_dimensions = Modifier les dimensions · calculs : 800+20, 1920/2
 
-overlay.select_area = Sélectionnez une zone
+overlay.select_area = Glissez pour tracer une zone
 overlay.cancel = {shortcut} pour annuler
 overlay.stroke_width == {width} px
 overlay.wheel_hint = Molette pour la taille
@@ -89,7 +90,8 @@ menu.edit_board = Modifier le Board
 menu.show_board = Afficher le Board
 menu.clear_board = Vider le Board
 menu.presentation = Présentation
-menu.board = ==
+menu.board == Board
+menu.board_note = Des notes dessinées sur votre bureau
 menu.pointer_effects = Effets du pointeur
 menu.magnifier = Loupe
 menu.keyboard = Clavier
@@ -100,10 +102,11 @@ menu.temporary_shapes = Formes temporaires
 menu.shape_duration = Durée des formes
 menu.capture == Capture
 menu.instant_screenshot = Capture instantanée
+menu.instant_screenshot_note = Écran entier, enregistré sur le Bureau
 menu.live_capture_default = Capture en direct par défaut
 menu.start_with_windows = Lancer avec Windows
 menu.quit = Quitter Shotoshot
-menu.press_keys = Appuie sur des touches
+menu.press_keys = Appuyez sur des touches
 menu.seconds = {n} s
 menu.percent = {n} %
 menu.language_auto = Langue de Windows
@@ -153,6 +156,10 @@ notice.saved = Image enregistrée.
 notice.searching = Recherche Google…
 notice.preferences = Paramètres enregistrés.
 notice.saved_editable = Image modifiable enregistrée, écran compris.
+notice.color_copied = Code couleur copié.
+notice.instant_saved = Capture enregistrée sur le Bureau : {name}
+notice.ready = Shotoshot est lancé : {shortcut} fait une capture. Son menu est près de l'horloge.
+notice.shape_armed = Tracez-la à la souris. Échap pour annuler.
 notice.instant_unavailable = Raccourci de capture instantanée indisponible. Changez-le dans les paramètres de Shotoshot.
 notice.board_unavailable = Raccourci du Board indisponible. Changez-le dans les paramètres de Shotoshot.
 notice.shortcuts_unavailable = Raccourci indisponible : {names}
@@ -263,7 +270,7 @@ pointer.medium_length = Moyenne
 pointer.long = Longue
 pointer.ripple = Onde
 pointer.click_ring = Anneau
-pointer.waves = Ondes
+pointer.waves = Vagues
 pointer.soft = Doux
 pointer.click_sound = Clic
 pointer.low = Faible
@@ -281,8 +288,8 @@ settings.general = Général
 settings.shortcuts = Raccourcis
 settings.add = Ajouter
 settings.in_use = Utilisé par une autre application
-settings.edit_press = Appuie sur le nouveau raccourci
-settings.edit_more = Ajoute une lettre ou une touche
+settings.edit_press = Appuyez sur le nouveau raccourci
+settings.edit_more = Ajoutez une lettre ou une touche
 settings.edit_saved = Enregistré, avant : {keys}
 settings.start_with_windows_note = Prêt à capturer dès l’ouverture de session.
 settings.live_capture_note = La capture se met à jour jusqu’à ce que vous la copiiez ou l’enregistriez.

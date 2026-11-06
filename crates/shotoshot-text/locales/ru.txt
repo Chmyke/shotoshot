@@ -4,6 +4,7 @@ language.menu = Язык
 
 tooltip.with_shortcut = {label} · {shortcut}
 tooltip.with_shortcut_and_wheel = {label} · {shortcut} · Колесо меняет размер
+tooltip.ellipse = {label} · {shortcut} · Рисуется от центра, Alt растягивает · Колесо меняет размер
 
 key.ctrl == Ctrl
 key.shift == Shift
@@ -74,7 +75,7 @@ capture.full_screen = Весь экран
 capture.restore_selection = Вернуть прежнее выделение
 capture.edit_dimensions = Изменить размеры · выражения: 800+20, 1920/2
 
-overlay.select_area = Выделите область
+overlay.select_area = Протяните, чтобы выделить область
 overlay.cancel = {shortcut}: отмена
 overlay.stroke_width == {width} px
 overlay.wheel_hint = Колесо меняет размер
@@ -89,7 +90,8 @@ menu.edit_board = Изменить Board
 menu.show_board = Показывать Board
 menu.clear_board = Очистить Board
 menu.presentation = Презентация
-menu.board = ==
+menu.board == Board
+menu.board_note = Заметки прямо на рабочем столе
 menu.pointer_effects = Эффекты указателя
 menu.magnifier = Лупа
 menu.keyboard = Клавиатура
@@ -100,6 +102,7 @@ menu.temporary_shapes = Временные фигуры
 menu.shape_duration = Время показа фигур
 menu.capture = Снимок
 menu.instant_screenshot = Мгновенный снимок экрана
+menu.instant_screenshot_note = Весь экран, сохраняется на рабочий стол
 menu.live_capture_default = Съёмка в реальном времени по умолчанию
 menu.start_with_windows = Запускать вместе с Windows
 menu.quit = Выйти из Shotoshot
@@ -153,6 +156,10 @@ notice.saved = Изображение сохранено.
 notice.searching = Поиск в Google…
 notice.preferences = Настройки сохранены.
 notice.saved_editable = Редактируемое изображение сохранено вместе с экраном.
+notice.color_copied = Код цвета скопирован.
+notice.instant_saved = Снимок сохранён на рабочий стол: {name}
+notice.ready = Shotoshot запущен: {shortcut} делает снимок экрана. Меню рядом с часами.
+notice.shape_armed = Нарисуйте её мышью. Esc для отмены.
 notice.instant_unavailable = Сочетание для мгновенного снимка недоступно. Измените его в настройках Shotoshot.
 notice.board_unavailable = Сочетание для Board недоступно. Измените его в настройках Shotoshot.
 notice.shortcuts_unavailable = Сочетание недоступно: {names}

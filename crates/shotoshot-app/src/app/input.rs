@@ -228,6 +228,12 @@ impl App {
                         presentation
                             .borrow_mut()
                             .hotkey(crate::presentation::HOTKEY_BASE + (chosen - 170) as i32)?;
+                        // Picked from the menu, the shape waited unseen: say what comes next
+                        // (blind test of 2026-11-05).
+                        if presentation.borrow().armed() {
+                            self.toast =
+                                notice::Toast::new(&Text::new(Key::NoticeShapeArmed), true).ok();
+                        }
                     }
                 }
                 101..=143 => {

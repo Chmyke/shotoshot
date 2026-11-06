@@ -793,6 +793,8 @@ impl App {
                     hwnd,
                     &format!("#{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]),
                 )?;
+                // The copy was silent: found only by pasting (blind test of 2026-11-05).
+                self.notify(Notice::ColorCopied);
             }
             Action::Live => {
                 s.set_live(hwnd, !s.capture.live)?;

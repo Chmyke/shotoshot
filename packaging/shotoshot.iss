@@ -3,7 +3,7 @@
 ; Test:  powershell -NoProfile -ExecutionPolicy Bypass -File packaging\test-installer.ps1
 ; RULE: keep AppVersion equal to [workspace.package] version in Cargo.toml (checked by the build script).
 
-#define AppVersion "0.3.36"
+#define AppVersion "0.3.37"
 #define AppName "Shotoshot"
 #define AppExeName "shotoshot.exe"
 #define AppPublisher "Mickaël Mancini"
@@ -94,7 +94,9 @@ Type: files; Name: "{autoprograms}\{#OldAppName}.lnk"
 Type: files; Name: "{autodesktop}\{#OldAppName}.lnk"
 
 [Icons]
-Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"
+; --ready: started by hand, the app says it runs (blind test of 2026-11-05); the start with
+; Windows (Run key) passes nothing and stays silent.
+Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Parameters: "--ready"
 ; No desktop shortcut is offered (Mickael, 2026-10-15: no task page, the Start menu is enough).
 ; Only a pre-0.2.0 "Shot Shot" desktop shortcut is carried over under the new name.
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Check: KeepsOldDesktopLink
