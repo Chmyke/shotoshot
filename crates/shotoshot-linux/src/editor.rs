@@ -405,6 +405,15 @@ impl Editor {
             saved = settings::save_wheel_learned();
             self.settings.wheel_learned = saved.is_ok();
         }
+        if let Some(unfolded) = self.capture.fold_to_remember()
+            && saved.is_ok()
+            && unfolded != self.settings.toolbar_unfolded
+        {
+            saved = settings::save_toolbar_unfolded(unfolded);
+            if saved.is_ok() {
+                self.settings.toolbar_unfolded = unfolded;
+            }
+        }
         if let Err(error) = saved {
             let message = Text::with(Key::ErrorSettingsUnsaved, &[("detail", &error)]);
             notice::report(&format!("Shotoshot: {message}"));
@@ -416,7 +425,8 @@ impl Editor {
         self.capture.editor.style.width = self.settings.capture_stroke_width as f64;
         self.capture.editor.eraser_size = self.settings.capture_eraser_size as f64;
         self.capture.wheel_hint = !self.settings.wheel_learned;
-        self.capture.use_mini_toolbar(self.settings.mini_toolbar);
+        self.capture
+            .use_mini_toolbar(self.settings.mini_toolbar, self.settings.toolbar_unfolded);
     }
     /// Replaces the capture being edited, and the frozen frame behind it.
     fn show(&mut self, capture: Capture) -> Result<(), Box<dyn Error>> {

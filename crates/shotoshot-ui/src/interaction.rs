@@ -1106,7 +1106,7 @@ mod tests {
     #[test]
     fn the_mini_toolbar_opens_folded_on_the_pen_and_keys_reach_every_tool() {
         let (mut c, mut host) = selected();
-        c.use_mini_toolbar(true);
+        c.use_mini_toolbar(true, false);
         assert_eq!(c.editor.tool, Tool::Pen, "the one drawing tool it shows");
         assert_eq!(c.fold(), crate::toolbar::Fold::Folded);
         let shown = |c: &Capture| c.buttons().iter().map(|b| b.action).collect::<Vec<_>>();
@@ -1125,23 +1125,32 @@ mod tests {
                 .any(|b| b.action == Action::MoreTools && b.active),
             "lit while unfolded"
         );
+        assert_eq!(c.fold_to_remember(), Some(true));
         c.action(&mut host, Action::MoreTools);
         assert_eq!(c.fold(), crate::toolbar::Fold::Folded);
-        // The next capture opens folded again.
-        c.action(&mut host, Action::MoreTools);
-        c.use_mini_toolbar(true);
-        assert_eq!(c.fold(), crate::toolbar::Fold::Folded);
-        c.use_mini_toolbar(false);
+        assert_eq!(c.fold_to_remember(), Some(false));
+        // The next capture opens as this one was left, unfolded on the tool in hand.
+        c.editor.tool = Tool::Arrow;
+        c.use_mini_toolbar(true, true);
+        assert_eq!(c.fold(), crate::toolbar::Fold::Unfolded);
+        assert_eq!(c.editor.tool, Tool::Arrow);
+        c.use_mini_toolbar(false, true);
         assert_eq!(c.fold(), crate::toolbar::Fold::Full);
+        assert_eq!(c.fold_to_remember(), None, "nothing to remember without it");
     }
     #[test]
     fn a_board_keeps_the_full_toolbar_and_its_tool_with_the_mini_one_on() {
         let (mut c, _) = selected();
         c.board = true;
         c.editor.tool = Tool::Arrow;
-        c.use_mini_toolbar(true);
+        c.use_mini_toolbar(true, false);
         assert_eq!(c.editor.tool, Tool::Arrow);
         assert_eq!(c.fold(), crate::toolbar::Fold::Full);
+        assert_eq!(
+            c.fold_to_remember(),
+            None,
+            "a board leaves the fold as it was"
+        );
     }
     #[test]
     fn escape_puts_the_bucket_down_first() {

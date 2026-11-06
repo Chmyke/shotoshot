@@ -98,7 +98,7 @@ pub struct Capture {
     pub toolbar_visible: bool,
     /// The mini toolbar setting (issue #6); a board ignores it and shows every tool.
     pub mini_toolbar: bool,
-    /// The mini toolbar unfolded by its button, for this capture only.
+    /// The mini toolbar unfolded by its button; the next capture opens the same way.
     pub toolbar_unfolded: bool,
     pub picker: Option<crate::color_picker::ColorPicker>,
     /// Monitors in frame coordinates; empty when the frame is a single screen at 100 %.
@@ -251,14 +251,20 @@ impl Capture {
     pub fn eraser_size_setting(&self) -> u32 {
         wheel::eraser_size_scaled(self.editor.eraser_size, 1. / self.style_scale) as u32
     }
-    /// Opens with the mini toolbar when `on` (issue #6): folded, on the pen, the one drawing
-    /// tool it shows. A board keeps every tool, and its own.
-    pub fn use_mini_toolbar(&mut self, on: bool) {
+    /// Opens with the mini toolbar when `on` (issue #6), as the last capture left it:
+    /// `unfolded`, or folded on the pen, the one drawing tool it shows. A board keeps every
+    /// tool, and its own.
+    pub fn use_mini_toolbar(&mut self, on: bool, unfolded: bool) {
         self.mini_toolbar = on;
-        self.toolbar_unfolded = false;
-        if on && !self.board {
+        self.toolbar_unfolded = unfolded;
+        if on && !unfolded && !self.board {
             self.editor.tool = Tool::Pen;
         }
+    }
+    /// Whether the mini toolbar is unfolded, to remember for the next capture; `None` when
+    /// this capture has nothing to say (mini toolbar off, or a board, which shows everything).
+    pub fn fold_to_remember(&self) -> Option<bool> {
+        (self.mini_toolbar && !self.board).then_some(self.toolbar_unfolded)
     }
     /// How much of the toolbar this capture shows.
     pub fn fold(&self) -> toolbar::Fold {

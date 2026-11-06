@@ -78,6 +78,8 @@ pub trait Store: Sized {
     fn save_board_visible(visible: bool) -> std::result::Result<(), String>;
     /// Records that the user has resized with the wheel, preserving current preferences.
     fn save_wheel_learned() -> std::result::Result<(), String>;
+    /// Remembers whether the mini toolbar was left unfolded, preserving current preferences.
+    fn save_toolbar_unfolded(unfolded: bool) -> std::result::Result<(), String>;
     /// Remembers where and in which format the editor last saved.
     fn save_destination(folder: &Path, format: SaveFormat) -> std::result::Result<(), String>;
     fn save_folder(&self) -> Result<PathBuf>;
@@ -123,6 +125,11 @@ impl Store for Settings {
         let _lock = SettingsLock::acquire()?;
         let path = Self::path().map_err(|e| e.to_string())?;
         Self::save_wheel_learned_to(&path, replace)
+    }
+    fn save_toolbar_unfolded(unfolded: bool) -> std::result::Result<(), String> {
+        let _lock = SettingsLock::acquire()?;
+        let path = Self::path().map_err(|e| e.to_string())?;
+        Self::save_toolbar_unfolded_to(&path, unfolded, replace)
     }
     fn save_destination(folder: &Path, format: SaveFormat) -> std::result::Result<(), String> {
         let _lock = SettingsLock::acquire()?;

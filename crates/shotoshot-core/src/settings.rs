@@ -261,6 +261,8 @@ pub struct Settings {
     pub wheel_learned: bool,
     /// Captures open with the mini toolbar, unfolded by its button (issue #6). Off by default.
     pub mini_toolbar: bool,
+    /// The mini toolbar was left unfolded: the next capture opens unfolded too.
+    pub toolbar_unfolded: bool,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -289,6 +291,7 @@ impl Default for Settings {
             language: LanguageChoice::Auto,
             wheel_learned: false,
             mini_toolbar: false,
+            toolbar_unfolded: false,
         }
     }
 }
@@ -339,6 +342,7 @@ impl Settings {
             Some("17") => 30,
             Some("18") => 31,
             Some("19") => 32,
+            Some("20") => 33,
             _ => 0,
         };
         if fields.len() != expected_len {
@@ -370,7 +374,7 @@ impl Settings {
             // its users' Alt+F arrow would be migrated away on every load.
             if !matches!(
                 version,
-                Some("11" | "12" | "13" | "14" | "15" | "16" | "17" | "18" | "19")
+                Some("11" | "12" | "13" | "14" | "15" | "16" | "17" | "18" | "19" | "20")
             ) && presentation.shape_shortcuts[0] == OLD_ARROW_SHORTCUT
                 && !presentation.shape_shortcuts.contains(&arrow)
             {
@@ -485,6 +489,11 @@ impl Settings {
             Some(&"1") => true,
             Some(_) => return Err("Invalid mini toolbar setting".into()),
         };
+        let toolbar_unfolded = match fields.get(32) {
+            None | Some(&"0") => false,
+            Some(&"1") => true,
+            Some(_) => return Err("Invalid mini toolbar fold".into()),
+        };
         Ok(Self {
             instant_shortcut,
             start_with_windows: match fields.get(18) {
@@ -534,6 +543,7 @@ impl Settings {
             language,
             wheel_learned,
             mini_toolbar,
+            toolbar_unfolded,
         })
     }
     /// A board shortcut needs Ctrl or Alt so that typing never toggles the board. A refusal
@@ -558,7 +568,7 @@ impl Settings {
             .join(",");
         let color = |[red, green, blue]: [u8; 3]| format!("{red:02x}{green:02x}{blue:02x}");
         format!(
-            "{HEADER}19\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{},{}\n{},{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
+            "{HEADER}20\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{},{}\n{},{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
             self.modifiers,
             self.key,
             u8::from(self.legacy_style),
@@ -598,7 +608,8 @@ impl Settings {
             self.language.encode(),
             self.presentation.pointer.encode(),
             u8::from(self.wheel_learned),
-            u8::from(self.mini_toolbar)
+            u8::from(self.mini_toolbar),
+            u8::from(self.toolbar_unfolded)
         )
     }
     /// Changes only the editor's custom color, preserving the other stored preferences.
@@ -623,6 +634,16 @@ impl Settings {
     pub fn save_wheel_learned_to(path: &Path, replace: Replace) -> std::result::Result<(), String> {
         let mut current = Self::load_from(path)?;
         current.wheel_learned = true;
+        current.write_to(path, replace)
+    }
+    /// Remembers whether the mini toolbar was left unfolded, preserving the other preferences.
+    pub fn save_toolbar_unfolded_to(
+        path: &Path,
+        unfolded: bool,
+        replace: Replace,
+    ) -> std::result::Result<(), String> {
+        let mut current = Self::load_from(path)?;
+        current.toolbar_unfolded = unfolded;
         current.write_to(path, replace)
     }
     /// Merges only fields changed by an editor into the latest resident preferences.
@@ -722,13 +743,13 @@ mod tests {
             ..Default::default()
         };
         let encoded = settings.encode();
-        assert!(encoded.starts_with("shotoshot-settings-19\n"));
+        assert!(encoded.starts_with("shotoshot-settings-20\n"));
         let legacy = encoded.replacen("shotoshot-settings-", "shotshot-settings-", 1);
         assert_eq!(Settings::decode(&legacy).unwrap(), settings);
         let oldest = Settings::decode("shotshot-settings-1\n3\n65\n1\n43,3a,2f,e9\n").unwrap();
         assert_eq!((oldest.modifiers, oldest.key), (3, 65));
         assert!(Settings::decode(&encoded.replacen("shotoshot-", "other-", 1)).is_err());
-        assert!(Settings::decode(&encoded.replacen("-19\n", "-20\n", 1)).is_err());
+        assert!(Settings::decode(&encoded.replacen("-20\n", "-21\n", 1)).is_err());
     }
     #[test]
     fn board_fields_roundtrip_and_older_files_get_defaults() {
@@ -737,7 +758,7 @@ mod tests {
             .lines()
             .map(str::to_owned)
             .collect();
-        assert_eq!(fields.len(), 32);
+        assert_eq!(fields.len(), 33);
         assert_eq!(&fields[25..29], &["1,66", "0", "14", "auto"]);
         let mut old = fields[..25].to_vec();
         old[0] = "shotoshot-settings-13".into();
@@ -782,7 +803,7 @@ mod tests {
             ..Default::default()
         };
         let encoded = settings.encode();
-        assert!(encoded.starts_with("shotoshot-settings-19\n"));
+        assert!(encoded.starts_with("shotoshot-settings-20\n"));
         assert_eq!(encoded.lines().nth(28), Some("ja"));
         assert_eq!(
             Settings::decode(&encoded).unwrap().language,
@@ -809,7 +830,7 @@ mod tests {
         .lines()
         .map(str::to_owned)
         .collect();
-        assert_eq!(fields.len(), 32);
+        assert_eq!(fields.len(), 33);
         // Format 14 ends before the eraser size, 15 before the language.
         for (version, len, eraser) in [("14", 27, crate::ERASER_SIZE as u32), ("15", 28, 32)] {
             let mut old = fields[..len].to_vec();
@@ -823,8 +844,8 @@ mod tests {
             let mut too_long = fields[..=len].to_vec();
             too_long[0] = format!("shotoshot-settings-{version}");
             assert!(Settings::decode(&too_long.join("\n")).is_err(), "{version}");
-            // The migrated file is written as version 19.
-            assert!(migrated.encode().starts_with("shotoshot-settings-19\n"));
+            // The migrated file is written as version 20.
+            assert!(migrated.encode().starts_with("shotoshot-settings-20\n"));
         }
     }
     #[test]
@@ -909,13 +930,42 @@ mod tests {
         assert_eq!(Settings::decode(&encoded).unwrap(), settings);
         let mut fields: Vec<_> = encoded.lines().map(String::from).collect();
         fields[0] = "shotoshot-settings-18".into();
-        fields.pop();
+        fields.truncate(31);
         let older = Settings::decode(&(fields.join("\n") + "\n")).unwrap();
         assert!(
             !older.mini_toolbar,
             "a version 18 file shows the full toolbar"
         );
         fields[0] = "shotoshot-settings-19".into();
+        fields.push("2".into());
+        assert!(Settings::decode(&(fields.join("\n") + "\n")).is_err());
+    }
+    #[test]
+    fn the_unfolded_mini_toolbar_is_saved_alone_and_older_files_open_folded() {
+        let dir = std::env::temp_dir().join(format!("shotoshot-unfolded-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.txt");
+        let settings = Settings {
+            mini_toolbar: true,
+            capture_stroke_width: 9,
+            ..Default::default()
+        };
+        std::fs::write(&path, settings.encode()).unwrap();
+        Settings::save_toolbar_unfolded_to(&path, true, rename).unwrap();
+        let read = Settings::load_from(&path).unwrap();
+        assert!(read.toolbar_unfolded && read.mini_toolbar);
+        assert_eq!(read.capture_stroke_width, 9, "other fields are kept");
+        Settings::save_toolbar_unfolded_to(&path, false, rename).unwrap();
+        assert!(!Settings::load_from(&path).unwrap().toolbar_unfolded);
+        std::fs::remove_dir_all(dir).unwrap();
+
+        let mut fields: Vec<_> = read.encode().lines().map(String::from).collect();
+        assert_eq!(fields[32], "1");
+        fields[0] = "shotoshot-settings-19".into();
+        fields.pop();
+        let older = Settings::decode(&(fields.join("\n") + "\n")).unwrap();
+        assert!(!older.toolbar_unfolded, "a version 19 file opens folded");
+        fields[0] = "shotoshot-settings-20".into();
         fields.push("2".into());
         assert!(Settings::decode(&(fields.join("\n") + "\n")).is_err());
     }
@@ -1057,7 +1107,7 @@ mod tests {
         old[0] = "shotoshot-settings-9".into();
         let migrated = Settings::decode(&old.join("\n")).unwrap().encode();
         let fields: Vec<_> = migrated.lines().collect();
-        assert_eq!(fields[0], "shotoshot-settings-19");
+        assert_eq!(fields[0], "shotoshot-settings-20");
         assert_eq!(&fields[20..22], &["0,145", "1"]);
         let mut custom: Vec<_> = fields.iter().map(|v| v.to_string()).collect();
         custom[20] = "6,122".into();
@@ -1142,7 +1192,7 @@ mod tests {
             .take(18)
             .collect::<Vec<_>>()
             .join("\n")
-            .replacen("settings-19", "settings-8", 1);
+            .replacen("settings-20", "settings-8", 1);
         assert!(Settings::decode(&old).unwrap().start_with_windows);
     }
     #[test]
@@ -1187,7 +1237,7 @@ mod tests {
         // Older formats have no size: the default.
         let older = Settings::default()
             .encode()
-            .replacen("settings-19", "settings-14", 1);
+            .replacen("settings-20", "settings-14", 1);
         let older = older.lines().take(27).collect::<Vec<_>>().join("\n") + "\n";
         assert_eq!(
             Settings::decode(&older).unwrap().capture_eraser_size,
@@ -1506,7 +1556,7 @@ mod tests {
             assert_eq!(
                 settings.encode(),
                 format!(
-                    "shotoshot-settings-19\n3\n65\n1\n43,3a,2f,e9\n{live_capture}\n3000\nffd340\ned4f5c\n4\n1,65\n1,82\n1,67\n5\n28\n-\n1\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n1,48,100,2,0,0,1,0,ed4f5c,409cff,0,1,-,0,240,60,0,-,0,0,240,2,-,0\n0\n0\n"
+                    "shotoshot-settings-20\n3\n65\n1\n43,3a,2f,e9\n{live_capture}\n3000\nffd340\ned4f5c\n4\n1,65\n1,82\n1,67\n5\n28\n-\n1\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n1,48,100,2,0,0,1,0,ed4f5c,409cff,0,1,-,0,240,60,0,-,0,0,240,2,-,0\n0\n0\n0\n"
                 )
             );
         }
@@ -1521,7 +1571,7 @@ mod tests {
             assert_eq!(
                 settings.encode(),
                 format!(
-                    "shotoshot-settings-19\n3\n65\n0\n43,3a,2f,e9\n1\n{duration}\n00aaff\nff0001\n4\n1,65\n1,82\n1,67\n5\n28\n-\n1\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n1,48,100,2,0,0,1,0,ed4f5c,409cff,0,1,-,0,240,60,0,-,0,0,240,2,-,0\n0\n0\n"
+                    "shotoshot-settings-20\n3\n65\n0\n43,3a,2f,e9\n1\n{duration}\n00aaff\nff0001\n4\n1,65\n1,82\n1,67\n5\n28\n-\n1\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n1,48,100,2,0,0,1,0,ed4f5c,409cff,0,1,-,0,240,60,0,-,0,0,240,2,-,0\n0\n0\n0\n"
                 )
             );
         }
@@ -1603,6 +1653,7 @@ mod tests {
             language: LanguageChoice::Fixed(Language::Ja),
             wheel_learned: true,
             mini_toolbar: true,
+            toolbar_unfolded: true,
         };
         assert_eq!(Settings::decode(&s.encode()).unwrap(), s);
     }

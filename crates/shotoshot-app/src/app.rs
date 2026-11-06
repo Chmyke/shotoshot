@@ -591,7 +591,9 @@ impl App {
         session.capture.editor.style.width = self.settings.capture_stroke_width as f64;
         session.capture.editor.eraser_size = self.settings.capture_eraser_size as f64;
         session.capture.wheel_hint = !self.settings.wheel_learned;
-        session.capture.use_mini_toolbar(self.settings.mini_toolbar);
+        session
+            .capture
+            .use_mini_toolbar(self.settings.mini_toolbar, self.settings.toolbar_unfolded);
         let mut pointer = POINT::default();
         if unsafe { GetCursorPos(&mut pointer) }.is_ok() {
             session.capture.pointer = Point {
@@ -721,6 +723,9 @@ impl App {
             report(hwnd, &error);
         }
         if let Err(error) = self.persist_wheel_learned() {
+            report(hwnd, &error);
+        }
+        if let Err(error) = self.persist_toolbar_fold() {
             report(hwnd, &error);
         }
         if let Some(s) = &mut self.session {
@@ -881,6 +886,24 @@ impl App {
             self.settings.last_custom_color = session.capture.custom_color;
             session.capture.custom_color_changed = false;
         }
+        Ok(())
+    }
+    /// Remembers whether the mini toolbar was left unfolded, for the next capture.
+    fn persist_toolbar_fold(&mut self) -> Result<()> {
+        let Some(unfolded) = self
+            .session
+            .as_ref()
+            .and_then(|s| s.capture.fold_to_remember())
+        else {
+            return Ok(());
+        };
+        if unfolded == self.settings.toolbar_unfolded {
+            return Ok(());
+        }
+        if self.persist_preferences {
+            Settings::save_toolbar_unfolded(unfolded).map_err(crate::settings::unsaved)?;
+        }
+        self.settings.toolbar_unfolded = unfolded;
         Ok(())
     }
     /// Remembers, once, that the user has turned the wheel, so no editor hints at it again.

@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.41 · 2026-11-06
+
+- The mini toolbar now remembers how you left it: unfold it once and the next captures open unfolded too, until you fold it again.
+
 ## 0.3.40 · 2026-11-06
 
 - The blur no longer asks twice: draw the zone and its strength follows its size, so a big title gets a thick fog and a small line just enough.
