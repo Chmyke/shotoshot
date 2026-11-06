@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.38 · 2026-11-06
+
+- Pasting a capture into tools that used to come up empty, like Claude Code or PowerShell scripts, now works: the image finally arrives the right way up for them too.
+
 ## 0.3.37 · 2026-11-06
 
 - Esc no longer throws away the text you are typing: it keeps it, and a click beside it just finishes it instead of starting an empty one.

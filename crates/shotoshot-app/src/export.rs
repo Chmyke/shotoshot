@@ -279,7 +279,11 @@ pub fn copy_image(image: &Image, owner: HWND) -> Result<()> {
     image.validate()?;
     unsafe {
         // PITFALL: CF_DIB owns the HGLOBAL only after successful SetClipboardData.
-        let header = image.info().bmiHeader;
+        // PITFALL: WinForms Clipboard.GetImage() returns null for a top-down DIB
+        // (negative biHeight), which breaks pasting into .NET and PowerShell tools
+        // such as Claude Code. The clipboard copy is therefore written bottom-up.
+        let mut header = image.info().bmiHeader;
+        header.biHeight = header.biHeight.abs();
         let header_size = std::mem::size_of_val(&header);
         let allocation = GlobalAlloc(GMEM_MOVEABLE, header_size + image.pixels.len())?;
         let data = GlobalLock(allocation).cast::<u8>();
@@ -288,11 +292,14 @@ pub fn copy_image(image: &Image, owner: HWND) -> Result<()> {
             return Err(Error::from_thread());
         }
         std::ptr::copy_nonoverlapping((&header as *const _ as *const u8).cast(), data, header_size);
-        std::ptr::copy_nonoverlapping(
-            image.pixels.as_ptr(),
-            data.add(header_size),
-            image.pixels.len(),
-        );
+        let stride = image.width as usize * 4;
+        for (row, line) in image.pixels.chunks_exact(stride).rev().enumerate() {
+            std::ptr::copy_nonoverlapping(
+                line.as_ptr(),
+                data.add(header_size + row * stride),
+                stride,
+            );
+        }
         let _ = GlobalUnlock(allocation);
         if let Err(error) = OpenClipboard(Some(owner)) {
             let _ = GlobalFree(Some(allocation));

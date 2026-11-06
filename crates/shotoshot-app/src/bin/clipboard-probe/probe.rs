@@ -103,10 +103,18 @@ fn verify() -> Result<()> {
                 data.add(std::mem::size_of::<BITMAPINFOHEADER>()),
                 image.pixels.len(),
             );
+            // Bottom-up DIB: WinForms consumers cannot read a top-down one.
+            let flipped: Vec<u8> = image
+                .pixels
+                .chunks_exact(image.width as usize * 4)
+                .rev()
+                .flatten()
+                .copied()
+                .collect();
             let matches = header.biWidth == 7
-                && header.biHeight == -3
+                && header.biHeight == 3
                 && header.biBitCount == 32
-                && pixels == image.pixels;
+                && pixels == flipped.as_slice();
             let _ = GlobalUnlock(allocation);
             if !matches {
                 return Err(Error::new(
