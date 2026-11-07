@@ -1,15 +1,23 @@
 //! ROLE: Portable CPU implementation of `Canvas` (tiny-skia paths, cosmic-text glyphs) for
 //! Linux and macOS, plus the flattened export of a capture.
-//! OWNER: One `Raster` per capture session keeps fonts, glyph cache and cached rasters.
+//! OWNER: One `Raster` per capture session keeps fonts, glyph cache, laid-out texts and
+//! cached rasters.
 //! INVARIANTS: Pixmaps are premultiplied RGBA; `Image` stays top-down BGRA at the edges.
+//! Glyphs are composed straight into the pixels when text is not rotated.
+pub mod present;
 use cosmic_text::{
-    Attrs, Buffer, Color, Family, FontSystem, Metrics, Shaping, SwashCache, Weight, fontdb,
+    Attrs, Buffer, Family, FontSystem, Metrics, PhysicalGlyph, Shaping, SwashCache, Weight, fontdb,
 };
 use shotoshot_core::{
     BlurPatch, Label, Object, Point, Rect, Shape, paths, stroke_runs, text_lines,
 };
 use shotoshot_ui::{Canvas, Face, Image, Ink, annotation_font};
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    hash::{Hash, Hasher},
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tiny_skia::{
     FillRule, FilterQuality, LineCap, LineJoin, Mask, Paint, PathBuilder, Pixmap, PixmapPaint,
     Stroke, Transform,
@@ -38,13 +46,52 @@ fn line_height(face: Face) -> f32 {
 #[derive(Debug)]
 pub struct RasterError(pub &'static str);
 
+/// How many laid-out texts are kept before the cache starts over: enough for every prefix
+/// of a text being typed, measured on each pointer move, and the interface's labels.
+const LAYOUTS_KEPT: usize = 512;
+
+/// A text laid out once, drawn and measured from then on.
+struct Layout {
+    face: Face,
+    size_bits: u32,
+    text: String,
+    buffer: Buffer,
+    extent: Point,
+}
+
+/// The fonts of a `Raster` loading on their own thread, so that the capture and the window
+/// do not wait for them (`FontSystem::new` reads every system font).
+pub struct Loading(std::thread::JoinHandle<(FontSystem, Duration)>);
+impl Loading {
+    pub fn start() -> Self {
+        Self(std::thread::spawn(|| {
+            let started = Instant::now();
+            let fonts = Raster::fonts();
+            (fonts, started.elapsed())
+        }))
+    }
+    /// The renderer once its fonts are in, and how long they took to load; a thread that
+    /// failed loads them here.
+    pub fn wait(self) -> (Raster, Duration) {
+        match self.0.join() {
+            Ok((fonts, took)) => (Raster::with_fonts(fonts), took),
+            Err(_) => (Raster::new(), Duration::ZERO),
+        }
+    }
+}
+
 /// Session-lifetime rendering resources.
 pub struct Raster {
     fonts: FontSystem,
     glyphs: SwashCache,
+    /// Laid-out texts by the hash of (face, size, text), checked on each hit.
+    layouts: HashMap<u64, Layout>,
     rasters: Vec<(&'static str, u64, Pixmap)>,
     /// What each blur makes of the capture, by object id with its version.
     blurs: Vec<(u64, u64, Pixmap)>,
+    /// Coverage for fills with holes, kept at the size of the last target that needed one;
+    /// only the rows of each fill's box are written.
+    mask: Option<Mask>,
 }
 impl Default for Raster {
     fn default() -> Self {
@@ -53,14 +100,23 @@ impl Default for Raster {
 }
 impl Raster {
     pub fn new() -> Self {
+        Self::with_fonts(Self::fonts())
+    }
+    /// The system fonts and the embedded annotation font.
+    fn fonts() -> FontSystem {
         let mut fonts = FontSystem::new();
         let annotation = fontdb::Source::Binary(Arc::new(annotation_font::DATA));
         fonts.db_mut().load_font_source(annotation);
+        fonts
+    }
+    fn with_fonts(fonts: FontSystem) -> Self {
         Self {
             fonts,
             glyphs: SwashCache::new(),
+            layouts: HashMap::new(),
             rasters: Vec::new(),
             blurs: Vec::new(),
+            mask: None,
         }
     }
     /// Extent of interface `text` laid out at `size`, exactly as `Canvas::text` draws it.
@@ -91,21 +147,51 @@ impl Raster {
         self.measure_annotation_text(&lines, size)
     }
     fn extent(&mut self, text: &str, size: f64, face: Face) -> Point {
-        let fonts = &mut self.fonts;
+        let key = self.layout(text, size, face);
+        self.layouts[&key].extent
+    }
+    /// The key of `text` laid out at `size` in `face`, laying it out on the first call.
+    fn layout(&mut self, text: &str, size: f64, face: Face) -> u64 {
         let size = size as f32;
-        let mut buffer = Buffer::new(fonts, Metrics::new(size, size * line_height(face)));
-        let mut buffer = buffer.borrow_with(fonts);
-        buffer.set_size(None, None);
-        buffer.set_text(text, &attrs(face), Shaping::Advanced, None);
-        let (mut width, mut height) = (0f32, 0f32);
-        for run in buffer.layout_runs() {
-            width = width.max(run.line_w);
-            height = run.line_top + run.line_height;
+        let size_bits = size.to_bits();
+        let mut hasher = std::hash::DefaultHasher::new();
+        (face == Face::Annotation, size_bits, text).hash(&mut hasher);
+        let key = hasher.finish();
+        let hit = self
+            .layouts
+            .get(&key)
+            .is_some_and(|l| l.face == face && l.size_bits == size_bits && l.text == text);
+        if !hit {
+            if self.layouts.len() >= LAYOUTS_KEPT {
+                self.layouts.clear();
+            }
+            let fonts = &mut self.fonts;
+            let mut buffer = Buffer::new(fonts, Metrics::new(size, size * line_height(face)));
+            let mut borrowed = buffer.borrow_with(fonts);
+            borrowed.set_size(None, None);
+            borrowed.set_text(text, &attrs(face), Shaping::Advanced, None);
+            borrowed.shape_until_scroll(false);
+            let (mut width, mut height) = (0f32, 0f32);
+            for run in buffer.layout_runs() {
+                width = width.max(run.line_w);
+                height = run.line_top + run.line_height;
+            }
+            let extent = Point {
+                x: width as f64,
+                y: height as f64,
+            };
+            self.layouts.insert(
+                key,
+                Layout {
+                    face,
+                    size_bits,
+                    text: text.to_owned(),
+                    buffer,
+                    extent,
+                },
+            );
         }
-        Point {
-            x: width as f64,
-            y: height as f64,
-        }
+        key
     }
     /// A drawing surface over `target` for one frame.
     pub fn canvas<'a>(&'a mut self, target: &'a mut Pixmap) -> SkiaCanvas<'a> {
@@ -291,30 +377,57 @@ impl SkiaCanvas<'_> {
                 .fill_path(&path, &paint(ink), FillRule::Winding, transform, None);
         }
     }
-    /// `area` filled except inside the closed `holes`, which may overlap.
+    /// `area` filled except inside the closed `holes`, which may overlap. The coverage mask
+    /// is as large as the target (tiny-skia wants it so) but only the rows and columns of
+    /// the area's box are written: cleared, holed, then inverted there.
     fn fill_except(&mut self, area: Option<tiny_skia::Path>, holes: &[Vec<Point>], ink: Ink) {
         if holes.is_empty() {
             return self.fill_path(area, ink, Transform::identity());
         }
-        let (Some(area), Some(mut mask)) =
-            (area, Mask::new(self.target.width(), self.target.height()))
-        else {
+        let Some(area) = area.and_then(|a| a.transform(self.transform)) else {
             return;
         };
+        let (width, height) = (self.target.width(), self.target.height());
+        let bounds = area.bounds();
+        let x0 = (bounds.left().floor() - 1.).max(0.) as usize;
+        let y0 = (bounds.top().floor() - 1.).max(0.) as usize;
+        let x1 = ((bounds.right().ceil() + 1.).max(0.) as usize).min(width as usize);
+        let y1 = ((bounds.bottom().ceil() + 1.).max(0.) as usize).min(height as usize);
+        if x1 <= x0 || y1 <= y0 {
+            return;
+        }
+        let mask = match &mut self.raster.mask {
+            Some(mask) if mask.width() == width && mask.height() == height => mask,
+            slot => match Mask::new(width, height) {
+                Some(mask) => slot.insert(mask),
+                None => return,
+            },
+        };
+        let row = width as usize;
+        for y in y0..y1 {
+            mask.data_mut()[y * row + x0..y * row + x1].fill(0);
+        }
         for hole in holes {
             if let Some(path) = polyline(hole, true) {
                 mask.fill_path(&path, FillRule::Winding, true, self.transform);
             }
         }
-        mask.invert();
+        for y in y0..y1 {
+            for coverage in &mut mask.data_mut()[y * row + x0..y * row + x1] {
+                *coverage = 255 - *coverage;
+            }
+        }
         self.target.fill_path(
             &area,
             &paint(ink),
             FillRule::Winding,
-            self.transform,
-            Some(&mask),
+            Transform::identity(),
+            Some(mask),
         );
     }
+    /// `text` laid out from `r.min`, each glyph's coverage composed into the pixels when
+    /// `transform` only moves it, drawn as a small bitmap through the transform otherwise.
+    /// `clip` cuts what lies at or past `r.max`, in the text's own coordinates.
     fn text_at(
         &mut self,
         text: &str,
@@ -325,30 +438,137 @@ impl SkiaCanvas<'_> {
         clip: bool,
     ) {
         let raster = &mut *self.raster;
-        let size = size as f32;
-        let metrics = Metrics::new(size, size * line_height(face));
-        let mut buffer = Buffer::new(&mut raster.fonts, metrics);
-        let mut buffer = buffer.borrow_with(&mut raster.fonts);
-        buffer.set_size(None, None);
-        buffer.set_text(text, &attrs(face), Shaping::Advanced, None);
+        let key = raster.layout(text, size, face);
+        let glyphs: Vec<PhysicalGlyph> = raster.layouts[&key]
+            .buffer
+            .layout_runs()
+            .flat_map(|run| {
+                run.glyphs
+                    .iter()
+                    .map(move |glyph| glyph.physical((0., run.line_y), 1.))
+            })
+            .collect();
         let alpha = (ink.alpha.clamp(0., 1.) * 255.).round() as u8;
-        let color = Color::rgba(ink.rgb[0], ink.rgb[1], ink.rgb[2], alpha);
-        let (origin, limit) = (r.min, r.max);
         let transform = transform.post_concat(self.transform);
-        let target = &mut *self.target;
-        buffer.draw(&mut raster.glyphs, color, |x, y, w, h, c| {
-            let (x, y) = (origin.x as f32 + x as f32, origin.y as f32 + y as f32);
-            if clip && (x >= limit.x as f32 || y >= limit.y as f32) {
-                return;
-            }
-            let Some(rect) = tiny_skia::Rect::from_xywh(x, y, w as f32, h as f32) else {
-                return;
+        let moved_only = !transform.has_scale() && !transform.has_skew();
+        let (origin_x, origin_y) = (r.min.x as f32, r.min.y as f32);
+        let limit = clip.then_some((r.max.x as f32, r.max.y as f32));
+        for glyph in glyphs {
+            let Some(image) = raster.glyphs.get_image(&mut raster.fonts, glyph.cache_key) else {
+                continue;
             };
-            let mut p = Paint::default();
-            p.set_color_rgba8(c.r(), c.g(), c.b(), c.a());
-            target.fill_rect(rect, &p, transform, None);
-        });
+            let placement = image.placement;
+            // The glyph's top-left corner in the text's coordinates, as cosmic-text lays it.
+            let x = origin_x + (glyph.x + placement.left) as f32;
+            let y = origin_y + (glyph.y - placement.top) as f32;
+            // Columns and rows at or past the limit are cut.
+            let kept = |start: f32, limit: Option<f32>, full: u32| {
+                limit.map_or(full, |limit| {
+                    ((limit - start).ceil().max(0.) as u32).min(full)
+                })
+            };
+            let source = GlyphPixels {
+                data: &image.data,
+                colored: matches!(image.content, cosmic_text::SwashContent::Color),
+                stride: placement.width,
+                width: kept(x, limit.map(|l| l.0), placement.width),
+                height: kept(y, limit.map(|l| l.1), placement.height),
+            };
+            if source.width == 0 || source.height == 0 {
+                continue;
+            }
+            if moved_only {
+                let at = (
+                    (x + transform.tx).round() as i32,
+                    (y + transform.ty).round() as i32,
+                );
+                compose(self.target, at, &source, ink.rgb, alpha);
+            } else if let Some(bitmap) = tinted(&source, ink.rgb, alpha) {
+                let paint = PixmapPaint {
+                    quality: FilterQuality::Bilinear,
+                    ..PixmapPaint::default()
+                };
+                let at = Transform::from_translate(x, y).post_concat(transform);
+                self.target
+                    .draw_pixmap(0, 0, bitmap.as_ref(), &paint, at, None);
+            }
+        }
     }
+}
+
+/// The pixels of one rasterised glyph: a coverage byte per pixel, or straight RGBA when
+/// `colored` (emoji); `width` × `height` of them are drawn, on rows `stride` pixels long.
+struct GlyphPixels<'a> {
+    data: &'a [u8],
+    colored: bool,
+    stride: u32,
+    width: u32,
+    height: u32,
+}
+impl GlyphPixels<'_> {
+    /// Straight colour and coverage of the pixel at (`col`, `row`), tinted `rgb` at `alpha`.
+    fn pixel(&self, col: u32, row: u32, rgb: [u8; 3], alpha: u8) -> ([u8; 3], u8) {
+        let i = (row * self.stride + col) as usize;
+        let (rgb, coverage) = if self.colored {
+            let p = &self.data[i * 4..i * 4 + 4];
+            ([p[0], p[1], p[2]], p[3])
+        } else {
+            (rgb, self.data[i])
+        };
+        (rgb, div255(coverage as u32 * alpha as u32))
+    }
+}
+/// `x / 255`, rounded, for `x` up to `255 * 255`.
+fn div255(x: u32) -> u8 {
+    ((x + 128 + ((x + 128) >> 8)) >> 8) as u8
+}
+/// Lays `glyph` over `target` with its top-left corner at `at`, source-over on the
+/// premultiplied pixels, clipped to the target.
+fn compose(target: &mut Pixmap, at: (i32, i32), glyph: &GlyphPixels, rgb: [u8; 3], alpha: u8) {
+    let (width, height) = (target.width() as i32, target.height() as i32);
+    let stride = target.width() as usize * 4;
+    let data = target.data_mut();
+    for row in 0..glyph.height as i32 {
+        let y = at.1 + row;
+        if y < 0 || y >= height {
+            continue;
+        }
+        let first = (-at.0).max(0);
+        let last = (width - at.0).min(glyph.width as i32);
+        for col in first..last {
+            let (color, coverage) = glyph.pixel(col as u32, row as u32, rgb, alpha);
+            if coverage == 0 {
+                continue;
+            }
+            let i = y as usize * stride + (at.0 + col) as usize * 4;
+            let keep = 255 - coverage as u32;
+            let dst = &mut data[i..i + 4];
+            for (channel, value) in dst.iter_mut().zip([color[0], color[1], color[2], 255]) {
+                *channel = div255(value as u32 * coverage as u32 + *channel as u32 * keep);
+            }
+        }
+    }
+}
+/// `glyph` as a premultiplied bitmap of its own, for drawing through a transform.
+fn tinted(glyph: &GlyphPixels, rgb: [u8; 3], alpha: u8) -> Option<Pixmap> {
+    let mut bitmap = Pixmap::new(glyph.width, glyph.height)?;
+    for (i, pixel) in bitmap
+        .data_mut()
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .enumerate()
+    {
+        let (col, row) = (i as u32 % glyph.width, i as u32 / glyph.width);
+        let (color, coverage) = glyph.pixel(col, row, rgb, alpha);
+        *pixel = [
+            div255(color[0] as u32 * coverage as u32),
+            div255(color[1] as u32 * coverage as u32),
+            div255(color[2] as u32 * coverage as u32),
+            coverage,
+        ];
+    }
+    Some(bitmap)
 }
 
 impl Canvas for SkiaCanvas<'_> {
@@ -854,6 +1074,121 @@ mod tests {
         let moved = frame(&capture);
         assert_eq!(rgb(&moved, 120, 100), dimmed);
         assert_eq!(rgb(&moved, 340, 100), SLATE);
+    }
+    #[test]
+    fn a_text_is_laid_out_once_however_often_it_is_measured_or_drawn() {
+        let mut raster = Raster::new();
+        let first = raster.measure_annotation_text("Shotoshot", 24.);
+        assert_eq!(raster.layouts.len(), 1);
+        for _ in 0..3 {
+            assert_eq!(raster.measure_annotation_text("Shotoshot", 24.), first);
+            let mut frame = blank();
+            let r = Rect::new(at(10., 10.), at(390., 190.)).unwrap();
+            raster
+                .canvas(&mut frame)
+                .annotation_text("Shotoshot", r, 24., Ink::solid([0; 3]))
+                .unwrap();
+        }
+        assert_eq!(
+            raster.layouts.len(),
+            1,
+            "measured and drawn from the same layout"
+        );
+        // Another size or face is another layout; the same text in both faces differs.
+        raster.measure_annotation_text("Shotoshot", 25.);
+        raster.measure_text("Shotoshot", 24.);
+        assert_eq!(raster.layouts.len(), 3);
+        assert_ne!(
+            raster.measure_text("Shotoshot", 24.),
+            first,
+            "the interface face is not the annotation face"
+        );
+        // A full cache starts over instead of growing without bound.
+        for i in 0..LAYOUTS_KEPT {
+            raster.measure_text(&format!("line {i}"), 12.);
+        }
+        assert!(raster.layouts.len() <= LAYOUTS_KEPT);
+        assert_eq!(raster.measure_annotation_text("Shotoshot", 24.), first);
+    }
+    #[test]
+    fn translucent_text_is_lighter_than_opaque_text() {
+        let darkness = |alpha: f32| {
+            let mut raster = Raster::new();
+            let mut frame = blank();
+            let r = Rect::new(at(10., 10.), at(390., 190.)).unwrap();
+            raster
+                .canvas(&mut frame)
+                .text("Shotoshot", r, 24., Ink::with_alpha([0; 3], alpha))
+                .unwrap();
+            (0..400u32)
+                .flat_map(|x| (0..200u32).map(move |y| (x, y)))
+                .map(|(x, y)| 255 - frame.pixel(x, y).map_or(255, |c| c.red()) as u32)
+                .sum::<u32>()
+        };
+        let (opaque, half) = (darkness(1.), darkness(0.5));
+        assert!(opaque > 2000, "text missing ({opaque})");
+        assert!(
+            half * 10 > opaque * 4 && half * 10 < opaque * 6,
+            "half-transparent text should be about half as dark: {half} of {opaque}"
+        );
+        assert_eq!(darkness(0.), 0, "invisible text leaves no mark");
+    }
+    #[test]
+    fn rotated_text_is_drawn_where_the_rotation_puts_it() {
+        let mut raster = Raster::new();
+        let mut frame = blank();
+        let r = Rect::new(at(200., 100.), at(1e6, 1e6)).unwrap();
+        {
+            let mut canvas = raster.canvas(&mut frame);
+            canvas
+                .set_rotation(Some((at(200., 100.), std::f64::consts::PI)))
+                .unwrap();
+            canvas
+                .annotation_text("Shotoshot", r, 24., Ink::solid([0; 3]))
+                .unwrap();
+            canvas.set_rotation(None).unwrap();
+        }
+        // Turned half a circle around its own corner, the text lies up and to the left.
+        assert!(inked(&frame, 60..200, 60..100) > 60, "rotated text missing");
+        assert_eq!(
+            inked(&frame, 200..400, 100..200),
+            0,
+            "nothing where it would lie unrotated"
+        );
+    }
+    #[test]
+    fn fills_with_holes_do_not_remember_each_other() {
+        let mut raster = Raster::new();
+        let mut frame = blank();
+        let hole = |min: Point, max: Point| vec![min, at(max.x, min.y), max, at(min.x, max.y)];
+        {
+            let mut canvas = raster.canvas(&mut frame);
+            let left = Rect::new(at(0., 0.), at(200., 200.)).unwrap();
+            canvas
+                .fill_rect_except(
+                    left,
+                    &[hole(at(50., 50.), at(100., 100.))],
+                    Ink::solid(SLATE),
+                )
+                .unwrap();
+            // The second fill covers where the first one's hole was: it must be filled.
+            let whole = Rect::new(at(0., 0.), at(400., 200.)).unwrap();
+            canvas
+                .fill_rect_except(
+                    whole,
+                    &[hole(at(300., 50.), at(350., 100.))],
+                    Ink::solid(GREEN),
+                )
+                .unwrap();
+        }
+        let image = image_from_pixmap(&frame, 0, 0);
+        assert_eq!(
+            rgb(&image, 75, 75),
+            GREEN,
+            "the first hole is no hole for the second fill"
+        );
+        assert_eq!(rgb(&image, 325, 75), PAPER, "the second hole is spared");
+        assert_eq!(rgb(&image, 10, 10), GREEN);
     }
     #[test]
     fn text_field_draws_text_selection_and_caret() {

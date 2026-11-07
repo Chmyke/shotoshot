@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.43 · 2026-11-07
+
+Nothing you would notice in this version: the work is under the hood.
+
 ## 0.3.42 · 2026-11-07
 
 - New in Settings, Presentation: an OBS mirror switch, off by default. Turn it on if you stream, and OBS captures the pointer effects, the keyboard, the mouse and the shapes from a hidden window. Everyone else gets a lighter Shotoshot that no longer keeps a graphics device busy for a mirror nobody watches.

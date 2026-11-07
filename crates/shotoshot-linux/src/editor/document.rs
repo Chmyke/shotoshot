@@ -38,6 +38,7 @@ pub fn open(path: &Path, probe: bool) -> Result<(), Box<dyn Error>> {
     if !probe {
         crate::language::apply(&settings::load().unwrap_or_default());
     }
+    let fonts = Loading::start();
     let unread = |error: std::io::Error| {
         let path = path.display().to_string();
         let detail = error.to_string();
@@ -58,6 +59,7 @@ pub fn open(path: &Path, probe: bool) -> Result<(), Box<dyn Error>> {
     let stand_in = Image::solid(1, 1, [0, 0, 0, 255]);
     start(
         stand_in,
+        fonts,
         Some(document),
         probe.then_some(Diagnostic::Document),
     )

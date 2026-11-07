@@ -14,8 +14,9 @@ mod png_io;
 mod portal;
 mod resident;
 mod settings;
+mod timing;
 mod x11;
-use std::{error::Error, path::PathBuf};
+use std::{error::Error, path::PathBuf, time::Instant};
 
 /// Runs the command line; a failure the user did not ask for (not a cancelled portal
 /// dialog) is also shown in a message window, since a shortcut has no terminal.
@@ -107,7 +108,9 @@ fn dispatch(args: &[String]) -> Result<(), Box<dyn Error>> {
     if !args.iter().any(|a| a == "--capture") && resident::run()? {
         return Ok(());
     }
-    editor::run(capture()?, None)
+    // The fonts load while the compositor takes the screenshot.
+    let fonts = shotoshot_raster::Loading::start();
+    editor::run(capture()?, fonts, None)
 }
 
 /// Saves the whole desktop as the next "NNN.png" on the Desktop, without editing.
@@ -118,19 +121,28 @@ fn instant() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Scripted end-to-end check on a real desktop: every step writes evidence into `out`.
+/// Scripted end-to-end check on a real desktop: every step writes evidence into `out`, and
+/// each stage is timed against its budget (`timing`), so that a Linux gain or loss is proven.
 fn diagnostic(out: &std::path::Path) -> Result<(), Box<dyn Error>> {
     std::fs::create_dir_all(out)?;
-    let started = std::time::Instant::now();
+    let mut timings = timing::Timings::new();
+    let fonts = shotoshot_raster::Loading::start();
+    let started = Instant::now();
     let image = capture()?;
-    println!(
-        "capture: {}x{} in {} ms",
-        image.width,
-        image.height,
-        started.elapsed().as_millis()
-    );
-    png_io::save(&image, &out.join("capture.png"))?;
-    editor::run(image, Some(out.to_path_buf()))?;
+    timings.record(timing::CAPTURE, started.elapsed());
+    println!("capture: {}x{}", image.width, image.height);
+    // The full-screen capture is the stable measure of a PNG written and read back.
+    let file = out.join("capture.png");
+    let started = Instant::now();
+    png_io::save(&image, &file)?;
+    timings.record(timing::ENCODE, started.elapsed());
+    let started = Instant::now();
+    let reloaded = png_io::load(&file)?;
+    timings.record(timing::DECODE, started.elapsed());
+    if reloaded.pixels != image.pixels {
+        return Err("the saved capture does not read back pixel for pixel".into());
+    }
+    editor::run(image, fonts, Some((out.to_path_buf(), timings)))?;
     // Both message windows must open on the real desktop too, from their own process.
     for (kind, message) in [
         (notice::ARG, "Shotoshot diagnostic: message window"),

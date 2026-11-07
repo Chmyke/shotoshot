@@ -4,11 +4,14 @@
 //! OWNER: One editor per capture or document; the process ends with it.
 //! INVARIANTS: Window pixels map to capture pixels by a per-axis scale (1:1 on one monitor).
 mod document;
-use crate::{clipboard, files, keymap, monitors, notice, png_io, settings};
+use crate::{clipboard, files, keymap, monitors, notice, png_io, settings, timing};
 use document::{Document, Place};
 pub use document::{PROBE, open};
 use shotoshot_core::{Label, Modifiers, Point, settings::Settings};
-use shotoshot_raster::{Raster, pixmap_from_bgra};
+use shotoshot_raster::{
+    Loading, Raster, pixmap_from_bgra,
+    present::{Presenter, blit},
+};
 use shotoshot_text::{Key, Text, tr};
 use shotoshot_ui::{
     Capture, CursorKind, DimensionFields, DimensionKey, FieldKey, Host, Image, Monitor, TextField,
@@ -35,6 +38,8 @@ use winit::{
 /// How long a fresh capture may wait to learn its monitor before filling whichever one
 /// the compositor picks; a shown window learns it within a few frames.
 const PLACING_LIMIT: Duration = Duration::from_secs(1);
+/// How many frames the diagnostic paints to time the loaded editor.
+const MEASURED_FRAMES: u8 = 8;
 
 /// Native side of the Linux editor: renderer resources and the portable inline fields.
 struct Native {
@@ -206,10 +211,31 @@ impl Host for Native {
 
 /// Scripted run on a real desktop: gestures, then evidence, then exit.
 enum Diagnostic {
-    /// `--linux-diagnostic`: a capture, one step per frame, evidence files in `out`.
-    Capture { out: PathBuf, step: u8 },
+    /// `--linux-diagnostic`: a capture, one step per frame, evidence files in `out`, every
+    /// stage timed.
+    Capture {
+        out: PathBuf,
+        step: u8,
+        watch: Watch,
+    },
     /// Its children, each started on a document: moves the first object and saves.
     Document,
+}
+
+/// What the scripted capture measures (`timing`).
+struct Watch {
+    timings: timing::Timings,
+    /// When the editor started, for the first frame; `None` once it is on screen.
+    started: Option<Instant>,
+    /// Paint (present included) and present durations of the frames since `clear`.
+    frames: Vec<Duration>,
+    presents: Vec<Duration>,
+}
+impl Watch {
+    fn clear(&mut self) {
+        self.frames.clear();
+        self.presents.clear();
+    }
 }
 
 struct Editor {
@@ -223,6 +249,8 @@ struct Editor {
     /// The new-text pointer at the window's scale; made with the window and on each change.
     new_text_cursor: Option<CustomCursor>,
     surface: Option<softbuffer::Surface<Rc<Window>, Rc<Window>>>,
+    /// The frame on screen and what changed since, for presenting only the difference.
+    presenter: Presenter,
     diagnostic: Option<Diagnostic>,
     /// Preferences at start; the stroke width and custom colour are stored back on exit.
     settings: Settings,
@@ -237,14 +265,29 @@ struct Editor {
     placing: Option<Instant>,
 }
 
-/// Edits the fresh capture `image`.
-pub fn run(image: Image, diagnostic: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
-    let diagnostic = diagnostic.map(|out| Diagnostic::Capture { out, step: 0 });
-    start(image, None, diagnostic)
+/// Edits the fresh capture `image` with the fonts loading since before the capture; a
+/// diagnostic goes on timing into `timings`.
+pub fn run(
+    image: Image,
+    fonts: Loading,
+    diagnostic: Option<(PathBuf, timing::Timings)>,
+) -> Result<(), Box<dyn Error>> {
+    let diagnostic = diagnostic.map(|(out, timings)| Diagnostic::Capture {
+        out,
+        step: 0,
+        watch: Watch {
+            timings,
+            started: Some(Instant::now()),
+            frames: Vec::new(),
+            presents: Vec::new(),
+        },
+    });
+    start(image, fonts, None, diagnostic)
 }
 
 fn start(
     image: Image,
+    fonts: Loading,
     document: Option<Document>,
     diagnostic: Option<Diagnostic>,
 ) -> Result<(), Box<dyn Error>> {
@@ -264,13 +307,22 @@ fn start(
     }
     let notice = unreadable
         .map(|error| Text::with(Key::ErrorSettingsUnreadable, &[("detail", &error)]).to_string());
+    // The event loop connects to the compositor while the fonts finish loading.
+    let event_loop = EventLoop::new()?;
+    let waiting = Instant::now();
+    let (raster, loaded) = fonts.wait();
+    let mut diagnostic = diagnostic;
+    if let Some(Diagnostic::Capture { watch, .. }) = &mut diagnostic {
+        watch.timings.record(timing::FONTS, loaded);
+        watch.timings.record(timing::FONTS_WAIT, waiting.elapsed());
+    }
     let mut editor = Editor {
         frame: backdrop.clone(),
         backdrop,
         capture: Capture::new(image),
         document,
         native: Native {
-            raster: Raster::new(),
+            raster,
             field: None,
             dimensions: None,
             modifiers: Modifiers::default(),
@@ -280,6 +332,7 @@ fn start(
         window: None,
         new_text_cursor: None,
         surface: None,
+        presenter: Presenter::new(),
         diagnostic,
         settings,
         persist,
@@ -288,13 +341,16 @@ fn start(
         placing: None,
     };
     editor.prepare();
-    EventLoop::new()?.run_app(&mut editor)?;
+    event_loop.run_app(&mut editor)?;
     editor.persist_preferences();
     editor.error.map_or(Ok(()), Err)
 }
 
-/// Shows the opaque `frame` in `window`, scaled to its size (1:1 on one monitor).
+/// Shows the opaque `frame` in `window`, scaled to its size (1:1 on one monitor): only
+/// what changed since the frame on screen is copied and handed to the compositor, and a
+/// frame equal to it is not presented at all.
 pub(crate) fn present(
+    presenter: &mut Presenter,
     frame: &Pixmap,
     window: &Window,
     surface: &mut softbuffer::Surface<Rc<Window>, Rc<Window>>,
@@ -304,21 +360,36 @@ pub(crate) fn present(
         return Ok(());
     };
     surface.resize(w, h)?;
+    let frame_size = (frame.width(), frame.height());
+    let buffer_size = (size.width, size.height);
     let mut buffer = surface.buffer_mut()?;
-    let (fw, fh) = (frame.width() as usize, frame.height() as usize);
-    let (bw, bh) = (size.width as usize, size.height as usize);
-    let data = frame.data();
-    for y in 0..bh {
-        let sy = y * fh / bh;
-        for x in 0..bw {
-            let sx = x * fw / bw;
-            let i = (sy * fw + sx) * 4;
-            // Opaque frame: premultiplied RGBA equals straight RGB.
-            buffer[y * bw + x] =
-                (data[i] as u32) << 16 | (data[i + 1] as u32) << 8 | data[i + 2] as u32;
-        }
-    }
-    buffer.present()?;
+    // Opaque frame: premultiplied RGBA equals straight RGB.
+    let Some(plan) = presenter.plan(frame.data(), frame_size, buffer_size, buffer.age()) else {
+        return Ok(());
+    };
+    let refresh = plan.refresh.to_buffer(frame_size, buffer_size);
+    blit(frame.data(), frame_size, &mut buffer, buffer_size, refresh);
+    let changed = plan.changed.to_buffer(frame_size, buffer_size);
+    let damage = match (
+        NonZeroU32::new(changed.width),
+        NonZeroU32::new(changed.height),
+    ) {
+        (Some(width), Some(height)) => softbuffer::Rect {
+            x: changed.x,
+            y: changed.y,
+            width,
+            height,
+        },
+        // A change the squeezed window does not sample: the compositor redraws it all.
+        _ => softbuffer::Rect {
+            x: 0,
+            y: 0,
+            width: w,
+            height: h,
+        },
+    };
+    buffer.present_with_damage(&[damage])?;
+    presenter.shown(frame.data(), &plan);
     Ok(())
 }
 
@@ -576,10 +647,20 @@ impl Editor {
             let bounds = top_center(screen, size, scale);
             draw_notice(&mut canvas, bounds, message, scale).map_err(|e| e.0)?;
         }
-        match (&self.window, &mut self.surface) {
-            (Some(window), Some(surface)) => present(&self.frame, window, surface),
-            _ => Ok(()),
+        let (Some(window), Some(surface)) = (&self.window, &mut self.surface) else {
+            return Ok(());
+        };
+        let presenting = Instant::now();
+        present(&mut self.presenter, &self.frame, window, surface)?;
+        if let Some(Diagnostic::Capture { watch, .. }) = &mut self.diagnostic {
+            let done = Instant::now();
+            watch.presents.push(done - presenting);
+            watch.frames.push(done - now);
+            if let Some(started) = watch.started.take() {
+                watch.timings.record(timing::FIRST_FRAME, done - started);
+            }
         }
+        Ok(())
     }
     fn pointer_down(&mut self, p: Point, event_loop: &ActiveEventLoop) {
         self.notice = None;
@@ -780,7 +861,7 @@ impl Editor {
                 self.run(Action::Save, event_loop);
                 return Ok(());
             }
-            Some(Diagnostic::Capture { out, step }) => (out.clone(), *step),
+            Some(Diagnostic::Capture { out, step, .. }) => (out.clone(), *step),
         };
         let (w, h) = (
             self.capture.image.width as f64,
@@ -864,12 +945,34 @@ impl Editor {
                         "grim unavailable"
                     }
                 );
+                // The loaded frame, measured as the user sees it: pointer moving over the
+                // selection, with the shapes, the text being typed and the toolbar.
+                if let Some(Diagnostic::Capture { watch, .. }) = &mut self.diagnostic {
+                    watch.clear();
+                }
+                for i in 0..MEASURED_FRAMES {
+                    let drift = 0.01 * i as f64;
+                    self.pointer_move(at(0.5 + drift, 0.5 + drift));
+                    self.paint()?;
+                }
+                let exporting = Instant::now();
+                let exported = self.export()?;
+                let exporting = exporting.elapsed();
+                if let Some(Diagnostic::Capture { watch, .. }) = &mut self.diagnostic {
+                    watch.timings.record_median(timing::FRAME, &watch.frames);
+                    watch
+                        .timings
+                        .record_median(timing::PRESENT, &watch.presents);
+                    watch.timings.record(timing::EXPORT, exporting);
+                }
                 self.native.finish_text(&mut self.capture, true);
                 let (saved, _) = self.save(false, Some(&out))?;
                 println!(
-                    "editor: {} objects, saved {}",
+                    "editor: {} objects, saved {}, export {}x{}",
                     self.capture.editor.objects().len(),
-                    saved.display()
+                    saved.display(),
+                    exported.width,
+                    exported.height
                 );
                 self.document_diagnostic(&out, event_loop)?;
                 // Another client must read the copy while the helper owns the clipboard.
@@ -884,6 +987,9 @@ impl Editor {
                     return Err(format!("clipboard holds {w}x{h}").into());
                 }
                 println!("clipboard: {w}x{h} read back");
+                if let Some(Diagnostic::Capture { watch, .. }) = &self.diagnostic {
+                    watch.timings.report()?;
+                }
                 event_loop.exit();
                 return Ok(());
             }

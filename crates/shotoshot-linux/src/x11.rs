@@ -24,19 +24,20 @@ pub fn screenshot() -> Result<Image, Box<dyn Error>> {
     {
         return Err("unsupported X11 pixel format".into());
     }
-    let mut image = Image::solid(width as u32, height as u32, [0, 0, 0, 255]);
-    if reply.data.len() != image.pixels.len() {
+    let mut pixels = reply.data;
+    if pixels.len() != width as usize * height as usize * 4 {
         return Err("unexpected X11 image size".into());
     }
-    // Little-endian 32-bit pixels are B, G, R, X: only the padding byte changes.
-    for (to, from) in image
-        .pixels
-        .as_chunks_mut::<4>()
-        .0
-        .iter_mut()
-        .zip(reply.data.as_chunks::<4>().0)
-    {
-        *to = [from[0], from[1], from[2], 255];
+    // Little-endian 32-bit pixels are B, G, R, X: the server's buffer is the image, once
+    // its padding byte is made opaque.
+    for pixel in pixels.as_chunks_mut::<4>().0 {
+        pixel[3] = 255;
     }
-    Ok(image)
+    Ok(Image {
+        width: width as u32,
+        height: height as u32,
+        pixels,
+        left: 0,
+        top: 0,
+    })
 }

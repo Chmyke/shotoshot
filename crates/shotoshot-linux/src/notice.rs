@@ -6,7 +6,7 @@
 //! a key.
 use crate::editor::present;
 use shotoshot_core::{Point, Rect};
-use shotoshot_raster::Raster;
+use shotoshot_raster::{Loading, present::Presenter};
 use shotoshot_ui::{draw_notice, notice_size};
 use std::{
     error::Error,
@@ -58,11 +58,15 @@ struct Notice {
     deadline: Instant,
     window: Option<Rc<Window>>,
     surface: Option<softbuffer::Surface<Rc<Window>, Rc<Window>>>,
+    presenter: Presenter,
     error: Option<Box<dyn Error>>,
 }
 
 pub fn show(message: &str, duration: Duration) -> Result<(), Box<dyn Error>> {
-    let mut raster = Raster::new();
+    // The fonts load while the event loop connects to the compositor.
+    let fonts = Loading::start();
+    let event_loop = EventLoop::new()?;
+    let (mut raster, _) = fonts.wait();
     let mut scratch = Pixmap::new(1, 1).ok_or("no pixmap")?;
     // Sized before any window exists: the monitor scale is not known yet.
     let scale = 1.;
@@ -84,9 +88,10 @@ pub fn show(message: &str, duration: Duration) -> Result<(), Box<dyn Error>> {
         deadline: Instant::now() + duration,
         window: None,
         surface: None,
+        presenter: Presenter::new(),
         error: None,
     };
-    EventLoop::new()?.run_app(&mut notice)?;
+    event_loop.run_app(&mut notice)?;
     notice.error.map_or(Ok(()), Err)
 }
 
@@ -117,7 +122,7 @@ impl ApplicationHandler for Notice {
         match event {
             WindowEvent::RedrawRequested => {
                 if let (Some(window), Some(surface)) = (&self.window, &mut self.surface)
-                    && let Err(error) = present(&self.frame, window, surface)
+                    && let Err(error) = present(&mut self.presenter, &self.frame, window, surface)
                 {
                     self.error = Some(error);
                     event_loop.exit();
