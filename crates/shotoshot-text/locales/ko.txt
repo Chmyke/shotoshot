@@ -297,4 +297,6 @@ settings.start_with_windows_note = 로그인하자마자 캡처할 수 있습니
 settings.live_capture_note = 복사하거나 저장할 때까지 캡처가 계속 업데이트됩니다.
 settings.mini_toolbar = 미니 도구 모음
 settings.mini_toolbar_note = 캡처에 펜, 복사, 저장만 표시합니다. ⋯ 를 누르면 나머지가 보입니다.
+settings.obs_mirror = OBS 미러
+settings.obs_mirror_note = OBS가 캡처할 수 있는 숨겨진 창으로, 포인터 효과, 키보드, 마우스, 도형을 보여 줍니다.
 settings.shape_duration_note = 임시 도형이 화면에 표시되는 시간입니다.

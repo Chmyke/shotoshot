@@ -129,6 +129,17 @@ fn general_rows_ask_the_platform() {
         panel.press(mini.control.center()),
         Action::Command(Command::MiniToolbar)
     );
+    panel.show_page(Page::Presentation);
+    let mirror = zone(&panel, Item::ObsMirror);
+    assert_eq!(
+        panel.press(mirror.control.center()),
+        Action::Command(Command::ObsMirror)
+    );
+    assert_eq!(
+        mirror.row.size().y,
+        NOTE_ROW,
+        "the mirror says what it is for"
+    );
 }
 
 #[test]

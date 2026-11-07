@@ -294,6 +294,7 @@ impl Presentation {
             self.scene.clear();
             self.canvas = None;
         }
+        self.release_idle_mirror();
         let result = (|| {
             if enabled.devices() {
                 self.show_devices()?;
@@ -350,7 +351,12 @@ impl Presentation {
         self.bindings.shortcuts = preferences.shape_shortcuts;
         let shortcuts = |p: &PresentationSettings| p.pointer.shortcuts();
         let keys_changed = shortcuts(&self.preferences) != shortcuts(&preferences);
+        let mirror_changed = self.preferences.obs_mirror != preferences.obs_mirror;
         self.preferences = preferences;
+        if mirror_changed {
+            // Every layer holds its own handle on the mirror: rebuilt with or without it.
+            self.display_changed()?;
+        }
         if self.enabled.devices() {
             let result = self.show_devices();
             if result.is_err() {
@@ -491,6 +497,7 @@ impl Presentation {
         if self.scene.shapes.is_empty() {
             self.canvas = None;
         }
+        self.release_idle_mirror();
         Ok(())
     }
     fn sync_timer(&mut self) -> Result<()> {
@@ -534,16 +541,23 @@ impl Presentation {
                 canvas.invalidate();
             }
         }
-        if let Some(keys) = &self.keys {
+        // A tick runs for any animation (a shape fading for three seconds): the keyboard and
+        // the halo repaint only while something of theirs fades or pulses.
+        if let Some(keys) = &self.keys
+            && self.devices.needs_animation(now)
+        {
             keys.invalidate();
         }
         self.check_spotlight_key();
         self.check_loupe_key()?;
         if self.enabled.pointer() && (self.pointer_dirty || self.frame_driven()) {
             self.pointer_frame()?;
-        } else if let Some(halo) = &self.halo {
+        } else if let Some(halo) = &self.halo
+            && self.halo_state.needs_animation(now)
+        {
             halo.invalidate();
         }
+        self.release_idle_mirror();
         self.sync_timer()
     }
     fn move_halo(&mut self) -> Result<()> {
@@ -638,11 +652,22 @@ impl Presentation {
     }
     /// Attaches a viewer-facing layer to the OBS mirror, opening the mirror on first use.
     fn mirrored(&mut self, layer: Layer, slot: Slot) -> Layer {
-        if self.broadcast.is_none() {
+        if self.broadcast.is_none() && self.preferences.obs_mirror {
             // The screen overlays stay useful without the mirror, e.g. with no GPU device.
             self.broadcast = Broadcast::new(self.owner).ok().map(Rc::new);
         }
         layer.mirrored(self.broadcast.clone(), slot)
+    }
+    /// Closes the OBS mirror, with its Direct3D device, once no layer holds it: a resident
+    /// that showed one shape must not keep a GPU device until the next capture.
+    fn release_idle_mirror(&mut self) {
+        if self
+            .broadcast
+            .as_ref()
+            .is_some_and(|b| Rc::strong_count(b) == 1)
+        {
+            self.broadcast = None;
+        }
     }
     fn paint(&self, hwnd: HWND) -> Result<()> {
         let now = self.now();

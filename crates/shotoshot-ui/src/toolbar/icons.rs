@@ -246,7 +246,7 @@ fn paint<C: Canvas>(
                     elbow: false,
                 },
             };
-            g.canvas.annotations(&[arrow], None)?;
+            g.canvas.glyph(&arrow)?;
         }
         // The cone takes the tint.
         Action::Tool(Tool::Pen) => {

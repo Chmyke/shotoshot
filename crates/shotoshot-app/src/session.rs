@@ -69,6 +69,9 @@ pub struct Native {
     back_buffer: Option<crate::image::LiveSurface>,
     // The hardware renderer being built for `accelerate`.
     acceleration: Option<std::sync::mpsc::Receiver<Result<Prepared>>>,
+    /// The hardware renderer is wanted, after the first frame: its device creation must not
+    /// compete with the first paint.
+    pub(crate) accelerate_after_paint: bool,
     pub caret: text::CaretBlink,
     // The ink the cross last showed: it changes only past a band, see `CrossInk::against`.
     cross_ink: std::cell::Cell<shotoshot_ui::cursor_image::CrossInk>,
@@ -105,6 +108,7 @@ impl Session {
                 live_sample: None,
                 back_buffer: None,
                 acceleration: None,
+                accelerate_after_paint: false,
                 caret: Default::default(),
                 cross_ink: Default::default(),
             },

@@ -288,6 +288,8 @@ pub struct Values {
     pub startup: bool,
     pub live: bool,
     pub mini_toolbar: bool,
+    /// The hidden window OBS captures the presentation from.
+    pub obs_mirror: bool,
     /// In the order of `SHORTCUT_ROWS`.
     pub shortcuts: [Keys; 9],
     /// One of `INPUT_SCALES`.
@@ -309,6 +311,7 @@ impl Default for Values {
             startup: true,
             live: false,
             mini_toolbar: false,
+            obs_mirror: false,
             shortcuts: Default::default(),
             input_scale: INPUT_SCALES[0],
             duration_ms: DURATIONS[1],
@@ -337,6 +340,7 @@ pub enum Command {
     Startup,
     Live,
     MiniToolbar,
+    ObsMirror,
     /// Starts changing it in its row.
     EditShortcut(ShortcutRow),
     /// Gives it its default keys, or none for a shortcut that has no default.
@@ -604,6 +608,7 @@ pub enum Item {
     Startup,
     Live,
     MiniToolbar,
+    ObsMirror,
     Shortcut(ShortcutRow),
     InputScale,
     Duration,
@@ -623,6 +628,7 @@ impl Item {
             Self::Startup => Icon::SignIn,
             Self::Live => Icon::Toolbar(Action::Live),
             Self::MiniToolbar => Icon::Toolbar(Action::MoreTools),
+            Self::ObsMirror => Icon::Presentation,
             Self::Shortcut(row) => row.icon(),
             Self::InputScale => Icon::Size,
             Self::Duration => Icon::Clock,
@@ -638,6 +644,7 @@ impl Item {
             Self::Startup => Some(Key::SettingsStartWithWindowsNote),
             Self::Live => Some(Key::SettingsLiveCaptureNote),
             Self::MiniToolbar => Some(Key::SettingsMiniToolbarNote),
+            Self::ObsMirror => Some(Key::SettingsObsMirrorNote),
             Self::Duration => Some(Key::SettingsShapeDurationNote),
             _ => None,
         }
@@ -832,6 +839,7 @@ impl Panel {
             Item::Startup => self.text(Key::MenuStartWithWindows).into(),
             Item::Live => self.text(Key::MenuLiveCaptureDefault).into(),
             Item::MiniToolbar => self.text(Key::SettingsMiniToolbar).into(),
+            Item::ObsMirror => self.text(Key::SettingsObsMirror).into(),
             Item::Shortcut(row) => self.text(row.label()).into(),
             Item::InputScale => self.text(Key::MenuInputSize).into(),
             Item::Duration => self.text(Key::MenuShapeDuration).into(),
@@ -890,6 +898,7 @@ impl Panel {
             Item::Startup,
             Item::Live,
             Item::MiniToolbar,
+            Item::ObsMirror,
             Item::InputScale,
             Item::Duration,
             Item::MoveInput,
@@ -1010,9 +1019,12 @@ impl Panel {
     /// The width a control needs.
     fn control_width(&self, item: Item) -> f64 {
         match item {
-            Item::Startup | Item::Live | Item::MiniToolbar | Item::MoveInput | Item::Shown(_) => {
-                SWITCH.x
-            }
+            Item::Startup
+            | Item::Live
+            | Item::MiniToolbar
+            | Item::ObsMirror
+            | Item::MoveInput
+            | Item::Shown(_) => SWITCH.x,
             Item::Shortcut(row) => {
                 let keys = &self.values.shortcuts[row.index()];
                 let caps = if keys.caps.is_empty() {
@@ -1115,7 +1127,12 @@ impl Panel {
                 } else {
                     vec![
                         PRESENTATION_SHOWN.map(Item::Shown).to_vec(),
-                        vec![Item::InputScale, Item::Duration, Item::MoveInput],
+                        vec![
+                            Item::InputScale,
+                            Item::Duration,
+                            Item::MoveInput,
+                            Item::ObsMirror,
+                        ],
                     ]
                 };
                 let items: Vec<Item> = blocks.concat();
@@ -1584,6 +1601,9 @@ impl Panel {
             Item::MiniToolbar if (steps > 0) != self.values.mini_toolbar => {
                 Action::Command(Command::MiniToolbar)
             }
+            Item::ObsMirror if (steps > 0) != self.values.obs_mirror => {
+                Action::Command(Command::ObsMirror)
+            }
             Item::MoveInput if (steps > 0) != self.values.moving_input => {
                 Action::Command(Command::MoveInput)
             }
@@ -1756,6 +1776,7 @@ impl Panel {
             Item::Startup => Action::Command(Command::Startup),
             Item::Live => Action::Command(Command::Live),
             Item::MiniToolbar => Action::Command(Command::MiniToolbar),
+            Item::ObsMirror => Action::Command(Command::ObsMirror),
             Item::Shortcut(row) => {
                 if let Some(index) = row.pointer_index()
                     && !self.values.shortcuts[row.index()].caps.is_empty()
@@ -1939,6 +1960,7 @@ impl Panel {
                 Item::Startup => Action::Command(Command::Startup),
                 Item::Live => Action::Command(Command::Live),
                 Item::MiniToolbar => Action::Command(Command::MiniToolbar),
+                Item::ObsMirror => Action::Command(Command::ObsMirror),
                 Item::Shortcut(row) => Action::Command(Command::EditShortcut(row)),
                 Item::MoveInput => Action::Command(Command::MoveInput),
                 Item::Shown(shown) => Action::Command(Command::Show(shown)),

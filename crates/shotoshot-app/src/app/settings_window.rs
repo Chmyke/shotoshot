@@ -234,6 +234,7 @@ impl App {
             startup: crate::startup::enabled()?,
             live: s.live_capture,
             mini_toolbar: s.mini_toolbar,
+            obs_mirror: s.presentation.obs_mirror,
             shortcuts: SHORTCUT_ROWS.map(shortcut),
             input_scale: s.presentation.input_scale,
             duration_ms: s.presentation.duration_ms,
@@ -567,6 +568,19 @@ impl App {
                 if let Err(error) = self.settings.save() {
                     self.settings.mini_toolbar = previous;
                     return Err(crate::settings::unsaved(error));
+                }
+            }
+            Command::ObsMirror => {
+                let previous = self.settings.presentation.obs_mirror;
+                self.settings.presentation.obs_mirror = !previous;
+                if let Err(error) = self.settings.save() {
+                    self.settings.presentation.obs_mirror = previous;
+                    return Err(crate::settings::unsaved(error));
+                }
+                if let Some(presentation) = &self.presentation {
+                    presentation
+                        .borrow_mut()
+                        .update_preferences(self.settings.presentation.clone())?;
                 }
             }
             Command::EditShortcut(row) => self.row_edit_begin(owner, Place::Settings, row)?,

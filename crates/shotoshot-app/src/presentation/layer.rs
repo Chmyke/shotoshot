@@ -30,6 +30,10 @@ pub(super) struct Layer {
     // Layer-local extents drawn this frame and the previous one: the mirror uploads their union.
     drawn: Cell<Option<Rect>>,
     previous: Cell<Option<Rect>>,
+    // What the window was last told: a halo following every raw mouse packet must not show
+    // or place itself again when nothing changed.
+    visible: Cell<bool>,
+    placed: Cell<Option<(i32, i32)>>,
 }
 impl Layer {
     pub fn new(
@@ -150,6 +154,8 @@ impl Layer {
                 mirror: None,
                 drawn: Cell::new(None),
                 previous: Cell::new(None),
+                visible: Cell::new(false),
+                placed: Cell::new(None),
             })
         }
     }
@@ -248,6 +254,10 @@ impl Layer {
         unsafe { GetWindowLongPtrW(self.hwnd(), GWL_EXSTYLE) as u32 & WS_EX_TRANSPARENT.0 == 0 }
     }
     pub fn position(&self, x: i32, y: i32) -> Result<()> {
+        if self.placed.get() == Some((x, y)) {
+            return Ok(());
+        }
+        self.placed.set(Some((x, y)));
         unsafe {
             SetWindowPos(
                 self.hwnd(),
@@ -263,6 +273,9 @@ impl Layer {
         Ok(())
     }
     pub fn show(&self, show: bool) {
+        if self.visible.replace(show) == show {
+            return;
+        }
         unsafe {
             let _ = ShowWindow(self.hwnd(), if show { SW_SHOWNOACTIVATE } else { SW_HIDE });
         }

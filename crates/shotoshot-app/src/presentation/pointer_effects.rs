@@ -85,7 +85,8 @@ impl Presentation {
     /// A window moved, opened or closed while the loupe is on screen.
     pub(super) fn loupe_windows_changed(&mut self) -> Result<()> {
         loupe::changes_seen();
-        if self.loupe.is_some() {
+        if let Some(loupe) = &mut self.loupe {
+            loupe.windows_changed();
             self.sync_loupe()?;
         }
         Ok(())

@@ -5,10 +5,76 @@ use std::cell::Cell;
 
 thread_local! {
     static FILLS: Cell<usize> = const { Cell::new(0) };
+    static COMBINES: Cell<usize> = const { Cell::new(0) };
 }
 
 pub(super) fn record_fill() {
     FILLS.set(FILLS.get() + 1);
+}
+pub(super) fn record_combine() {
+    COMBINES.set(COMBINES.get() + 1);
+}
+
+#[test]
+fn a_coat_that_spares_the_same_shapes_combines_its_geometry_once() {
+    let _com = crate::ComApartment::new().unwrap();
+    let renderer = renderer();
+    let holes = vec![
+        vec![p(30., 30.), p(90., 30.), p(90., 90.), p(30., 90.)],
+        vec![p(120., 40.), p(200., 40.), p(160., 120.)],
+    ];
+    let coat = Rect {
+        min: p(0., 0.),
+        max: p(240., 180.),
+    };
+    COMBINES.set(0);
+    let frame = || {
+        crate::paint_image(240, 180, |dc| {
+            renderer.begin(dc, 240, 180)?;
+            let mut canvas = D2dCanvas::new(&renderer, &renderer.dc)?;
+            canvas.fill_rect_except(coat, &holes, Ink::with_alpha([0, 0, 0], 0.48))?;
+            renderer.end()
+        })
+        .unwrap()
+    };
+    let first = frame();
+    assert_eq!(COMBINES.get(), 2, "one boolean operation per hole");
+    let second = frame();
+    assert_eq!(first.pixels, second.pixels);
+    assert_eq!(COMBINES.get(), 2, "the same coat was combined again");
+    let mut moved = holes.clone();
+    moved[1][2] = p(170., 120.);
+    crate::paint_image(240, 180, |dc| {
+        renderer.begin(dc, 240, 180)?;
+        let mut canvas = D2dCanvas::new(&renderer, &renderer.dc)?;
+        canvas.fill_rect_except(coat, &moved, Ink::with_alpha([0, 0, 0], 0.48))?;
+        renderer.end()
+    })
+    .unwrap();
+    assert_eq!(COMBINES.get(), 4, "a moved wall is combined afresh");
+}
+
+#[test]
+fn interface_text_formats_are_built_once_per_size_style_and_language() {
+    use shotoshot_text::Language;
+    use windows::core::Interface;
+    let _com = crate::ComApartment::new().unwrap();
+    let renderer = Renderer::software().unwrap();
+    let a = renderer.interface_format_in(12., Language::En).unwrap();
+    let b = renderer.interface_format_in(12., Language::En).unwrap();
+    assert_eq!(a.as_raw(), b.as_raw(), "the same format twice");
+    let c = renderer.interface_format_in(13., Language::En).unwrap();
+    assert_ne!(a.as_raw(), c.as_raw(), "another size is another format");
+    let d = renderer.interface_format_in(12., Language::Fr).unwrap();
+    assert_ne!(a.as_raw(), d.as_raw(), "another language is another format");
+    let e = renderer
+        .styled_format_in(12., TextStyle::Strong, Language::En)
+        .unwrap();
+    let f = renderer
+        .styled_format_in(12., TextStyle::Strong, Language::En)
+        .unwrap();
+    assert_eq!(e.as_raw(), f.as_raw());
+    assert_ne!(a.as_raw(), e.as_raw(), "a style is another format");
 }
 
 fn p(x: f64, y: f64) -> Point {

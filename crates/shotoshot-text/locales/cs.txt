@@ -297,4 +297,6 @@ settings.start_with_windows_note = Připraveno k snímání hned po přihlášen
 settings.live_capture_note = Snímek se aktualizuje, dokud ho nezkopírujete nebo neuložíte.
 settings.mini_toolbar = Mini panel nástrojů
 settings.mini_toolbar_note = Snímky ukazují jen pero, kopírování a uložení. ⋯ ukáže zbytek.
+settings.obs_mirror = Zrcadlo OBS
+settings.obs_mirror_note = Skryté okno, které může OBS zachytávat, s efekty ukazatele, klávesnicí, myší a tvary.
 settings.shape_duration_note = Jak dlouho dočasné tvary zůstanou na obrazovce.

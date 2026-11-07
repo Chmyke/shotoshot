@@ -297,4 +297,6 @@ settings.start_with_windows_note = 登录后即可截图。
 settings.live_capture_note = 截图会持续更新，直到你复制或保存它。
 settings.mini_toolbar = 迷你工具栏
 settings.mini_toolbar_note = 截图只显示画笔、复制和保存。⋯ 显示其余工具。
+settings.obs_mirror = OBS 镜像
+settings.obs_mirror_note = 一个供 OBS 捕获的隐藏窗口，显示指针效果、键盘、鼠标和图形。
 settings.shape_duration_note = 临时图形在屏幕上停留的时间。

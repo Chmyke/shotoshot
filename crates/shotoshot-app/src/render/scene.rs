@@ -203,8 +203,16 @@ impl Checkpoint {
                 .CopyFromRenderTarget(None, target, Some(&bounds))?
         };
         checkpoint.bounds = bounds;
-        checkpoint.objects.clear();
-        checkpoint.objects.extend_from_slice(prefix);
+        // Every frame of a gesture captures again: keep the objects already held (a long
+        // stroke's points) and copy only from the first that differs.
+        let kept = checkpoint
+            .objects
+            .iter()
+            .zip(prefix)
+            .take_while(|(a, b)| a == b)
+            .count();
+        checkpoint.objects.truncate(kept);
+        checkpoint.objects.extend_from_slice(&prefix[kept..]);
         Ok(())
     }
 }

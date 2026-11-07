@@ -150,6 +150,11 @@ pub trait Canvas {
     /// Annotation objects exactly as they appear in the exported image, except `skip`
     /// (an object whose text is being edited in place).
     fn annotations(&mut self, objects: &[Object], skip: Option<u64>) -> Result<(), Self::Error>;
+    /// One object drawn as `annotations` would, apart from any document: an icon's glyph.
+    /// A platform that caches the document's outlines must not take it for the document.
+    fn glyph(&mut self, object: &Object) -> Result<(), Self::Error> {
+        self.annotations(std::slice::from_ref(object), None)
+    }
     /// `annotations` with the objects of `fading` (those a sweep is about to erase) drawn
     /// faded, in their place in the pile, where the platform can; plainly otherwise.
     fn annotations_fading(

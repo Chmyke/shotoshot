@@ -297,4 +297,6 @@ settings.start_with_windows_note = Oturum açar açmaz yakalamaya hazır.
 settings.live_capture_note = Yakalama, kopyalayana veya kaydedene kadar güncellenir.
 settings.mini_toolbar = Mini araç çubuğu
 settings.mini_toolbar_note = Yakalamalarda yalnızca kalem, kopyala ve kaydet görünür. ⋯ gerisini gösterir.
+settings.obs_mirror = OBS aynası
+settings.obs_mirror_note = OBS’nin yakalayabileceği gizli bir pencere: işaretçi efektleri, klavye, fare ve şekiller.
 settings.shape_duration_note = Geçici şekillerin ekranda ne kadar kalacağı.

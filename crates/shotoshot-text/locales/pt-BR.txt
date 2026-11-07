@@ -297,4 +297,6 @@ settings.start_with_windows_note = Pronto para capturar assim que você entra.
 settings.live_capture_note = A captura continua se atualizando até você copiar ou salvar.
 settings.mini_toolbar = Minibarra de ferramentas
 settings.mini_toolbar_note = As capturas mostram só a caneta, copiar e salvar. ⋯ mostra o resto.
+settings.obs_mirror = Espelho OBS
+settings.obs_mirror_note = Uma janela oculta que o OBS pode capturar, com os efeitos do ponteiro, o teclado, o mouse e as formas.
 settings.shape_duration_note = Quanto tempo as formas temporárias ficam na tela.

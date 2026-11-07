@@ -363,6 +363,25 @@ impl Object {
     /// On what the object draws: its outline, stroke, arrow head or text box. `tolerance`
     /// widens a rectangle from its centre line and every other shape from its drawn edge.
     pub fn on_ink(&self, p: Point, tolerance: f64, objects: &[Object]) -> bool {
+        // Cheap first: a point beyond the object's reach never touches its ink, and every
+        // hover test smoothed every stroke again. The drawn edge lies half a width outside
+        // the points; the smoothed pen stays inside their bounds (`smooth_pen`).
+        let reach = match &self.shape {
+            Shape::Stroke {
+                widths, highlight, ..
+            } => {
+                let factor = if *highlight { 5. } else { 1. };
+                let widest = widths.iter().copied().fold(self.style.width, f64::max) * factor;
+                Some(tolerance + widest * 0.5)
+            }
+            Shape::Ellipse(_) => Some(tolerance + self.style.width * 0.5),
+            _ => None,
+        };
+        if let Some(reach) = reach
+            && !self.bounds().expanded(reach + 0.5).contains(p)
+        {
+            return false;
+        }
         match &self.shape {
             Shape::Rectangle(r) => {
                 let c = r.corners().map(|p| self.local_to_world(p));
@@ -553,5 +572,61 @@ pub fn arrow_points(o: &Object, objects: &[Object]) -> Option<(Point, Point)> {
         )
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod hit_tests {
+    use super::*;
+
+    fn p(x: f64, y: f64) -> Point {
+        Point { x, y }
+    }
+    fn stroke(highlight: bool) -> Object {
+        Object {
+            id: 1,
+            rotation: 0.,
+            fill: Vec::new(),
+            style: Style {
+                color: [0; 3],
+                width: 3.,
+            },
+            shape: Shape::Stroke {
+                points: vec![p(20., 60.), p(160., 60.)],
+                widths: vec![7.],
+                highlight,
+            },
+        }
+    }
+
+    #[test]
+    fn a_stroke_is_hit_up_to_its_widest_edge_plus_the_tolerance_and_not_beyond() {
+        let pen = stroke(false);
+        // Width 7 (the sample's, not the style's 3): the edge is 3.5 from the line.
+        assert!(pen.on_ink(p(100., 60. + 3.5 + 2.9), 3., &[]));
+        assert!(!pen.on_ink(p(100., 60. + 3.5 + 3.1), 3., &[]));
+        assert!(!pen.on_ink(p(100., 200.), 3., &[]));
+        // A highlighter is five times as wide.
+        let marker = stroke(true);
+        assert!(marker.on_ink(p(100., 60. + 17.), 0., &[]));
+        assert!(!marker.on_ink(p(100., 60. + 18.), 0., &[]));
+    }
+
+    #[test]
+    fn a_turned_ellipse_is_hit_on_its_turned_edge() {
+        let mut ellipse = Object {
+            id: 2,
+            rotation: 0.,
+            fill: Vec::new(),
+            style: Style {
+                color: [0; 3],
+                width: 2.,
+            },
+            shape: Shape::Ellipse(Rect::new(p(0., 0.), p(200., 40.)).unwrap()),
+        };
+        ellipse.rotate(p(100., 20.), std::f64::consts::FRAC_PI_2);
+        // Turned a quarter: the far tip is now 100 above the centre, outside the old box.
+        assert!(ellipse.on_ink(p(100., -79.), 2., &[]));
+        assert!(!ellipse.on_ink(p(100., -84.), 2., &[]));
     }
 }

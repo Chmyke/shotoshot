@@ -297,4 +297,6 @@ settings.start_with_windows_note = Готовий до знімання одра
 settings.live_capture_note = Знімок оновлюється, доки ви його не скопіюєте або не збережете.
 settings.mini_toolbar = Міні-панель інструментів
 settings.mini_toolbar_note = У знімку видно лише перо, копіювання та збереження. ⋯ покаже решту.
+settings.obs_mirror = Дзеркало OBS
+settings.obs_mirror_note = Приховане вікно, яке може захоплювати OBS, з ефектами вказівника, клавіатурою, мишею та фігурами.
 settings.shape_duration_note = Скільки часу тимчасові фігури залишаються на екрані.

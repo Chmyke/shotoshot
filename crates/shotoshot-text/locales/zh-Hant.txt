@@ -297,4 +297,6 @@ settings.start_with_windows_note = 登入後即可擷取。
 settings.live_capture_note = 擷取畫面會持續更新，直到你複製或儲存為止。
 settings.mini_toolbar = 迷你工具列
 settings.mini_toolbar_note = 擷取畫面只顯示畫筆、複製和儲存。⋯ 顯示其餘工具。
+settings.obs_mirror = OBS 鏡像
+settings.obs_mirror_note = 一個供 OBS 擷取的隱藏視窗，顯示指標效果、鍵盤、滑鼠和圖形。
 settings.shape_duration_note = 暫時圖形在螢幕上停留的時間。

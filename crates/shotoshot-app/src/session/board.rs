@@ -74,6 +74,7 @@ impl Session {
                 live_sample: None,
                 back_buffer: None,
                 acceleration: None,
+                accelerate_after_paint: false,
                 caret: Default::default(),
                 cross_ink: Default::default(),
             },

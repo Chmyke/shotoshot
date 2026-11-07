@@ -228,6 +228,52 @@ fn native_layer_releases_input_without_removing_visible_annotation() {
 }
 
 #[test]
+fn the_loupe_lists_the_windows_once_per_change_not_per_move() {
+    let _com = crate::ComApartment::new().unwrap();
+    unsafe {
+        let owner = crate::resources::OwnedWindow(
+            CreateWindowExW(
+                WS_EX_TOOLWINDOW,
+                w!("STATIC"),
+                w!("Loupe listing test"),
+                WS_POPUP,
+                -32000,
+                -32000,
+                1,
+                1,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap(),
+        );
+        let mut loupe = loupe::Loupe::banded(owner.0).unwrap();
+        let before = loupe::listings();
+        for x in [-32000, -31990, -31980] {
+            loupe
+                .update(POINT { x, y: -32000 }, 240, 2, None, &[])
+                .unwrap();
+        }
+        assert_eq!(loupe::listings() - before, 1, "three moves, one listing");
+        loupe.windows_changed();
+        loupe
+            .update(
+                POINT {
+                    x: -31970,
+                    y: -32000,
+                },
+                240,
+                2,
+                None,
+                &[],
+            )
+            .unwrap();
+        assert_eq!(loupe::listings() - before, 2, "a window event lists again");
+    }
+}
+
+#[test]
 fn native_gesture_release_cancel_expire_and_stop_return_to_idle() {
     let _com = crate::ComApartment::new().unwrap();
     unsafe {
@@ -254,7 +300,19 @@ fn native_gesture_release_cancel_expire_and_stop_return_to_idle() {
         canvas.intercept(true).unwrap();
         {
             let mut p = state.borrow_mut();
+            let unasked = Layer::new(&*state, -32000, -32000, 300, 200).unwrap();
+            let _unasked = p.mirrored(unasked, Slot::Canvas);
+            assert!(
+                p.broadcast.is_none(),
+                "the OBS mirror is opt-in: no Direct3D device unless a streamer asks"
+            );
+            p.preferences.obs_mirror = true;
+            let canvas = p.mirrored(canvas, Slot::Canvas);
             p.canvas = Some(canvas);
+            assert!(
+                p.broadcast.is_some(),
+                "the OBS mirror opens with its first layer"
+            );
             p.enabled.shapes = true;
             p.scene.arm(LiveTool::Rectangle);
         }
@@ -318,8 +376,13 @@ fn native_gesture_release_cancel_expire_and_stop_return_to_idle() {
                 p.canvas.is_none(),
                 "release the desktop-size surface after expiration"
             );
+            assert!(
+                p.broadcast.is_none(),
+                "the OBS mirror (a Direct3D device) leaves with its last layer"
+            );
             assert!(!p.timer);
             let empty = Layer::new(&*state, -32000, -32000, 300, 200).unwrap();
+            let empty = p.mirrored(empty, Slot::Canvas);
             p.canvas = Some(empty);
             p.scene.arm(LiveTool::Arrow);
             p.release_gesture().unwrap();
@@ -327,6 +390,7 @@ fn native_gesture_release_cancel_expire_and_stop_return_to_idle() {
                 p.canvas.is_none(),
                 "cancelling without a shape must release the large bitmap without waiting for a timer"
             );
+            assert!(p.broadcast.is_none(), "cancelling releases the mirror too");
             p.stop().unwrap();
             assert!(!p.enabled.any());
             assert!(!p.timer);

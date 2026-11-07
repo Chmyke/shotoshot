@@ -61,6 +61,9 @@ pub(super) struct Loupe {
     /// What the loupe last showed: when nothing of it changed, a window event elsewhere on the
     /// desktop costs a listing and nothing more.
     last: Option<Shown>,
+    /// Every visible top-level window with its rectangle, top first, until a window event
+    /// says otherwise: a pointer move never lists the desktop again.
+    windows: Option<Vec<(HWND, PixelRect)>>,
 }
 enum Draw {
     Composed(Composed),
@@ -127,7 +130,12 @@ impl Loupe {
             side: 0,
             shown: false,
             last: None,
+            windows: None,
         })
+    }
+    /// A window moved, appeared, left or changed order: list them again at the next update.
+    pub fn windows_changed(&mut self) {
+        self.windows = None;
     }
     pub fn hwnd(&self) -> HWND {
         self.window.0
@@ -158,7 +166,8 @@ impl Loupe {
         let frame = geometry::frame(at.x, at.y, diameter, zoom);
         let mut skip = excluded.to_vec();
         skip.push(self.hwnd());
-        let under = windows_under(&frame.source, &skip);
+        let all = self.windows.get_or_insert_with(top_level_windows);
+        let under = windows_under(all, &frame.source, &skip);
         let seen = (frame, above, under);
         if self.shown && self.last.as_ref() == Some(&seen) {
             return Ok(());
@@ -847,15 +856,27 @@ extern "system" fn collect(hwnd: HWND, list: LPARAM) -> BOOL {
     TRUE
 }
 
-/// Every visible top-level window that meets `source`, top first, but those in `skip`, hidden
-/// on another virtual desktop, minimised, or kept out of captures by their program.
-fn windows_under(source: &PixelRect, skip: &[HWND]) -> Vec<(HWND, PixelRect)> {
+#[cfg(test)]
+thread_local! {
+    static LISTINGS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+/// How many times this thread listed the desktop's windows.
+#[cfg(test)]
+pub(super) fn listings() -> usize {
+    LISTINGS.get()
+}
+
+/// Every visible top-level window with its rectangle, top first, but those hidden on another
+/// virtual desktop or minimised. One pass over the desktop: hundreds of windows on a busy
+/// machine (2026-10-30: 648 headless browsers), listed once per change rather than per move.
+fn top_level_windows() -> Vec<(HWND, PixelRect)> {
+    #[cfg(test)]
+    LISTINGS.set(LISTINGS.get() + 1);
     let mut all: Vec<HWND> = Vec::new();
     unsafe {
         let _ = EnumWindows(Some(collect), LPARAM(&mut all as *mut _ as isize));
     }
     all.into_iter()
-        .filter(|hwnd| !skip.contains(hwnd))
         .filter_map(|hwnd| unsafe {
             if !IsWindowVisible(hwnd).as_bool() || IsIconic(hwnd).as_bool() {
                 return None;
@@ -870,22 +891,36 @@ fn windows_under(source: &PixelRect, skip: &[HWND]) -> Vec<(HWND, PixelRect)> {
             if cloaked != 0 {
                 return None;
             }
+            let mut r = RECT::default();
+            GetWindowRect(hwnd, &mut r).ok()?;
+            Some((
+                hwnd,
+                PixelRect {
+                    left: r.left,
+                    top: r.top,
+                    right: r.right,
+                    bottom: r.bottom,
+                },
+            ))
+        })
+        .collect()
+}
+/// Those of `all` that meet `source`, top first, but those in `skip` and those kept out of
+/// captures by their program (checked here, on the few under the loupe: no event says it).
+fn windows_under(
+    all: &[(HWND, PixelRect)],
+    source: &PixelRect,
+    skip: &[HWND],
+) -> Vec<(HWND, PixelRect)> {
+    all.iter()
+        .filter(|(hwnd, r)| !skip.contains(hwnd) && r.intersection(source).is_some())
+        .filter(|(hwnd, _)| unsafe {
             // A password manager or a protected video asked not to be captured: the loupe,
             // which captures do see, must not show it either.
             let mut affinity = 0u32;
-            if GetWindowDisplayAffinity(hwnd, &mut affinity).is_err() || affinity != WDA_NONE.0 {
-                return None;
-            }
-            let mut r = RECT::default();
-            GetWindowRect(hwnd, &mut r).ok()?;
-            let r = PixelRect {
-                left: r.left,
-                top: r.top,
-                right: r.right,
-                bottom: r.bottom,
-            };
-            r.intersection(source).map(|_| (hwnd, r))
+            GetWindowDisplayAffinity(*hwnd, &mut affinity).is_ok() && affinity == WDA_NONE.0
         })
+        .copied()
         .collect()
 }
 

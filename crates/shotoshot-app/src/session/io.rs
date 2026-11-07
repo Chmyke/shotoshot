@@ -439,9 +439,13 @@ impl Session {
     /// The `.shoto` file of this capture: its flattened image as any viewer shows it, and
     /// inside it the screens of `background` under the region and the objects, still apart.
     pub(crate) fn document_bytes(&self, background: &Image) -> Result<Vec<u8>> {
+        self.document_bytes_from(background, &self.flatten(background)?)
+    }
+    /// `document_bytes` with the capture already `flattened` over `background`.
+    fn document_bytes_from(&self, background: &Image, flattened: &Image) -> Result<Vec<u8>> {
         let refused = || crate::failure::visible(shotoshot_text::Key::ErrorNotEditableCapture, &[]);
         let (scene, frame) = self.capture.document(background).ok_or_else(refused)?;
-        let visible = png_data(&self.flatten(background)?)?;
+        let visible = png_data(flattened)?;
         shoto::pack(&visible, &scene, &png_data(&frame)?).ok_or_else(refused)
     }
     /// Saves the capture. A reopened document is rewritten in place unless `choose` asks
@@ -454,11 +458,12 @@ impl Session {
             None
         };
         let background = grabbed.as_ref().unwrap_or(&self.capture.image);
+        // Flattened once: the image format gets it as is, the `.shoto` as its visible picture.
+        let output = self.flatten(background)?;
         if let Some(path) = self.document.as_ref().filter(|_| !choose) {
-            save_bytes(&self.document_bytes(background)?, path, false)?;
+            save_bytes(&self.document_bytes_from(background, &output)?, path, false)?;
             return Ok(Saved::Document);
         }
-        let output = self.flatten(background)?;
         let folder = settings.save_folder()?;
         let suggested = crate::capture_name::next_path(&folder, settings.save_format)
             .map_err(|e| Error::new(E_FAIL, e.to_string()))?;
@@ -489,7 +494,11 @@ impl Session {
             let numbered = crate::capture_name::number(&path).is_some();
             let saved = match chosen(&path, listed) {
                 Listed::Document => {
-                    save_bytes(&self.document_bytes(background)?, &path, numbered)?;
+                    save_bytes(
+                        &self.document_bytes_from(background, &output)?,
+                        &path,
+                        numbered,
+                    )?;
                     Saved::Document
                 }
                 Listed::Image(format) => {

@@ -297,4 +297,6 @@ settings.start_with_windows_note = サインインしてすぐにキャプチャ
 settings.live_capture_note = コピーまたは保存するまでキャプチャが更新され続けます。
 settings.mini_toolbar = ミニツールバー
 settings.mini_toolbar_note = キャプチャにはペン、コピー、保存だけを表示します。⋯ で残りを表示します。
+settings.obs_mirror = OBS ミラー
+settings.obs_mirror_note = OBS が取り込める非表示のウィンドウ。ポインター効果、キーボード、マウス、図形を映します。
 settings.shape_duration_note = 一時的な図形を画面に表示しておく時間です。

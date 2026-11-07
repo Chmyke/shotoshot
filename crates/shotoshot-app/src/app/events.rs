@@ -96,6 +96,12 @@ impl App {
                 };
                 let _ = EndPaint(hwnd, &paint);
                 result?;
+                if let Some(s) = &mut self.session
+                    && s.native.accelerate_after_paint
+                {
+                    s.native.accelerate_after_paint = false;
+                    s.prepare_acceleration(hwnd, RENDERER_READY)?;
+                }
                 if let (Some(probe), Some(s)) = (&mut self.first_frame, &self.session)
                     && probe.painted(s.native.renderer.backend() == Backend::Hardware)?
                 {

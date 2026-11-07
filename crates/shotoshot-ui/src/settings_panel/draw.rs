@@ -293,6 +293,7 @@ impl Panel {
             Item::Startup => switch(canvas, control, self.values.startup, scale),
             Item::Live => switch(canvas, control, self.values.live, scale),
             Item::MiniToolbar => switch(canvas, control, self.values.mini_toolbar, scale),
+            Item::ObsMirror => switch(canvas, control, self.values.obs_mirror, scale),
             Item::Shortcut(row_item) => self.paint_keys(canvas, row_item, control, scale),
             Item::InputScale | Item::Duration => {
                 self.paint_segments(canvas, zone.item, control, scale)

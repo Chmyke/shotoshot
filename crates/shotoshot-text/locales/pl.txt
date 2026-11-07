@@ -297,4 +297,6 @@ settings.start_with_windows_note = Gotowy do przechwytywania zaraz po zalogowani
 settings.live_capture_note = Zrzut odświeża się, dopóki go nie skopiujesz lub nie zapiszesz.
 settings.mini_toolbar = Mini pasek narzędzi
 settings.mini_toolbar_note = Zrzuty pokazują tylko pióro, kopiowanie i zapis. ⋯ pokazuje resztę.
+settings.obs_mirror = Lustro OBS
+settings.obs_mirror_note = Ukryte okno, które OBS może przechwytywać, z efektami wskaźnika, klawiaturą, myszą i kształtami.
 settings.shape_duration_note = Jak długo kształty tymczasowe pozostają na ekranie.

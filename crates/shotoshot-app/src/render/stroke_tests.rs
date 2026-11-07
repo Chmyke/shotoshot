@@ -99,6 +99,45 @@ fn changed_points_width_color_and_rotation_refresh_the_same_id() {
 }
 
 #[test]
+fn a_glyph_drawn_apart_keeps_the_document_outlines_cached() {
+    // The toolbar draws its Arrow icon as a one-object document on a direct canvas, after the
+    // scene: that must not evict the outlines of the strokes the user drew.
+    let _com = crate::ComApartment::new().unwrap();
+    let renderer = Renderer::software().unwrap();
+    let objects = [stroke(1, false)];
+    BUILDS.set(0);
+    draw(&renderer, &objects);
+    assert_eq!(BUILDS.get(), 1);
+    let glyph = Object {
+        id: 0,
+        rotation: 0.,
+        fill: Vec::new(),
+        style: Style {
+            color: [200, 200, 200],
+            width: 2.4,
+        },
+        shape: Shape::Arrow {
+            start: p(3., 17.),
+            end: p(17., 3.),
+            start_attach: None,
+            end_attach: None,
+            head: true,
+            bend: Default::default(),
+            elbow: false,
+        },
+    };
+    crate::paint_image(24, 24, |dc| {
+        renderer.begin(dc, 24, 24)?;
+        let mut canvas = D2dCanvas::direct(&renderer, &renderer.dc)?;
+        canvas.glyph(&glyph)?;
+        renderer.end()
+    })
+    .unwrap();
+    draw(&renderer, &objects);
+    assert_eq!(BUILDS.get(), 1, "the glyph evicted the document's outlines");
+}
+
+#[test]
 fn removed_strokes_release_their_outline_before_the_id_returns() {
     let _com = crate::ComApartment::new().unwrap();
     let renderer = Renderer::software().unwrap();

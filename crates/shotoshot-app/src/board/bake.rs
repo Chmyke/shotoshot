@@ -150,11 +150,7 @@ pub fn render_screens(
 }
 /// The saved board; none yet is an empty one.
 pub fn read_board(folder: &Path) -> Result<Board> {
-    match std::fs::read_to_string(super::document_path(folder)) {
-        Ok(text) => Board::decode(&text).map_err(|e| crate::failure::visible(e.key(), &[])),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Board::default()),
-        Err(e) => Err(Error::new(E_FAIL, e.to_string())),
-    }
+    decode_board(document_text(folder)?.as_deref())
 }
 /// `path` made absolute against the current directory, without touching the disk: the
 /// wallpaper API rejects a relative picture path, and `canonicalize` would add a `\\?\` prefix.
@@ -178,7 +174,8 @@ pub(super) fn bake(folder: &Path, wallpaper: &Wallpaper) -> Result<Baked> {
     if screens.is_empty() {
         return Err(Error::new(E_FAIL, "No screen"));
     }
-    let board = read_board(folder)?;
+    let document = document_text(folder)?;
+    let board = decode_board(document.as_deref())?;
     let mut base = match Base::read(folder)? {
         Some(base) => base,
         None => Base::capture(wallpaper, &screens)?,
@@ -201,6 +198,9 @@ pub(super) fn bake(folder: &Path, wallpaper: &Wallpaper) -> Result<Baked> {
     for (id, path) in &paths {
         wallpaper.set(id, path)?;
     }
+    // Last: a bake cut short leaves no record, and the next start bakes again.
+    let record = fingerprint(document.as_deref().unwrap_or_default(), &base, &screens);
+    std::fs::write(baked_path(folder), record).map_err(|e| Error::new(E_FAIL, e.to_string()))?;
     Ok(Baked {
         screens,
         frame,
@@ -421,7 +421,7 @@ pub fn spawn() -> Result<()> {
         .map_err(|e| Error::new(E_FAIL, e.to_string()))
 }
 /// `--board-bake`: the whole bake, with the folder next to the settings, unless the board was
-/// hidden meanwhile.
+/// hidden meanwhile or the screens already show pictures made from this board.
 pub fn process() -> Result<()> {
     background(
         lock_name(),
@@ -431,8 +431,63 @@ pub fn process() -> Result<()> {
                 .map_err(crate::settings::unreadable)?
                 .board_visible)
         },
-        || bake(&super::folder()?, &Wallpaper::new()?).map(|_| ()),
+        || {
+            let folder = super::folder()?;
+            let wallpaper = Wallpaper::new()?;
+            if up_to_date(&folder, &wallpaper)? {
+                return Ok(());
+            }
+            bake(&folder, &wallpaper).map(|_| ())
+        },
     )
+}
+/// Whether every present screen shows the picture the last bake made from this very board,
+/// base and screens: then a start of the resident has nothing to render or write.
+fn up_to_date(folder: &Path, wallpaper: &Wallpaper) -> Result<bool> {
+    let Some(base) = Base::read(folder)? else {
+        return Ok(false);
+    };
+    let screens = wallpaper.screens()?;
+    if !base.all_ours(wallpaper, &screens)? {
+        return Ok(false);
+    }
+    let recorded = std::fs::read_to_string(baked_path(folder)).unwrap_or_default();
+    let document = document_text(folder)?.unwrap_or_default();
+    Ok(recorded.trim_end() == fingerprint(&document, &base, &screens))
+}
+fn baked_path(folder: &Path) -> PathBuf {
+    folder.join("baked.txt")
+}
+/// What a bake draws from: the board file as written, the base and each screen with its
+/// place. Any change gives another value; the same inputs always give the same.
+fn fingerprint(document: &str, base: &Base, screens: &[Screen]) -> String {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    document.hash(&mut hasher);
+    base.encode().hash(&mut hasher);
+    for screen in screens {
+        screen.id.hash(&mut hasher);
+        let b = screen.bounds;
+        for value in [b.min.x, b.min.y, b.max.x, b.max.y] {
+            value.to_bits().hash(&mut hasher);
+        }
+    }
+    format!("{:016x}", hasher.finish())
+}
+/// The board file as written; None when there is none yet.
+fn document_text(folder: &Path) -> Result<Option<String>> {
+    match std::fs::read_to_string(super::document_path(folder)) {
+        Ok(text) => Ok(Some(text)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(Error::new(E_FAIL, e.to_string())),
+    }
+}
+/// The board a file holds; an empty board without a file.
+fn decode_board(document: Option<&str>) -> Result<Board> {
+    match document {
+        Some(text) => Board::decode(text).map_err(|e| crate::failure::visible(e.key(), &[])),
+        None => Ok(Board::default()),
+    }
 }
 /// A bake nobody waits for: it gives up quietly when the lock stays taken for `wait_ms`, and
 /// runs only if the board is still `visible` once it holds the lock.
@@ -483,6 +538,26 @@ mod tests {
         image.pixels[i..i + 4].try_into().unwrap()
     }
 
+    #[test]
+    fn the_bake_record_changes_with_the_board_the_base_and_each_screen() {
+        let base = Base {
+            position: Position::Fill,
+            color: [1, 2, 3],
+            screens: vec![],
+        };
+        let screens = [screen("a", 0.), screen("b", 40.)];
+        let same = fingerprint("board", &base, &screens);
+        assert_eq!(same, fingerprint("board", &base, &screens));
+        assert_ne!(same, fingerprint("board changed", &base, &screens));
+        let other_base = Base {
+            color: [3, 2, 1],
+            ..base.clone()
+        };
+        assert_ne!(same, fingerprint("board", &other_base, &screens));
+        assert_ne!(same, fingerprint("board", &base, &screens[..1]));
+        let moved = [screen("a", 0.), screen("b", 80.)];
+        assert_ne!(same, fingerprint("board", &base, &moved), "a screen moved");
+    }
     #[test]
     fn a_relative_picture_path_is_made_absolute_and_keeps_its_file_name() {
         let relative = Path::new("target")

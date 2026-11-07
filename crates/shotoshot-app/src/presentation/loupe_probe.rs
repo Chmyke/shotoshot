@@ -199,6 +199,20 @@ fn composed() {
         let _ = DwmFlush();
     }
 }
+/// A window opened, moved or closed since the loupe last listed the desktop: delivers the
+/// events its hooks queued, as the resident's message loop would, and has it list again.
+fn settle(loupe: &mut Loupe) {
+    unsafe {
+        let mut msg = MSG::default();
+        while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
+            if msg.message == WINDOWS_CHANGED {
+                super::loupe::changes_seen();
+            }
+            DispatchMessageW(&msg);
+        }
+    }
+    loupe.windows_changed();
+}
 fn bgr(image: &crate::Image, x: i32, y: i32) -> Option<[u8; 3]> {
     let (dx, dy) = (x - image.left, y - image.top);
     if dx < 0 || dy < 0 || dx >= image.width as i32 || dy >= image.height as i32 {
@@ -527,6 +541,7 @@ pub(crate) fn probe(timed: bool, renderer: Renderer) -> Result<Report> {
     unsafe {
         SetWindowDisplayAffinity(protected.hwnd(), WDA_EXCLUDEFROMCAPTURE)?;
     }
+    settle(&mut loupe);
     loupe.update(at, DIAMETER, 2, None, &[excluded.hwnd()])?;
     composed();
     let after = capture_desktop()?;
@@ -546,6 +561,7 @@ pub(crate) fn probe(timed: bool, renderer: Renderer) -> Result<Report> {
     }
     drop(excluded);
     drop(protected);
+    settle(&mut loupe);
     // The edge over the pattern, away from the screen's edges, once the windows left out are
     // gone: a loupe that shows the same is not restacked over windows opened since.
     loupe.update(at, DIAMETER, 2, None, &[])?;
@@ -575,6 +591,7 @@ pub(crate) fn probe(timed: bool, renderer: Renderer) -> Result<Report> {
     })?;
     composed();
     let with_frame = capture_desktop()?;
+    settle(&mut loupe);
     for corner in [
         POINT {
             x: at.x,
@@ -593,6 +610,7 @@ pub(crate) fn probe(timed: bool, renderer: Renderer) -> Result<Report> {
             .push(look(&with_frame, &after, corner, 2, drawn(&loupe)));
     }
     drop(framed);
+    settle(&mut loupe);
     if timed {
         (report.latencies_ms, report.update_ms) = latencies(&mut loupe, &before, m)?;
         report.floor_ms = floor(m)?;
@@ -983,6 +1001,7 @@ fn idle_cpu(loupe: &mut Loupe, at: POINT) -> Result<f64> {
             while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
                 if msg.message == WINDOWS_CHANGED {
                     super::loupe::changes_seen();
+                    loupe.windows_changed();
                 }
                 if msg.message == super::loupe_capture::FRAMES {
                     loupe.frames();

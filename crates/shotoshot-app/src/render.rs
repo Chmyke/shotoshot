@@ -44,6 +44,11 @@ pub struct Renderer {
     // What each blur makes of the capture, by object id with its version; they die with this
     // render target and with the capture they were cut from (`set_image`).
     blurs: std::cell::RefCell<Vec<(u64, u64, ID2D1Bitmap)>>,
+    // A rectangle but the shapes it spares (a background coat, every frame): the combined
+    // geometry by rectangle and holes, a handful at most, the oldest dropped.
+    excepted: std::cell::RefCell<Vec<Excepted>>,
+    // Interface text formats by size, style and language: DirectWrite built one per text.
+    formats: std::cell::RefCell<std::collections::HashMap<FormatKey, IDWriteTextFormat>>,
     backend: Backend,
     transparent: bool,
 }
@@ -57,6 +62,10 @@ pub enum Backend {
     /// would outlive the renderer in a process that otherwise never draws.
     Software,
 }
+/// A rectangle, the closed holes it spares and the geometry of the difference.
+type Excepted = (Rect, Vec<Vec<Point>>, ID2D1Geometry);
+/// Size (bits of the f32), style (None for the plain interface face) and language of a format.
+type FormatKey = (u32, Option<TextStyle>, shotoshot_text::Language);
 /// A renderer on its way from the thread that built it to the thread that will draw with it.
 pub struct Prepared(Renderer);
 // SAFETY: the objects of a single-threaded Direct2D factory have no thread affinity; they only
@@ -135,7 +144,7 @@ impl Renderer {
         size: f32,
         language: shotoshot_text::Language,
     ) -> Result<IDWriteTextFormat> {
-        unsafe {
+        self.cached_format((size.to_bits(), None, language), || unsafe {
             self.write.CreateTextFormat(
                 w!("Segoe UI"),
                 None,
@@ -145,7 +154,20 @@ impl Renderer {
                 size,
                 &HSTRING::from(language.locale_name()),
             )
+        })
+    }
+    /// The format of `key`, built by `create` the first time.
+    fn cached_format(
+        &self,
+        key: FormatKey,
+        create: impl FnOnce() -> Result<IDWriteTextFormat>,
+    ) -> Result<IDWriteTextFormat> {
+        if let Some(format) = self.formats.borrow().get(&key) {
+            return Ok(format.clone());
         }
+        let format = create()?;
+        self.formats.borrow_mut().insert(key, format.clone());
+        Ok(format)
     }
     /// The typeface of interface text at `size` in `style`: Segoe UI Variable where Windows
     /// has it (Windows 11), Segoe UI in the same weight otherwise.
@@ -177,7 +199,7 @@ impl Renderer {
             TextStyle::Body | TextStyle::Caption => (w!("Segoe UI"), DWRITE_FONT_WEIGHT_NORMAL),
             TextStyle::Strong | TextStyle::Title => (w!("Segoe UI"), DWRITE_FONT_WEIGHT_SEMI_BOLD),
         };
-        unsafe {
+        self.cached_format((size.to_bits(), Some(style), language), || unsafe {
             self.write.CreateTextFormat(
                 family,
                 None,
@@ -187,7 +209,7 @@ impl Renderer {
                 size,
                 &HSTRING::from(language.locale_name()),
             )
-        }
+        })
     }
     /// Whether the system fonts include Segoe UI Variable, asked once per process.
     fn has_variable_family(&self) -> bool {
@@ -358,6 +380,8 @@ impl Renderer {
                 strokes: Default::default(),
                 scene: Default::default(),
                 blurs: Default::default(),
+                excepted: Default::default(),
+                formats: Default::default(),
                 backend,
                 transparent,
             })
@@ -376,14 +400,31 @@ impl Renderer {
         Ok(())
     }
     fn bitmap(&self, target: &ID2D1RenderTarget, image: &Image) -> Result<ID2D1Bitmap> {
+        self.cropped_bitmap(target, image, 0, 0, image.width, image.height)
+    }
+    /// The `width` x `height` pixels of `image` from (`left`, `top`), read in place: the
+    /// bitmap of an export never copies the screens around the region.
+    fn cropped_bitmap(
+        &self,
+        target: &ID2D1RenderTarget,
+        image: &Image,
+        left: u32,
+        top: u32,
+        width: u32,
+        height: u32,
+    ) -> Result<ID2D1Bitmap> {
         image.validate()?;
+        if width == 0 || height == 0 || left + width > image.width || top + height > image.height {
+            return Err(Error::new(
+                windows::Win32::Foundation::E_INVALIDARG,
+                "Crop outside the image",
+            ));
+        }
+        let start = (top as usize * image.width as usize + left as usize) * 4;
         unsafe {
             target.CreateBitmap(
-                D2D_SIZE_U {
-                    width: image.width,
-                    height: image.height,
-                },
-                Some(image.pixels.as_ptr().cast()),
+                D2D_SIZE_U { width, height },
+                Some(image.pixels[start..].as_ptr().cast()),
                 image.width * 4,
                 &D2D1_BITMAP_PROPERTIES {
                     pixelFormat: properties().pixelFormat,
@@ -552,12 +593,38 @@ impl Renderer {
     fn fill_except(
         &self,
         target: &ID2D1RenderTarget,
-        mut area: ID2D1Geometry,
+        area: ID2D1Geometry,
         holes: &[Vec<Point>],
         brush: &ID2D1Brush,
     ) -> Result<()> {
+        let area = self.excluding(area, holes)?;
+        unsafe { target.FillGeometry(&area, brush, None) };
+        Ok(())
+    }
+    /// The rectangle `r` but the closed `holes`, kept from one frame to the next: a
+    /// background coat spares its walls on every frame, and each wall cost a boolean
+    /// operation on a path of up to 4 096 points.
+    fn excepted(&self, r: Rect, holes: &[Vec<Point>]) -> Result<ID2D1Geometry> {
+        if let Some((_, _, geometry)) = self
+            .excepted
+            .borrow()
+            .iter()
+            .find(|(rect, kept, _)| *rect == r && kept == holes)
+        {
+            return Ok(geometry.clone());
+        }
+        let geometry = self.excluding(self.polygon(&r.corners())?, holes)?;
+        let mut excepted = self.excepted.borrow_mut();
+        excepted.insert(0, (r, holes.to_vec(), geometry.clone()));
+        excepted.truncate(8);
+        Ok(geometry)
+    }
+    /// `area` without the closed `holes`, which may overlap.
+    fn excluding(&self, mut area: ID2D1Geometry, holes: &[Vec<Point>]) -> Result<ID2D1Geometry> {
         unsafe {
             for hole in holes {
+                #[cfg(test)]
+                scene_tests::record_combine();
                 let rest = self.factory.CreatePathGeometry()?;
                 let sink = rest.Open()?;
                 area.CombineWithGeometry(
@@ -570,9 +637,8 @@ impl Renderer {
                 sink.Close()?;
                 area = rest.into();
             }
-            target.FillGeometry(&area, brush, None);
         }
-        Ok(())
+        Ok(area)
     }
     fn annotation_range(
         &self,
@@ -793,14 +859,19 @@ impl Renderer {
             let source = if covered {
                 None
             } else {
-                Some(self.bitmap(&target, image)?)
+                Some(self.cropped_bitmap(&target, image, left, top, width, height)?)
             };
             target.BeginDraw();
             target.SetTransform(&Matrix3x2::translation(-(left as f32), -(top as f32)));
             if let Some(source) = &source {
                 target.DrawBitmap(
                     source,
-                    None,
+                    Some(&D2D_RECT_F {
+                        left: left as f32,
+                        top: top as f32,
+                        right: right as f32,
+                        bottom: bottom as f32,
+                    }),
                     1.,
                     D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
                     None,
@@ -957,9 +1028,9 @@ impl Canvas for D2dCanvas<'_> {
             unsafe { self.target.FillRectangle(&rect(r), self.ink(ink)) };
             return Ok(());
         }
-        let area = self.renderer.polygon(&r.corners())?;
-        self.renderer
-            .fill_except(self.target, area, holes, self.ink(ink))
+        let area = self.renderer.excepted(r, holes)?;
+        unsafe { self.target.FillGeometry(&area, self.ink(ink), None) };
+        Ok(())
     }
     fn stroke_rect(&mut self, r: Rect, ink: Ink, width: f64) -> Result<()> {
         self.underlay = None;
@@ -1244,6 +1315,12 @@ impl Canvas for D2dCanvas<'_> {
             }
         }
         self.renderer.annotations_except(self.target, objects, skip)
+    }
+    fn glyph(&mut self, object: &Object) -> Result<()> {
+        self.underlay = None;
+        // No `mark_present`: the glyph is not the document, and must not evict its outlines.
+        self.renderer
+            .annotation_range(self.target, std::slice::from_ref(object), None, 0..1)
     }
 }
 

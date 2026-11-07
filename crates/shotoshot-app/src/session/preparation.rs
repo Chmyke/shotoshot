@@ -1,5 +1,6 @@
 //! Software resources held by a hidden editor before the user asks for fresh pixels.
 use super::*;
+use shotoshot_ui::Canvas as _;
 
 pub(crate) struct Preparation {
     renderer: Renderer,
@@ -12,7 +13,16 @@ impl Preparation {
         prepared
             .renderer
             .begin(prepared.surface.dc(), width as i32, height as i32)?;
+        // The first text of the process makes DirectWrite load the system font collection,
+        // and the annotation face its own: paid here, not at the first frame's hint.
+        let warmed = {
+            let mut canvas = D2dCanvas::direct(&prepared.renderer, &prepared.renderer.dc)?;
+            canvas
+                .measure_text("x", 12.)
+                .and_then(|_| canvas.measure_annotation_text("x", 20.))
+        };
         prepared.renderer.end()?;
+        warmed?;
         Ok(prepared)
     }
     pub fn cold(width: u32, height: u32, live: bool) -> Result<Self> {
@@ -53,6 +63,7 @@ impl Preparation {
                 live_sample: None,
                 back_buffer,
                 acceleration: None,
+                accelerate_after_paint: false,
                 caret: Default::default(),
                 cross_ink: Default::default(),
             },

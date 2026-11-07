@@ -109,8 +109,18 @@ impl Screen {
     pub fn capture(&self) -> Result<Image> {
         // PITFALL: A top-down DIB preserves physical virtual-desktop coordinates, including negatives.
         unsafe {
-            let mut image = self.blank()?;
-            let (width, height) = (image.width as i32, image.height as i32);
+            let (left, top, width, height) = self.bounds();
+            if width <= 0 || height <= 0 {
+                return Err(Error::from_thread());
+            }
+            // Zeroed pages the kernel hands out lazily: the only write is the copy below.
+            let mut image = Image {
+                width: width as u32,
+                height: height as u32,
+                pixels: vec![0; width as usize * height as usize * 4],
+                left,
+                top,
+            };
             let screen = GetDC(None);
             if screen.is_invalid() {
                 return Err(Error::from_thread());
@@ -146,13 +156,16 @@ impl Screen {
                 SRCCOPY | CAPTUREBLT,
             )?;
             GdiFlush().ok()?;
-            std::ptr::copy_nonoverlapping(
-                bits.cast::<u8>(),
-                image.pixels.as_mut_ptr(),
-                image.pixels.len(),
-            );
-            for pixel in image.pixels.as_chunks_mut::<4>().0 {
-                pixel[3] = 255;
+            // One pass: the bytes of the DIB with the alpha made opaque on the way.
+            let source = std::slice::from_raw_parts(bits.cast::<u8>(), image.pixels.len());
+            for (pixel, bgra) in image
+                .pixels
+                .as_chunks_mut::<4>()
+                .0
+                .iter_mut()
+                .zip(source.as_chunks::<4>().0)
+            {
+                *pixel = [bgra[0], bgra[1], bgra[2], 255];
             }
             Ok(image)
         }

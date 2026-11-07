@@ -579,7 +579,9 @@ impl App {
                 SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED.0 as isize);
             }
         }
-        session.prepare_acceleration(hwnd, RENDERER_READY)?;
+        // After the first frame (WM_PAINT): building the Direct3D device takes 150 ms of CPU
+        // and GPU that the first paint would otherwise share.
+        session.native.accelerate_after_paint = true;
         self.enter(hwnd, session)
     }
     /// Gives `session` the user's last colour, stroke width and eraser size, then shows the window over
@@ -712,12 +714,15 @@ impl App {
         } else {
             None
         };
-        if let Err(error) = self.persist_brush(hwnd).and_then(|_| self.flush_brush()) {
-            report(hwnd, &error);
-        }
+        // Gone from the screen first: the preference writes below reach the disk with
+        // write-through, and the user has already left.
         unsafe {
+            let _ = ShowWindow(hwnd, SW_HIDE);
             let _ = KillTimer(Some(hwnd), crate::toolbar::HINT_TIMER);
             let _ = KillTimer(Some(hwnd), BRUSH_TIMER);
+        }
+        if let Err(error) = self.persist_brush(hwnd).and_then(|_| self.flush_brush()) {
+            report(hwnd, &error);
         }
         if let Err(error) = self.persist_custom_color() {
             report(hwnd, &error);
@@ -734,9 +739,6 @@ impl App {
         self.report_region();
         self.session = None;
         self.google_search = None;
-        unsafe {
-            let _ = ShowWindow(hwnd, SW_HIDE);
-        }
         if let Some(text) = board_saved {
             // Before the quit request below: a message box shown after it closes at once.
             message(hwnd, &Text::new(text));

@@ -162,6 +162,9 @@ pub struct PresentationSettings {
     pub arrow_size: u32,
     /// The pointer window's choices: halo shape, trail, clicks, spotlight.
     pub pointer: crate::pointer::PointerSettings,
+    /// A hidden window OBS can capture, mirroring the presentation layers. Off by default:
+    /// it costs a Direct3D device that only a streamer needs (2026-11-07).
+    pub obs_mirror: bool,
 }
 impl Default for PresentationSettings {
     fn default() -> Self {
@@ -176,6 +179,7 @@ impl Default for PresentationSettings {
             halo_color: [255, 211, 64],
             shape_color: [237, 79, 92],
             pointer: crate::pointer::PointerSettings::default(),
+            obs_mirror: false,
         }
     }
 }
@@ -226,6 +230,7 @@ impl PresentationSettings {
             halo_color: color(halo)?,
             shape_color: color(shape)?,
             pointer: crate::pointer::PointerSettings::default(),
+            obs_mirror: false,
         })
     }
 }
@@ -343,6 +348,7 @@ impl Settings {
             Some("18") => 31,
             Some("19") => 32,
             Some("20") => 33,
+            Some("21") => 34,
             _ => 0,
         };
         if fields.len() != expected_len {
@@ -374,7 +380,7 @@ impl Settings {
             // its users' Alt+F arrow would be migrated away on every load.
             if !matches!(
                 version,
-                Some("11" | "12" | "13" | "14" | "15" | "16" | "17" | "18" | "19" | "20")
+                Some("11" | "12" | "13" | "14" | "15" | "16" | "17" | "18" | "19" | "20" | "21")
             ) && presentation.shape_shortcuts[0] == OLD_ARROW_SHORTCUT
                 && !presentation.shape_shortcuts.contains(&arrow)
             {
@@ -424,6 +430,11 @@ impl Settings {
         if fields.len() >= 30 {
             presentation.pointer = crate::pointer::PointerSettings::decode(fields[29])?;
         }
+        presentation.obs_mirror = match fields.get(33) {
+            None | Some(&"0") => false,
+            Some(&"1") => true,
+            Some(_) => return Err("Invalid OBS mirror setting".into()),
+        };
         if fields.len() >= 24 {
             // The retired keyboard layout (full, compact, gaming) is still checked, so a damaged
             // line stays refused; the ghost diagram always shows the whole keyboard.
@@ -568,7 +579,7 @@ impl Settings {
             .join(",");
         let color = |[red, green, blue]: [u8; 3]| format!("{red:02x}{green:02x}{blue:02x}");
         format!(
-            "{HEADER}20\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{},{}\n{},{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
+            "{HEADER}21\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{},{}\n{},{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n{}\n{},{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
             self.modifiers,
             self.key,
             u8::from(self.legacy_style),
@@ -609,7 +620,8 @@ impl Settings {
             self.presentation.pointer.encode(),
             u8::from(self.wheel_learned),
             u8::from(self.mini_toolbar),
-            u8::from(self.toolbar_unfolded)
+            u8::from(self.toolbar_unfolded),
+            u8::from(self.presentation.obs_mirror)
         )
     }
     /// Changes only the editor's custom color, preserving the other stored preferences.
@@ -743,13 +755,13 @@ mod tests {
             ..Default::default()
         };
         let encoded = settings.encode();
-        assert!(encoded.starts_with("shotoshot-settings-20\n"));
+        assert!(encoded.starts_with("shotoshot-settings-21\n"));
         let legacy = encoded.replacen("shotoshot-settings-", "shotshot-settings-", 1);
         assert_eq!(Settings::decode(&legacy).unwrap(), settings);
         let oldest = Settings::decode("shotshot-settings-1\n3\n65\n1\n43,3a,2f,e9\n").unwrap();
         assert_eq!((oldest.modifiers, oldest.key), (3, 65));
         assert!(Settings::decode(&encoded.replacen("shotoshot-", "other-", 1)).is_err());
-        assert!(Settings::decode(&encoded.replacen("-20\n", "-21\n", 1)).is_err());
+        assert!(Settings::decode(&encoded.replacen("-21\n", "-22\n", 1)).is_err());
     }
     #[test]
     fn board_fields_roundtrip_and_older_files_get_defaults() {
@@ -758,7 +770,7 @@ mod tests {
             .lines()
             .map(str::to_owned)
             .collect();
-        assert_eq!(fields.len(), 33);
+        assert_eq!(fields.len(), 34);
         assert_eq!(&fields[25..29], &["1,66", "0", "14", "auto"]);
         let mut old = fields[..25].to_vec();
         old[0] = "shotoshot-settings-13".into();
@@ -803,7 +815,7 @@ mod tests {
             ..Default::default()
         };
         let encoded = settings.encode();
-        assert!(encoded.starts_with("shotoshot-settings-20\n"));
+        assert!(encoded.starts_with("shotoshot-settings-21\n"));
         assert_eq!(encoded.lines().nth(28), Some("ja"));
         assert_eq!(
             Settings::decode(&encoded).unwrap().language,
@@ -830,7 +842,7 @@ mod tests {
         .lines()
         .map(str::to_owned)
         .collect();
-        assert_eq!(fields.len(), 33);
+        assert_eq!(fields.len(), 34);
         // Format 14 ends before the eraser size, 15 before the language.
         for (version, len, eraser) in [("14", 27, crate::ERASER_SIZE as u32), ("15", 28, 32)] {
             let mut old = fields[..len].to_vec();
@@ -845,7 +857,7 @@ mod tests {
             too_long[0] = format!("shotoshot-settings-{version}");
             assert!(Settings::decode(&too_long.join("\n")).is_err(), "{version}");
             // The migrated file is written as version 20.
-            assert!(migrated.encode().starts_with("shotoshot-settings-20\n"));
+            assert!(migrated.encode().starts_with("shotoshot-settings-21\n"));
         }
     }
     #[test]
@@ -920,6 +932,30 @@ mod tests {
         assert!(Settings::decode(&(fields.join("\n") + "\n")).is_err());
     }
     #[test]
+    fn the_obs_mirror_roundtrips_and_older_files_keep_it_off() {
+        let settings = Settings {
+            presentation: PresentationSettings {
+                obs_mirror: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let encoded = settings.encode();
+        assert_eq!(encoded.lines().nth(33), Some("1"));
+        assert_eq!(Settings::decode(&encoded).unwrap(), settings);
+        let mut fields: Vec<_> = encoded.lines().map(String::from).collect();
+        fields[0] = "shotoshot-settings-20".into();
+        fields.pop();
+        let older = Settings::decode(&(fields.join("\n") + "\n")).unwrap();
+        assert!(
+            !older.presentation.obs_mirror,
+            "a version 20 file has no mirror"
+        );
+        fields[0] = "shotoshot-settings-21".into();
+        fields.push("2".into());
+        assert!(Settings::decode(&(fields.join("\n") + "\n")).is_err());
+    }
+    #[test]
     fn the_mini_toolbar_roundtrips_and_older_files_keep_the_full_one() {
         let settings = Settings {
             mini_toolbar: true,
@@ -962,10 +998,10 @@ mod tests {
         let mut fields: Vec<_> = read.encode().lines().map(String::from).collect();
         assert_eq!(fields[32], "1");
         fields[0] = "shotoshot-settings-19".into();
-        fields.pop();
+        fields.truncate(32);
         let older = Settings::decode(&(fields.join("\n") + "\n")).unwrap();
         assert!(!older.toolbar_unfolded, "a version 19 file opens folded");
-        fields[0] = "shotoshot-settings-20".into();
+        fields[0] = "shotoshot-settings-21".into();
         fields.push("2".into());
         assert!(Settings::decode(&(fields.join("\n") + "\n")).is_err());
     }
@@ -1107,7 +1143,7 @@ mod tests {
         old[0] = "shotoshot-settings-9".into();
         let migrated = Settings::decode(&old.join("\n")).unwrap().encode();
         let fields: Vec<_> = migrated.lines().collect();
-        assert_eq!(fields[0], "shotoshot-settings-20");
+        assert_eq!(fields[0], "shotoshot-settings-21");
         assert_eq!(&fields[20..22], &["0,145", "1"]);
         let mut custom: Vec<_> = fields.iter().map(|v| v.to_string()).collect();
         custom[20] = "6,122".into();
@@ -1192,7 +1228,7 @@ mod tests {
             .take(18)
             .collect::<Vec<_>>()
             .join("\n")
-            .replacen("settings-20", "settings-8", 1);
+            .replacen("settings-21", "settings-8", 1);
         assert!(Settings::decode(&old).unwrap().start_with_windows);
     }
     #[test]
@@ -1237,7 +1273,7 @@ mod tests {
         // Older formats have no size: the default.
         let older = Settings::default()
             .encode()
-            .replacen("settings-20", "settings-14", 1);
+            .replacen("settings-21", "settings-14", 1);
         let older = older.lines().take(27).collect::<Vec<_>>().join("\n") + "\n";
         assert_eq!(
             Settings::decode(&older).unwrap().capture_eraser_size,
@@ -1556,7 +1592,7 @@ mod tests {
             assert_eq!(
                 settings.encode(),
                 format!(
-                    "shotoshot-settings-20\n3\n65\n1\n43,3a,2f,e9\n{live_capture}\n3000\nffd340\ned4f5c\n4\n1,65\n1,82\n1,67\n5\n28\n-\n1\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n1,48,100,2,0,0,1,0,ed4f5c,409cff,0,1,-,0,240,60,0,-,0,0,240,2,-,0\n0\n0\n0\n"
+                    "shotoshot-settings-21\n3\n65\n1\n43,3a,2f,e9\n{live_capture}\n3000\nffd340\ned4f5c\n4\n1,65\n1,82\n1,67\n5\n28\n-\n1\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n1,48,100,2,0,0,1,0,ed4f5c,409cff,0,1,-,0,240,60,0,-,0,0,240,2,-,0\n0\n0\n0\n0\n"
                 )
             );
         }
@@ -1571,7 +1607,7 @@ mod tests {
             assert_eq!(
                 settings.encode(),
                 format!(
-                    "shotoshot-settings-20\n3\n65\n0\n43,3a,2f,e9\n1\n{duration}\n00aaff\nff0001\n4\n1,65\n1,82\n1,67\n5\n28\n-\n1\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n1,48,100,2,0,0,1,0,ed4f5c,409cff,0,1,-,0,240,60,0,-,0,0,240,2,-,0\n0\n0\n0\n"
+                    "shotoshot-settings-21\n3\n65\n0\n43,3a,2f,e9\n1\n{duration}\n00aaff\nff0001\n4\n1,65\n1,82\n1,67\n5\n28\n-\n1\ned4f5c\n1\n3\n0,145\n1\n0\n100\n0\n1,66\n0\n14\nauto\n1,48,100,2,0,0,1,0,ed4f5c,409cff,0,1,-,0,240,60,0,-,0,0,240,2,-,0\n0\n0\n0\n0\n"
                 )
             );
         }
@@ -1644,6 +1680,7 @@ mod tests {
                     }),
                     ..Default::default()
                 },
+                obs_mirror: true,
             },
             board_shortcut: Shortcut {
                 modifiers: 2,
