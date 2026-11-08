@@ -1,11 +1,11 @@
 //! ROLE: Windows platform layer of Shotoshot (Win32, Direct2D, WIC); empty elsewhere.
 #![cfg(windows)]
 mod app;
-pub mod board;
-use shotoshot_ui::capture_name;
+mod board;
 mod demo;
 mod diagnostics;
 mod export;
+// main.rs shows or logs a failure of `run` through it.
 pub mod failure;
 mod game_capture;
 mod google_search;
@@ -18,16 +18,24 @@ mod rename_migration;
 mod render;
 mod resources;
 mod session;
-pub mod settings;
+mod settings;
 mod site_previews;
 mod startup;
 #[cfg(test)]
 mod text_fit;
 mod toolbar;
+// The public surface: what main.rs, the integration tests and the clipboard probe use.
 pub use app::{reports_errors_on_stderr, run};
-pub use export::*;
-pub use image::*;
-pub use render::*;
+pub use export::{
+    annotation_clipboard_matches, copy_annotation_marker, copy_image, copy_text, load_png,
+    save_image, save_numbered, save_png,
+};
+pub use image::{Image, ImageExt, capture_desktop};
+pub use render::Renderer;
+// Crate-wide paths (`crate::Renderer`, `crate::save_png`...) for the rest of the crate.
+use export::*;
+use image::*;
+use render::*;
 
 pub struct ComApartment(std::marker::PhantomData<std::rc::Rc<()>>);
 impl ComApartment {

@@ -85,7 +85,7 @@ const PREVIEW_SCALE: f64 = 0.7;
 /// The preview pointer clicks this often, left then right.
 const PREVIEW_CLICK_MS: u64 = 1400;
 /// The shape lifetimes the Presentation page offers, in milliseconds.
-pub const DURATIONS: [u32; 3] = [1000, 3000, 5000];
+pub(crate) const DURATIONS: [u32; 3] = [1000, 3000, 5000];
 
 /// Colours offered for the halo and the clicks.
 pub const COLORS: [[u8; 3]; 8] = [
@@ -398,7 +398,7 @@ pub enum Card {
     Spotlight,
     Loupe,
 }
-pub const CARDS: [Card; 5] = [
+pub(crate) const CARDS: [Card; 5] = [
     Card::Halo,
     Card::Trail,
     Card::Clicks,
@@ -1412,7 +1412,7 @@ impl Panel {
         }
     }
     /// Whether it is on screen now.
-    pub fn is_shown(&self, shown: Shown) -> bool {
+    pub(crate) fn is_shown(&self, shown: Shown) -> bool {
         match shown {
             Shown::Board => self.values.board,
             Shown::PointerEffects => self.halo_on,
@@ -1711,7 +1711,7 @@ impl Panel {
         Some([slot, default, cancel])
     }
     /// The button that gives `row` back its keys from before its last change, left of them.
-    pub fn undo_button(&self, row: ShortcutRow) -> Option<Rect> {
+    pub(crate) fn undo_button(&self, row: ShortcutRow) -> Option<Rect> {
         let zone = self.layout.zone(Item::Shortcut(row))?;
         let left = zone.control.min.x - 8.;
         let middle = zone.row.center().y;

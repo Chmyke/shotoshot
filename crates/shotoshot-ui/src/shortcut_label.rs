@@ -1,14 +1,9 @@
 //! ROLE: Writes a key combination the way the interface shows it ("Ctrl+Shift+Z"), with the
 //! modifier and special key names of the interface language. The keys themselves never change.
-use shotoshot_text::{Key, Language, language, tr_in};
-
-/// The combination of Windows virtual key `vk` with Ctrl and Shift, in the interface language.
-pub fn shortcut_label(vk: u32, ctrl: bool, shift: bool) -> String {
-    shortcut_label_in(vk, ctrl, shift, language())
-}
+use shotoshot_text::{Key, Language, tr_in};
 
 /// The combination of Windows virtual key `vk` with Ctrl and Shift, in `language`.
-pub fn shortcut_label_in(vk: u32, ctrl: bool, shift: bool, language: Language) -> String {
+pub(crate) fn shortcut_label_in(vk: u32, ctrl: bool, shift: bool, language: Language) -> String {
     let modifiers = [(ctrl, Key::KeyCtrl), (shift, Key::KeyShift)];
     let mut parts: Vec<String> = modifiers
         .into_iter()

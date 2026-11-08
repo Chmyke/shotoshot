@@ -115,10 +115,18 @@ fn changing_shift_without_motion_recomputes_original_pointer() {
 fn text_size_content_color_and_measurements_commit_together() {
     let mut e = Editor::default();
     let id = e
-        .add_text_measured_sized_colored(p(10., 20.), "A".into(), p(25., 45.), [2, 3, 4], 36.)
+        .add_text(
+            p(10., 20.),
+            "A".into(),
+            TextSpec::measured(p(25., 45.)).color([2, 3, 4]).size(36.),
+        )
         .unwrap();
     let original = e.objects()[0].clone();
-    e.update_text_measured_sized_colored(id, "AB".into(), p(55., 60.), [5, 6, 7], 48.);
+    e.update_text(
+        id,
+        "AB".into(),
+        TextSpec::measured(p(55., 60.)).color([5, 6, 7]).size(48.),
+    );
     assert!(
         matches!(&e.objects()[0].shape,Shape::Text{size,extent,..} if *size==48. && *extent==p(55.,60.))
     );
@@ -131,7 +139,11 @@ fn text_size_content_color_and_measurements_commit_together() {
 fn rotation_cancel_restores_text_and_hit_testing_uses_rotation() {
     let mut e = Editor::default();
     let id = e
-        .add_text_measured_sized_colored(p(20., 40.), "ABC".into(), p(100., 40.), [0, 0, 0], 24.)
+        .add_text(
+            p(20., 40.),
+            "ABC".into(),
+            TextSpec::measured(p(100., 40.)).color([0, 0, 0]).size(24.),
+        )
         .unwrap();
     e.select_only(id);
     let original = e.objects().to_vec();
@@ -232,7 +244,13 @@ fn bound_endpoints_touch_the_outer_edge_of_thick_strokes() {
 #[test]
 fn text_resizing_limits_keep_extent_in_step_with_font_size() {
     let mut e = Editor::default();
-    e.add_text_measured_sized_colored(p(0., 0.), "X".into(), p(100., 100.), [0, 0, 0], 100.);
+    e.add_text(
+        p(0., 0.),
+        "X".into(),
+        TextSpec::measured(p(100., 100.))
+            .color([0, 0, 0])
+            .size(100.),
+    );
     let mut o = e.objects()[0].clone();
     o.transform(o.bounds(), Rect::new(p(0., 0.), p(1000., 1000.)).unwrap());
     assert!(matches!(o.shape,Shape::Text{size,extent,..} if size==300. && extent==p(300.,300.)));
@@ -288,10 +306,18 @@ fn rotated_ellipse_paths_hit_and_bounds_agree() {
 fn text_size_batch_is_atomic_and_one_undo_for_all_selected_text() {
     let mut e = Editor::default();
     let a = e
-        .add_text_measured_sized_colored(p(10., 20.), "A".into(), p(20., 30.), [1, 2, 3], 24.)
+        .add_text(
+            p(10., 20.),
+            "A".into(),
+            TextSpec::measured(p(20., 30.)).color([1, 2, 3]).size(24.),
+        )
         .unwrap();
     let b = e
-        .add_text_measured_sized_colored(p(50., 60.), "B".into(), p(30., 40.), [4, 5, 6], 32.)
+        .add_text(
+            p(50., 60.),
+            "B".into(),
+            TextSpec::measured(p(30., 40.)).color([4, 5, 6]).size(32.),
+        )
         .unwrap();
     e.selected = vec![a, b];
     e.begin_rotation(p(45., -8.));

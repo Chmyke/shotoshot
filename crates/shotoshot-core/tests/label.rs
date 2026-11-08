@@ -5,14 +5,13 @@ fn p(x: f64, y: f64) -> Point {
     Point { x, y }
 }
 fn label(e: &mut Editor, label: Label) -> u64 {
-    e.add_label(
+    e.add_text(
         p(100., 100.),
         "Note".into(),
-        p(60., 30.),
-        [250, 192, 66],
-        20.,
-        Some(label),
-        None,
+        TextSpec::measured(p(60., 30.))
+            .color([250, 192, 66])
+            .size(20.)
+            .label(Some(label)),
     )
     .unwrap()
 }
@@ -59,14 +58,13 @@ fn the_panel_wraps_the_text_with_its_margins() {
 #[test]
 fn a_plain_text_is_unchanged() {
     let mut e = Editor::default();
-    e.add_label(
+    e.add_text(
         p(10., 10.),
         "x".into(),
-        p(20., 30.),
-        [9; 3],
-        24.,
-        None,
-        Some([1; 3]),
+        TextSpec::measured(p(20., 30.))
+            .color([9; 3])
+            .size(24.)
+            .ink(Some([1; 3])),
     )
     .unwrap();
     let o = &e.objects()[0];
@@ -88,14 +86,13 @@ fn a_plain_text_is_unchanged() {
 fn a_bad_wrap_width_is_refused() {
     let mut e = Editor::default();
     for width in [0., -5., f64::NAN, f64::INFINITY] {
-        let added = e.add_label(
+        let added = e.add_text(
             p(0., 0.),
             "x".into(),
-            p(1., 1.),
-            [0; 3],
-            24.,
-            Some(Label::Wrap(width)),
-            None,
+            TextSpec::measured(p(1., 1.))
+                .color([0; 3])
+                .size(24.)
+                .label(Some(Label::Wrap(width))),
         );
         assert_eq!(added, None, "{width}");
     }
@@ -218,14 +215,10 @@ fn a_given_ink_outlives_panel_colours_until_it_goes_back_to_automatic() {
     let mut e = Editor::default();
     let id = label(&mut e, Label::Fit);
     let plain = e
-        .add_label(
+        .add_text(
             p(10., 10.),
             "x".into(),
-            p(20., 30.),
-            [9; 3],
-            24.,
-            None,
-            None,
+            TextSpec::measured(p(20., 30.)).color([9; 3]).size(24.),
         )
         .unwrap();
     e.selected = vec![id, plain];
@@ -260,33 +253,43 @@ fn a_given_ink_outlives_panel_colours_until_it_goes_back_to_automatic() {
 fn an_edited_panel_keeps_its_ink_or_takes_the_new_one() {
     let mut e = Editor::default();
     let id = e
-        .add_label(
+        .add_text(
             p(100., 100.),
             "Note".into(),
-            p(60., 30.),
-            [250, 192, 66],
-            20.,
-            Some(Label::Fit),
-            Some([1, 2, 3]),
+            TextSpec::measured(p(60., 30.))
+                .color([250, 192, 66])
+                .size(20.)
+                .label(Some(Label::Fit))
+                .ink(Some([1, 2, 3])),
         )
         .unwrap();
-    e.update_text_measured_sized_colored(id, "Notes".into(), p(70., 30.), [0; 3], 20.);
+    e.update_text(
+        id,
+        "Notes".into(),
+        TextSpec::measured(p(70., 30.)).color([0; 3]).size(20.),
+    );
     assert_eq!(ink(&e, 0), Some([1, 2, 3]));
-    e.update_text_inked(id, "Notes".into(), p(70., 30.), [0; 3], 20., None);
+    e.update_text(
+        id,
+        "Notes".into(),
+        TextSpec::measured(p(70., 30.))
+            .color([0; 3])
+            .size(20.)
+            .ink(None),
+    );
     assert_eq!(ink(&e, 0), None);
     e.undo();
     assert_eq!(ink(&e, 0), Some([1, 2, 3]), "one undo step");
 }
 
 fn empty_box(e: &mut Editor, label: Label, extent: Point) -> Option<u64> {
-    e.add_label(
+    e.add_text(
         p(100., 100.),
         String::new(),
-        extent,
-        [250, 192, 66],
-        20.,
-        Some(label),
-        None,
+        TextSpec::measured(extent)
+            .color([250, 192, 66])
+            .size(20.)
+            .label(Some(label)),
     )
 }
 #[test]
@@ -299,12 +302,23 @@ fn a_box_validated_empty_stays_at_its_size_and_a_bare_text_does_not() {
         "grabbed inside"
     );
     assert_eq!(
-        e.add_label(p(0., 0.), " ".into(), p(5., 24.), [0; 3], 20., None, None),
+        e.add_text(
+            p(0., 0.),
+            " ".into(),
+            TextSpec::measured(p(5., 24.)).color([0; 3]).size(20.)
+        ),
         None,
         "the Text tool still drops an empty text"
     );
     // Typed in afterwards, it follows its text like any box.
-    e.update_text_inked(id, "Hi".into(), p(150., 24.), [250, 192, 66], 20., None);
+    e.update_text(
+        id,
+        "Hi".into(),
+        TextSpec::measured(p(150., 24.))
+            .color([250, 192, 66])
+            .size(20.)
+            .ink(None),
+    );
     assert_eq!(shape(&e).2, p(150., 24.));
 }
 #[test]

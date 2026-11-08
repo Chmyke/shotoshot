@@ -53,7 +53,13 @@ const LABEL: &str = "Mobile\n+12%";
 fn note(editor: &mut Editor, renderer: &Renderer, at: Point, text: &str, size: f32) -> Result<()> {
     let extent = renderer.measure_annotation_text(text, size)?;
     editor
-        .add_text_measured_sized_colored(at, text.into(), extent, editor.style.color, size.into())
+        .add_text(
+            at,
+            text.into(),
+            TextSpec::measured(extent)
+                .color(editor.style.color)
+                .size(size.into()),
+        )
         .map(|_| ())
         .ok_or_else(|| fail("note refused"))
 }
@@ -739,6 +745,17 @@ const THANKS: &str = "Thank you.";
 /// Top of the thank-you line: it sits under the heart, on the heart's axis.
 const THANKS_TOP: f64 = 286.;
 const THANKS_SIZE: f32 = 36.;
+/// Free spots of the film's area beside the heart, under no text: the first lets the heart
+/// go, the first the colour wheel leaves free closes it.
+const BESIDE_HEART: [Point; 4] = [
+    Point { x: 405., y: 300. },
+    Point { x: 85., y: 300. },
+    Point { x: 415., y: 60. },
+    Point { x: 85., y: 60. },
+];
+/// Where the colour wheel's square gives a lighter pink of the heart's red: a third of its
+/// saturation, nearly all of its brightness (panel design pixels).
+const LIGHTER: Point = Point { x: 117., y: 90. };
 /// Cupid's arrow rises to the right through this point of the enlarged heart.
 const ARROW_THROUGH: Point = Point { x: 246., y: 176. };
 const ARROW_SLOPE_DEGREES: f64 = 30.;
@@ -812,6 +829,45 @@ fn support_heart_film(folder: &Path) -> Result<()> {
     film.up(none);
     film.hold(8)?;
 
+    // The heart takes a lighter pink, poured with the bucket (Mickaël, 2026-11-08). A click
+    // beside it first lets it go: a colour picked recolours what is selected.
+    film.glide(BESIDE_HEART[0], 12, none)?;
+    film.click()?;
+    film.hold(4)?;
+    film.pick(Action::CustomColor)?;
+    let picker = film
+        .session
+        .capture
+        .picker
+        .as_ref()
+        .ok_or_else(|| fail("the colour wheel did not open"))?;
+    let (lighter, panel) = (picker.at(LIGHTER.x, LIGHTER.y), picker.bounds());
+    film.glide(lighter, 14, none)?;
+    film.click()?;
+    film.hold(10)?;
+    // A click off the wheel keeps its colour and closes it.
+    let off = BESIDE_HEART
+        .into_iter()
+        .find(|at| !panel.contains(*at))
+        .ok_or_else(|| fail("the colour wheel covers every spot beside the heart"))?;
+    film.glide(off, 12, none)?;
+    film.click()?;
+    film.hold(4)?;
+    let pink = film.session.capture.custom_color;
+    film.pick(Action::Fill)?;
+    // The middle of the heart's box lies inside it; the bucket shows its outline first.
+    film.glide(film.last_bounds()?.center(), 14, none)?;
+    film.hold(10)?;
+    film.click()?;
+    film.hold(10)?;
+    let heart = &film.session.capture.editor.objects()[0];
+    if heart.fill.last().map(|coat| coat.color) != Some(pink) || pink == RED {
+        return Err(fail("the bucket did not fill the heart a lighter pink"));
+    }
+    if heart.style.color != RED || !film.session.capture.editor.background().is_empty() {
+        return Err(fail("the bucket coloured more than the heart's inside"));
+    }
+
     // Cupid's arrow: where its axis meets the enlarged outline, on the way in and out.
     let objects = film.session.capture.editor.objects();
     let (outline, frame) = (paths(&objects[0], objects).concat(), film.last_bounds()?);
@@ -830,8 +886,9 @@ fn support_heart_film(folder: &Path) -> Result<()> {
     if (exit - entry).length() < 3. * ARROW_INSIDE {
         return Err(fail("the arrow hides no stretch inside the heart"));
     }
-    // Thinner than the heart: three notches down the width ladder.
+    // Back to the heart's red, thinner than the heart: three notches down the width ladder.
     film.pick(Action::Tool(Tool::Line))?;
+    film.pick(Action::Color(RED))?;
     for _ in 0..3 {
         film.session.wheel(film.window, -120)?;
         film.hold(2)?;

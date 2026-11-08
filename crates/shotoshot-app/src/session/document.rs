@@ -105,10 +105,11 @@ mod tests {
             .renderer
             .measure_annotation_text("Note", 24.)
             .unwrap();
-        session
-            .capture
-            .editor
-            .add_text_measured(point(70., 120.), "Note".into(), extent);
+        session.capture.editor.add_text(
+            point(70., 120.),
+            "Note".into(),
+            TextSpec::measured(extent),
+        );
         session
     }
     fn folder(name: &str) -> std::path::PathBuf {

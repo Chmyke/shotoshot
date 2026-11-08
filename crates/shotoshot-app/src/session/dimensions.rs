@@ -605,10 +605,11 @@ mod tests {
         let mut session = Session::new(Image::solid(500, 300, [0, 0, 0, 255]))?;
         session.capture.selecting = false;
         session.capture.region = Rect::new(Point { x: 20., y: 30. }, Point { x: 100., y: 100. });
-        session
-            .capture
-            .editor
-            .add_text(Point { x: 40., y: 50. }, "Keep me".into());
+        session.capture.editor.add_text(
+            Point { x: 40., y: 50. },
+            "Keep me".into(),
+            TextSpec::default(),
+        );
         let before = session.capture.editor.objects().to_vec();
         session
             .native

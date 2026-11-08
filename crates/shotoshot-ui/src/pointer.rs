@@ -15,7 +15,7 @@ use shotoshot_core::{
 };
 
 /// The halo's colour while a button is held.
-pub const PRESSED: [u8; 3] = [237, 79, 92];
+pub(crate) const PRESSED: [u8; 3] = [237, 79, 92];
 /// Warm colours the sparks cycle through.
 const SPARKS: [[u8; 3]; 3] = [[255, 214, 92], [255, 150, 64], [255, 250, 220]];
 /// A soft edge or a trail is drawn as this many overlapping shapes of low opacity: where all

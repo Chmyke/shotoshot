@@ -4,17 +4,17 @@
 use crate::{Capture, Host, toolbar::Action};
 use shotoshot_core::{Modifiers, Point, Tool};
 
-pub const KEY_TAB: u32 = 9;
-pub const KEY_SPACE: u32 = 32;
-pub const KEY_ENTER: u32 = 13;
-pub const KEY_ESCAPE: u32 = 27;
-pub const KEY_PAGE_UP: u32 = 33;
-pub const KEY_PAGE_DOWN: u32 = 34;
-pub const KEY_LEFT: u32 = 37;
-pub const KEY_UP: u32 = 38;
-pub const KEY_RIGHT: u32 = 39;
-pub const KEY_DOWN: u32 = 40;
-pub const KEY_DELETE: u32 = 46;
+pub(crate) const KEY_TAB: u32 = 9;
+pub(crate) const KEY_SPACE: u32 = 32;
+pub(crate) const KEY_ENTER: u32 = 13;
+pub(crate) const KEY_ESCAPE: u32 = 27;
+pub(crate) const KEY_PAGE_UP: u32 = 33;
+pub(crate) const KEY_PAGE_DOWN: u32 = 34;
+pub(crate) const KEY_LEFT: u32 = 37;
+pub(crate) const KEY_UP: u32 = 38;
+pub(crate) const KEY_RIGHT: u32 = 39;
+pub(crate) const KEY_DOWN: u32 = 40;
+pub(crate) const KEY_DELETE: u32 = 46;
 const KEY_0: u32 = 48;
 const KEY_NUMPAD_0: u32 = 96;
 const KEY_C: u32 = 67;
@@ -138,7 +138,7 @@ impl Capture {
 mod tests {
     use super::*;
     use crate::{Image, test_host::FakeHost};
-    use shotoshot_core::Rect;
+    use shotoshot_core::{Rect, TextSpec};
 
     fn capture() -> Capture {
         let mut c = Capture::new(Image::solid(900, 600, [0, 0, 0, 255]));
@@ -170,7 +170,11 @@ mod tests {
     fn ctrl_c_copies_the_image_after_a_text_commit_until_the_next_press() {
         let mut c = capture();
         let mut host = FakeHost::default();
-        c.editor.add_text(Point { x: 200., y: 200. }, "Note".into());
+        c.editor.add_text(
+            Point { x: 200., y: 200. },
+            "Note".into(),
+            TextSpec::default(),
+        );
         let id = c.editor.objects()[0].id;
         c.select_committed_text(id);
         assert_eq!(

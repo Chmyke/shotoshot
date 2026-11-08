@@ -16,14 +16,14 @@ pub const BLUR_RADIUS: f64 = 7.;
 /// A blur's strength is its zone's smaller side times this (Mickaël, 2026-11-06): one gesture,
 /// the zone, sets both. Every length of the effect scales with the radius, so text twice as
 /// big under a zone twice as big is hidden exactly as much (`tests/blur.rs`).
-pub const STRENGTH_PER_SIDE: f64 = BLUR_RADIUS / 26.;
+pub(crate) const STRENGTH_PER_SIDE: f64 = BLUR_RADIUS / 26.;
 /// Bounds of a strength drawn: a zone thinner than 11 px still veils, and a wide block of
 /// text tops out at a soft cloud. Validated by Mickaël on 2026-11-06.
 pub const MIN_STRENGTH: f64 = 3.;
 pub const MAX_STRENGTH: f64 = 32.;
 /// Smallest and largest radius the format accepts.
-pub const MIN_BLUR_RADIUS: f64 = 1.;
-pub const MAX_BLUR_RADIUS: f64 = 64.;
+pub(crate) const MIN_BLUR_RADIUS: f64 = 1.;
+pub(crate) const MAX_BLUR_RADIUS: f64 = 64.;
 
 /// The strength of a blur over `zone`, from its smaller side: rounded up, never weaker than
 /// the proportion.

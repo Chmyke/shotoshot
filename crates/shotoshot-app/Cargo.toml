@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "shotoshot"
 path = "src/main.rs"
@@ -13,13 +16,13 @@ name = "clipboard-probe"
 path = "src/bin/clipboard-probe/main.rs"
 
 [dependencies]
-shotoshot-core = { path = "../shotoshot-core" }
-shotoshot-ui = { path = "../shotoshot-ui" }
-shotoshot-text = { path = "../shotoshot-text" }
+shotoshot-core.workspace = true
+shotoshot-ui.workspace = true
+shotoshot-text.workspace = true
 
 # Windows platform layer; the whole library is cfg(windows).
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.62.2", features = [
+windows = { workspace = true, features = [
     "Win32_Graphics_Direct3D", "Win32_Graphics_Direct3D11", "Win32_Graphics_Dxgi", "Win32_Media_Audio",
     "Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_Graphics_Direct2D",
     "Win32_Graphics_Direct2D_Common", "Win32_Graphics_DirectWrite",
@@ -45,11 +48,11 @@ shotoshot-linux = { path = "../shotoshot-linux" }
 
 [dev-dependencies]
 # Parity tests compare the portable renderer with Direct2D.
-shotoshot-raster = { path = "../shotoshot-raster" }
+shotoshot-raster.workspace = true
 
 # The OBS mirror tests capture a window the way OBS does (Windows.Graphics.Capture).
 [target.'cfg(windows)'.dev-dependencies]
-windows = { version = "0.62.2", features = [
+windows = { workspace = true, features = [
     "Foundation", "Graphics", "Graphics_Capture", "Graphics_DirectX", "Graphics_DirectX_Direct3D11",
     "Win32_System_WinRT", "Win32_System_WinRT_Direct3D11", "Win32_System_WinRT_Graphics_Capture"
 ] }

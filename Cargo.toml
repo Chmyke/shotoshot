@@ -4,8 +4,23 @@ resolver = "2"
 
 [workspace.package]
 edition = "2024"
-version = "0.3.43"
+version = "0.3.44"
 license = "GPL-3.0-only"
+
+# Dependencies declared by several crates (or twice by one): one version for all. Each crate
+# keeps its own `features` list, added to these.
+[workspace.dependencies]
+shotoshot-core = { path = "crates/shotoshot-core" }
+shotoshot-text = { path = "crates/shotoshot-text" }
+shotoshot-ui = { path = "crates/shotoshot-ui" }
+shotoshot-raster = { path = "crates/shotoshot-raster" }
+tiny-skia = "0.12"
+windows = "0.62.2"
+
+# What check.ps1 enforces: the default rustc and clippy lints, which its clippy runs turn into
+# errors with `-D warnings`. One place for every crate to tighten them.
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
 
 [profile.release]
 lto = true

@@ -75,25 +75,14 @@ impl Session {
         capture.draw_selection_hint(canvas, self.pointer_monitor())
     }
 
-    /// The colour the toolbar marks: the wheel's while it is open, the text's while typing,
-    /// else the drawing colour.
     /// The open text field's ink on its panel (`Some(None)`: automatic), `None` without one.
     pub(crate) fn field_ink(&self) -> Option<Option<[u8; 3]>> {
         self.native.text.as_ref().map(|t| t.ink)
     }
+    /// The colour the toolbar marks: see `Capture::toolbar_color`.
     pub(crate) fn toolbar_color(&self) -> [u8; 3] {
-        let capture = &self.capture;
-        capture
-            .picker
-            .as_ref()
-            .map(|p| p.color())
-            .unwrap_or_else(|| {
-                self.native
-                    .text
-                    .as_ref()
-                    .map(|t| t.color)
-                    .unwrap_or(capture.editor.style.color)
-            })
+        self.capture
+            .toolbar_color(self.native.text.as_ref().map(|t| t.color))
     }
 
     fn draw_pointer_feedback(&self, canvas: &mut crate::render::D2dCanvas) -> Result<()> {

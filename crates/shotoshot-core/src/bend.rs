@@ -23,7 +23,7 @@ pub fn bend_point(a: Point, b: Point, bend: Point) -> Point {
     (a + b) * 0.5 + (b - a) * bend.x + across(a, b) * bend.y
 }
 /// The bend that makes the curve pass through `m` halfway; straight for a point-like chord.
-pub fn bend_through(a: Point, b: Point, m: Point) -> Point {
+pub(crate) fn bend_through(a: Point, b: Point, m: Point) -> Point {
     let d = b - a;
     let squared = d.x * d.x + d.y * d.y;
     if squared < 1e-9 {
@@ -36,11 +36,11 @@ pub fn bend_through(a: Point, b: Point, m: Point) -> Point {
     }
 }
 /// The control point of the quadratic: the curve's middle is halfway to it from the chord's.
-pub fn bend_control(a: Point, b: Point, bend: Point) -> Point {
+pub(crate) fn bend_control(a: Point, b: Point, bend: Point) -> Point {
     bend_point(a, b, bend) * 2. - (a + b) * 0.5
 }
 /// The curve as a polyline from `a` to `b`, within `CURVE_ERROR` of it.
-pub fn bent_points(a: Point, b: Point, bend: Point) -> Vec<Point> {
+pub(crate) fn bent_points(a: Point, b: Point, bend: Point) -> Vec<Point> {
     let c = bend_control(a, b, bend);
     // Its second derivative is 2(a - 2c + b) everywhere, so n even chords stray at most
     // |a - 2c + b| / 4n² from it.
@@ -54,7 +54,7 @@ pub fn bent_points(a: Point, b: Point, bend: Point) -> Vec<Point> {
         .collect()
 }
 /// The curve's exact extent: its ends and any turning point of either coordinate.
-pub fn bent_bounds(a: Point, b: Point, bend: Point) -> Option<Rect> {
+pub(crate) fn bent_bounds(a: Point, b: Point, bend: Point) -> Option<Rect> {
     let c = bend_control(a, b, bend);
     let at = |t: f64| a * ((1. - t) * (1. - t)) + c * (2. * t * (1. - t)) + b * (t * t);
     let turn = |a: f64, c: f64, b: f64| {
@@ -70,7 +70,7 @@ pub fn bent_bounds(a: Point, b: Point, bend: Point) -> Option<Rect> {
         .try_fold(Rect::new(a, b)?, |r, p| Some(r.union(Rect::new(p, p)?)))
 }
 /// The direction the curve arrives at `b` in, which its head points along.
-pub fn bent_arrival(a: Point, b: Point, bend: Point) -> Point {
+pub(crate) fn bent_arrival(a: Point, b: Point, bend: Point) -> Point {
     let d = b - bend_control(a, b, bend);
     if d.length() < 1e-9 { b - a } else { d }
 }

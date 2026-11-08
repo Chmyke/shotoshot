@@ -1,5 +1,5 @@
 use super::*;
-use shotoshot_core::{Rect, Tool};
+use shotoshot_core::{Rect, TextSpec, Tool};
 
 #[test]
 fn capture_shortcut_cannot_steal_a_suspended_shape_shortcut() {
@@ -1349,9 +1349,11 @@ fn selecting_region_corner_resizes_without_losing_annotations() {
     let mut s = Session::new(Image::solid(1000, 700, [0, 0, 0, 255])).unwrap();
     s.capture.region = Rect::new(Point { x: 100., y: 100. }, Point { x: 600., y: 400. });
     s.capture.selecting = false;
-    s.capture
-        .editor
-        .add_text(Point { x: 200., y: 200. }, "Keep me".into());
+    s.capture.editor.add_text(
+        Point { x: 200., y: 200. },
+        "Keep me".into(),
+        TextSpec::default(),
+    );
     s.mouse_down(HWND::default(), Point { x: 100., y: 100. })
         .unwrap();
     s.mouse_up(HWND::default(), Point { x: 50., y: 60. });
@@ -1552,18 +1554,22 @@ fn history_buttons_follow_commit_undo_redo_and_new_branch() {
             .is_none()
     );
     assert!(s.capture.editor.objects().is_empty());
-    s.capture
-        .editor
-        .add_text(Point { x: 20., y: 20. }, "First".into());
+    s.capture.editor.add_text(
+        Point { x: 20., y: 20. },
+        "First".into(),
+        TextSpec::default(),
+    );
     assert_eq!(states(&s), (true, false));
     s.action(HWND::default(), Action::Undo);
     assert_eq!(states(&s), (false, true));
     s.action(HWND::default(), Action::Redo);
     assert_eq!(states(&s), (true, false));
     s.action(HWND::default(), Action::Undo);
-    s.capture
-        .editor
-        .add_text(Point { x: 30., y: 30. }, "New branch".into());
+    s.capture.editor.add_text(
+        Point { x: 30., y: 30. },
+        "New branch".into(),
+        TextSpec::default(),
+    );
     assert_eq!(states(&s), (true, false));
 }
 
@@ -1771,10 +1777,11 @@ fn a_google_search_and_the_capture_shortcut_keep_the_capture_open() {
         let mut session = Session::new(Image::solid(1000, 700, [230, 230, 230, 255])).unwrap();
         session.capture.region = Rect::new(Point { x: 100., y: 100. }, Point { x: 600., y: 400. });
         session.capture.selecting = false;
-        session
-            .capture
-            .editor
-            .add_text(Point { x: 200., y: 200. }, "Keep me".into());
+        session.capture.editor.add_text(
+            Point { x: 200., y: 200. },
+            "Keep me".into(),
+            TextSpec::default(),
+        );
         let (state, hwnd) = app_window(w!("Shotoshot.Test.GoogleKeeps"), session);
         let (objects, image) = {
             let app = state.borrow();

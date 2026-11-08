@@ -3,7 +3,7 @@ use crate::{Capture, Host};
 use shotoshot_core::{Label, Point};
 
 #[derive(Default)]
-pub struct FakeHost {
+pub(crate) struct FakeHost {
     pub captured: bool,
     pub text_at: Option<Point>,
     pub text_open: bool,

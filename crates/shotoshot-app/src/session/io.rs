@@ -52,7 +52,7 @@ impl Listed {
     }
     /// What the extension of `path` names, when it is one Save writes.
     fn of(path: &Path) -> Option<Self> {
-        if crate::capture_name::is_document(path) {
+        if shotoshot_ui::capture_name::is_document(path) {
             Some(Self::Document)
         } else {
             SaveFormat::of(path).map(Self::Image)
@@ -62,15 +62,17 @@ impl Listed {
     fn extension(self) -> &'static str {
         match self {
             Self::Image(format) => format.extension(),
-            Self::Document => crate::capture_name::DOCUMENT,
+            Self::Document => shotoshot_ui::capture_name::DOCUMENT,
         }
     }
     /// The next numbered name in `folder`: every entry shares the sequence.
     fn next_path(self, folder: &Path) -> std::io::Result<PathBuf> {
         match self {
-            Self::Image(format) => crate::capture_name::next_path(folder, format),
-            Self::Document => Ok(crate::capture_name::next_path(folder, SaveFormat::Png)?
-                .with_extension(crate::capture_name::DOCUMENT)),
+            Self::Image(format) => shotoshot_ui::capture_name::next_path(folder, format),
+            Self::Document => Ok(
+                shotoshot_ui::capture_name::next_path(folder, SaveFormat::Png)?
+                    .with_extension(shotoshot_ui::capture_name::DOCUMENT),
+            ),
         }
     }
 }
@@ -83,7 +85,7 @@ fn chosen(path: &Path, filter_index: u32) -> Listed {
 /// writes follows the type list; a numbered or empty name is renumbered for `folder`.
 fn proposed_name(name: &str, folder: &Path, listed: Listed) -> Option<PathBuf> {
     let typed = Path::new(name);
-    if !name.is_empty() && crate::capture_name::number(typed).is_none() && !typed.is_dir() {
+    if !name.is_empty() && shotoshot_ui::capture_name::number(typed).is_none() && !typed.is_dir() {
         return match Listed::of(typed) {
             Some(current) if current != listed => Some(typed.with_extension(listed.extension())),
             _ => None,
@@ -395,23 +397,23 @@ impl Native {
                         }
                     };
                     if let Some(id) = input.object {
-                        capture.editor.update_text_inked(
+                        capture.editor.update_text(
                             id,
                             text,
-                            extent,
-                            input.color,
-                            input.size as f64,
-                            input.ink,
+                            TextSpec::measured(extent)
+                                .color(input.color)
+                                .size(input.size as f64)
+                                .ink(input.ink),
                         );
                         capture.select_committed_text(id);
-                    } else if let Some(id) = capture.editor.add_label(
+                    } else if let Some(id) = capture.editor.add_text(
                         input.position,
                         text,
-                        extent,
-                        input.color,
-                        input.size as f64,
-                        input.label,
-                        input.ink,
+                        TextSpec::measured(extent)
+                            .color(input.color)
+                            .size(input.size as f64)
+                            .label(input.label)
+                            .ink(input.ink),
                     ) {
                         capture.select_committed_text(id);
                     }
@@ -465,7 +467,7 @@ impl Session {
             return Ok(Saved::Document);
         }
         let folder = settings.save_folder()?;
-        let suggested = crate::capture_name::next_path(&folder, settings.save_format)
+        let suggested = shotoshot_ui::capture_name::next_path(&folder, settings.save_format)
             .map_err(|e| Error::new(E_FAIL, e.to_string()))?;
         let filename = suggested.file_name().unwrap().to_string_lossy();
         // The screen the user works on: the toolbar's Save or the keys, the pointer is there.
@@ -491,7 +493,7 @@ impl Session {
             return Ok(Saved::Cancelled);
         };
         {
-            let numbered = crate::capture_name::number(&path).is_some();
+            let numbered = shotoshot_ui::capture_name::number(&path).is_some();
             let saved = match chosen(&path, listed) {
                 Listed::Document => {
                     save_bytes(

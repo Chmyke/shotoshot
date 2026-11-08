@@ -565,7 +565,9 @@ impl Editor {
         // A redraw can come before `about_to_wait`: start the toolbar's motion before the
         // frame that shows the change.
         let now = Instant::now();
-        let current = toolbar_color(&self.capture, self.native.field.as_ref().map(|f| f.color));
+        let current = self
+            .capture
+            .toolbar_color(self.native.field.as_ref().map(|f| f.color));
         let field_ink = self.native.field.as_ref().map(|f| f.ink);
         self.capture.observe_toolbar(current, field_ink, now);
         self.native.layout_badge(&mut self.capture);
@@ -599,7 +601,7 @@ impl Editor {
                 .draw_frame(&mut canvas, native.field.is_none())
                 .map_err(|e| e.0)?;
             if !capture.selecting {
-                let current = toolbar_color(capture, native.field.as_ref().map(|f| f.color));
+                let current = capture.toolbar_color(native.field.as_ref().map(|f| f.color));
                 let field_ink = native.field.as_ref().map(|f| f.ink);
                 capture
                     .draw_toolbar(&mut canvas, current, field_ink, now)
@@ -1028,16 +1030,6 @@ fn follow_up(
     Ok(())
 }
 
-/// The colour the toolbar marks: the wheel's while it is open, the text's while typing, else
-/// the drawing colour.
-fn toolbar_color(capture: &Capture, text: Option<[u8; 3]>) -> [u8; 3] {
-    capture
-        .picker
-        .as_ref()
-        .map(|p| p.color())
-        .unwrap_or_else(|| text.unwrap_or(capture.editor.style.color))
-}
-
 fn pictures_dir() -> PathBuf {
     user_dir("XDG_PICTURES_DIR", "Pictures")
 }
@@ -1193,7 +1185,9 @@ impl ApplicationHandler for Editor {
         // Wake only for hover-hint delays and fades, the toolbar's one-shot motion, caret
         // blinks and the placing limit; otherwise sleep until input.
         let now = Instant::now();
-        let current = toolbar_color(&self.capture, self.native.field.as_ref().map(|f| f.color));
+        let current = self
+            .capture
+            .toolbar_color(self.native.field.as_ref().map(|f| f.color));
         let field_ink = self.native.field.as_ref().map(|f| f.ink);
         self.capture.observe_toolbar(current, field_ink, now);
         let hint = (self.capture.next_tick(now)).map(|ms| now + Duration::from_millis(ms as u64));

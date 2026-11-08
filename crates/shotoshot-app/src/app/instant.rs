@@ -73,7 +73,7 @@ impl InstantCapture {
 fn save_to(image: &Image, folder: &Path) -> Result<PathBuf> {
     // No dialog, so no format choice: the instant capture stays lossless.
     let format = crate::settings::SaveFormat::Png;
-    let path = crate::capture_name::next_path(folder, format)
+    let path = shotoshot_ui::capture_name::next_path(folder, format)
         .map_err(|e| Error::new(E_FAIL, e.to_string()))?;
     crate::save_numbered(image, &path, format)?;
     Ok(path)

@@ -102,7 +102,11 @@ fn unicode_text_measurement_matches_layout_and_undo_geometry() {
     assert!(extent.x > 80.);
     assert!(extent.y > 48.);
     let mut editor = Editor::default();
-    editor.add_text_measured(Point { x: 0., y: 0. }, "WWWW\n日本語 🎮".into(), extent);
+    editor.add_text(
+        Point { x: 0., y: 0. },
+        "WWWW\n日本語 🎮".into(),
+        TextSpec::measured(extent),
+    );
     assert_eq!(editor.objects()[0].bounds().size(), extent);
     editor.undo();
     editor.redo();

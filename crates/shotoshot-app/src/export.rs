@@ -56,7 +56,7 @@ fn publish(
                             || error.code() == ERROR_FILE_EXISTS.to_hresult()) =>
                 {
                     // Every kind of file shares the sequence and keeps its own extension.
-                    destination = crate::capture_name::next_path(
+                    destination = shotoshot_ui::capture_name::next_path(
                         requested.parent().unwrap_or(Path::new(".")),
                         SaveFormat::Png,
                     )

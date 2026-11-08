@@ -4,12 +4,15 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[lints]
+workspace = true
+
 # Linux platform layer (lot 1 of the port, docs/contexte/portage.md). Empty elsewhere.
 [target.'cfg(target_os = "linux")'.dependencies]
-shotoshot-core = { path = "../shotoshot-core" }
-shotoshot-ui = { path = "../shotoshot-ui" }
-shotoshot-text = { path = "../shotoshot-text" }
-shotoshot-raster = { path = "../shotoshot-raster" }
+shotoshot-core.workspace = true
+shotoshot-ui.workspace = true
+shotoshot-text.workspace = true
+shotoshot-raster.workspace = true
 # D-Bus for the desktop portal (screenshots under Wayland).
 zbus = "5"
 # PNG decoding of portal captures and encoding of saved captures; already used by tiny-skia.
@@ -19,7 +22,7 @@ winit = { version = "0.30", default-features = false, features = ["rwh_06", "x11
 # Presents the CPU-rendered frame without a GPU stack.
 softbuffer = { version = "0.4", default-features = false, features = ["x11", "x11-dlopen", "wayland", "wayland-dlopen"] }
 # Frame buffers of the capture window.
-tiny-skia = "0.12"
+tiny-skia.workspace = true
 # Clipboard on X11 and Wayland (wlr data-control), served by a detached helper process.
 arboard = { version = "3.6", default-features = false, features = ["image-data", "wayland-data-control"] }
 # Notification-area icon (StatusNotifierItem over D-Bus), on the same async-io stack as zbus.

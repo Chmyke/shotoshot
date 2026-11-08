@@ -196,18 +196,20 @@ impl Editor {
                     self.next_id += 1;
                     self.next_id
                 };
-                self.objects.insert(
-                    i + k,
-                    Object {
-                        id,
-                        shape: Shape::Stroke {
-                            points,
-                            widths,
-                            highlight,
-                        },
-                        ..original.clone()
+                let mut piece = Object {
+                    id,
+                    shape: Shape::Stroke {
+                        points,
+                        widths,
+                        highlight,
                     },
-                );
+                    ..original.clone()
+                };
+                // A loop cut open no longer holds its colour.
+                if !piece.closed() {
+                    piece.fill.clear();
+                }
+                self.objects.insert(i + k, piece);
             }
             i += count;
         }

@@ -39,8 +39,8 @@ fn slate() -> Editor {
     editor.style.color = [250, 192, 66];
     editor.fill_at(at(840., 450.), false);
     editor.style.color = CHALK;
-    editor.add_text(at(200., 180.), "y = x\u{b2}".into());
-    editor.add_text(at(755., 222.), "Filled shape".into());
+    editor.add_text(at(200., 180.), "y = x\u{b2}".into(), TextSpec::default());
+    editor.add_text(at(755., 222.), "Filled shape".into(), TextSpec::default());
     editor.tool = Tool::Pen;
     editor
 }
@@ -74,11 +74,20 @@ pub fn render_demo() -> Result<()> {
     );
     editor.update(Point { x: 720., y: 300. });
     editor.finish();
-    editor.add_text(Point { x: 150., y: 240. }, "Editable objects".into());
-    editor.add_text(Point { x: 730., y: 280. }, "Connected".into());
+    editor.add_text(
+        Point { x: 150., y: 240. },
+        "Editable objects".into(),
+        TextSpec::default(),
+    );
+    editor.add_text(
+        Point { x: 730., y: 280. },
+        "Connected".into(),
+        TextSpec::default(),
+    );
     editor.add_text(
         Point { x: 130., y: 480. },
         "Shotoshot  ·  Native Windows capture + annotations".into(),
+        TextSpec::default(),
     );
     let renderer = Renderer::new()?;
     let output = renderer.export(
@@ -161,14 +170,14 @@ pub fn render_demo() -> Result<()> {
     let extent = renderer.measure_annotation_text(text, size as f32)?;
     let editor = &mut boxes.capture.editor;
     editor.tool = Tool::Label;
-    if let Some(id) = editor.add_label(
+    if let Some(id) = editor.add_text(
         Point { x: 420., y: 320. },
         text.into(),
-        extent,
-        [28, 31, 40],
-        size,
-        Some(Label::Fit),
-        Some([250, 192, 66]),
+        TextSpec::measured(extent)
+            .color([28, 31, 40])
+            .size(size)
+            .label(Some(Label::Fit))
+            .ink(Some([250, 192, 66])),
     ) {
         editor.selected = vec![id];
     }
@@ -209,14 +218,13 @@ fn elbows(renderer: &Renderer, path: &std::path::Path) -> Result<()> {
         let size = 22.;
         let extent = renderer.measure_annotation_text(text, size as f32)?;
         editor
-            .add_label(
+            .add_text(
                 corner + Label::padding(size),
                 text.into(),
-                extent,
-                color,
-                size,
-                Some(Label::Fit),
-                None,
+                TextSpec::measured(extent)
+                    .color(color)
+                    .size(size)
+                    .label(Some(Label::Fit)),
             )
             .ok_or_else(|| windows::Win32::Foundation::E_INVALIDARG.into())
     };
@@ -239,14 +247,13 @@ fn elbows(renderer: &Renderer, path: &std::path::Path) -> Result<()> {
     let size = 22.;
     let measured = renderer.measure_wrapped_annotation_text("", size as f32, 150.)?;
     let empty = editor
-        .add_label(
+        .add_text(
             at(850., 115.) + Label::padding(size),
             String::new(),
-            kept_block("", Some(Label::Wrap(150.)), measured, size, 60.),
-            [237, 79, 92],
-            size,
-            Some(Label::Wrap(150.)),
-            None,
+            TextSpec::measured(kept_block("", Some(Label::Wrap(150.)), measured, size, 60.))
+                .color([237, 79, 92])
+                .size(size)
+                .label(Some(Label::Wrap(150.))),
         )
         .ok_or_else(|| windows::core::Error::from(windows::Win32::Foundation::E_INVALIDARG))?;
     let into = editor
@@ -277,7 +284,11 @@ fn blurred_text(renderer: &Renderer, path: &std::path::Path) -> Result<()> {
     for (row, line) in lines.iter().enumerate() {
         let extent = renderer.measure_annotation_text(line, 20.)?;
         let corner = at(140., 170. + 48. * row as f64);
-        page.add_text_measured_sized_colored(corner, (*line).into(), extent, [40, 44, 52], 20.);
+        page.add_text(
+            corner,
+            (*line).into(),
+            TextSpec::measured(extent).color([40, 44, 52]).size(20.),
+        );
     }
     let whole = Rect {
         min: Point::default(),
@@ -381,14 +392,14 @@ Open the menu",
             None => renderer.measure_annotation_text(text, size as f32)?,
         };
         let label = Some(wrap.map_or(Label::Fit, Label::Wrap));
-        editor.add_label(
+        editor.add_text(
             corner + Label::padding(size),
             text.into(),
-            extent,
-            color,
-            size,
-            label,
-            ink,
+            TextSpec::measured(extent)
+                .color(color)
+                .size(size)
+                .label(label)
+                .ink(ink),
         );
     }
     let mut objects = editor.objects().to_vec();

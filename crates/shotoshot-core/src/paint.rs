@@ -35,6 +35,13 @@ impl Paint {
             .iter()
             .filter(|o| o.closed() && self.walls.contains(&o.id))
     }
+    /// The insides this coat spares, `floor` being the first place above its zone, each one
+    /// closed polygon (`interior`): what a renderer cuts out of the fill.
+    pub fn hole_paths(&self, objects: &[Object], floor: usize) -> Vec<Vec<Point>> {
+        self.holes(objects, floor)
+            .filter_map(|o| crate::interior(o, objects))
+            .collect()
+    }
 }
 
 /// The topmost of a zone's coats that shows at `p`, a point of the zone.
@@ -52,7 +59,7 @@ pub fn pour(coats: &mut Vec<Paint>, coat: Paint) {
 }
 
 /// Wall ids through `map`; a wall `map` does not know is dropped.
-pub fn remap_walls(coats: &mut [Paint], map: impl Fn(u64) -> Option<u64>) {
+pub(crate) fn remap_walls(coats: &mut [Paint], map: impl Fn(u64) -> Option<u64>) {
     for coat in coats {
         coat.walls = coat.walls.iter().filter_map(|w| map(*w)).collect();
     }

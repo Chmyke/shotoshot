@@ -142,7 +142,7 @@ impl Presenter {
 
 /// The bounding box of the pixels that differ between `before` and `after`, two RGBA frames
 /// `width` pixels wide; `None` when they are the same.
-pub fn damage_between(before: &[u8], after: &[u8], width: u32) -> Option<Damage> {
+pub(crate) fn damage_between(before: &[u8], after: &[u8], width: u32) -> Option<Damage> {
     let row = width as usize * 4;
     if row == 0 || before.len() != after.len() {
         return None;

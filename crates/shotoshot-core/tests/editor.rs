@@ -101,7 +101,7 @@ fn one_drag_is_one_undo_and_new_command_clears_redo() {
     editor.redo();
     assert_eq!(editor.objects().len(), 1);
     editor.undo();
-    editor.add_text(p(0., 0.), "hello 🌍".into());
+    editor.add_text(p(0., 0.), "hello 🌍".into(), TextSpec::default());
     editor.redo();
     assert_eq!(editor.objects().len(), 1);
     assert!(matches!(&editor.objects()[0].shape, Shape::Text { text, .. } if text == "hello 🌍"));

@@ -2,21 +2,8 @@
 # (check-linux.ps1); -SkipLinux is only for when the Pi is unreachable, and says so in the verdict.
 param([switch]$Fast, [switch]$UpdateGolden, [switch]$SkipLinux)
 $ErrorActionPreference = 'Stop'
-if (-not (Get-Command link.exe -ErrorAction SilentlyContinue)) {
-    $locator = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
-    $studio = & $locator -latest -products '*' -property installationPath
-    if (-not $studio) { throw 'Visual Studio C++ build tools are required.' }
-    $devShell = Join-Path $studio 'Common7/Tools/Launch-VsDevShell.ps1'
-    & $devShell -Arch amd64 -HostArch amd64 -SkipAutomaticLocation | Out-Null
-    if (-not (Get-Command link.exe -ErrorAction SilentlyContinue)) {
-        $installed = Get-ChildItem (Join-Path $studio 'VC/Tools/MSVC') -Directory |
-            Where-Object { Test-Path (Join-Path $_.FullName 'bin/HostX64/x64/link.exe') } |
-            Sort-Object Name -Descending | Select-Object -First 1
-        if (-not $installed) { throw 'No installed x64 MSVC linker found.' }
-        $env:PATH = (Join-Path $installed.FullName 'bin/HostX64/x64') + ';' + $env:PATH
-        $env:LIB = (Join-Path $installed.FullName 'lib/x64') + ';' + $env:LIB
-    }
-}
+# MSVC linker for the build scripts that run on Windows.
+. (Join-Path $PSScriptRoot 'tools/msvc-env.ps1')
 Push-Location $PSScriptRoot
 try {
     # No long dash in text the user sees (rule of 2026-10-21). Maintainer only: tools/ is not

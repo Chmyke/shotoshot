@@ -618,10 +618,11 @@ mod tests {
                 None,
             )?;
             let mut session = Session::new(Image::solid(400, 200, [0, 0, 0, 255]))?;
-            session
-                .capture
-                .editor
-                .add_text(Point { x: 20., y: 30. }, "Original".into());
+            session.capture.editor.add_text(
+                Point { x: 20., y: 30. },
+                "Original".into(),
+                TextSpec::default(),
+            );
             let before = session.capture.editor.objects().to_vec();
             session
                 .native

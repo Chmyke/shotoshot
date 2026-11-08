@@ -5,7 +5,7 @@
 //! screen's part of the frame; `to_screen(to_frame(p)) == p`.
 use shotoshot_core::{Point, Rect};
 
-pub const MAX_ZOOM: f64 = 8.;
+pub(crate) const MAX_ZOOM: f64 = 8.;
 /// One wheel notch multiplies the zoom by this: ten notches from 1× to 8×.
 const NOTCH: f64 = 1.25;
 
@@ -30,12 +30,14 @@ impl View {
     pub fn to_frame(&self, p: Point) -> Point {
         self.origin + (p - self.screen.min) * (1. / self.zoom)
     }
-    pub fn to_screen(&self, p: Point) -> Point {
+    /// The inverse of `to_frame`; only the tests need it.
+    #[cfg(test)]
+    fn to_screen(self, p: Point) -> Point {
         self.screen.min + (p - self.origin) * self.zoom
     }
     /// Zooms by `notches` (negative zooms out) keeping the frame point under the screen
     /// point `at` where it is; the view then settles inside its screen.
-    pub fn zoom_at(&mut self, at: Point, notches: i32) {
+    pub(crate) fn zoom_at(&mut self, at: Point, notches: i32) {
         let anchor = self.to_frame(at);
         let zoom = (self.zoom * NOTCH.powi(notches)).clamp(1., MAX_ZOOM);
         // Ten notches down from 8× land on 1× exactly, whatever the rounding.
@@ -44,15 +46,15 @@ impl View {
         self.settle();
     }
     /// Slides the frame with the hand: a screen-space `delta` moves the view the other way.
-    pub fn pan(&mut self, delta: Point) {
+    pub(crate) fn pan(&mut self, delta: Point) {
         self.origin = self.origin - delta * (1. / self.zoom);
         self.settle();
     }
-    pub fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         *self = Self::identity(self.screen);
     }
     /// The frame point `f` brought back inside what the view shows.
-    pub fn clamp_visible(&self, f: Point) -> Point {
+    pub(crate) fn clamp_visible(&self, f: Point) -> Point {
         let span = self.screen.size() * (1. / self.zoom);
         Point {
             x: f.x.clamp(self.origin.x, self.origin.x + span.x),
@@ -128,7 +130,7 @@ impl crate::Capture {
     }
     /// Handle sizes and pick reaches in frame pixels: the interface scale over the zoom, so
     /// they keep their size on screen.
-    pub fn pick_scale(&self) -> f64 {
+    pub(crate) fn pick_scale(&self) -> f64 {
         self.ui_scale() / self.zoom_at_pointer()
     }
     /// Ctrl+wheel: zooms the pointed screen around the pointer. False without views.
@@ -143,7 +145,7 @@ impl crate::Capture {
         true
     }
     /// Ctrl+0: the pointed screen back at 1:1. False without views.
-    pub fn reset_view(&mut self) -> bool {
+    pub(crate) fn reset_view(&mut self) -> bool {
         let Some(i) = self.view_index(self.pointer) else {
             return false;
         };
@@ -162,7 +164,7 @@ impl crate::Capture {
         self.pan = Some((i, p));
         true
     }
-    pub fn pan_to(&mut self, p: Point) {
+    pub(crate) fn pan_to(&mut self, p: Point) {
         if let Some((i, last)) = self.pan {
             self.views[i].pan(p - last);
             self.pan = Some((i, p));
@@ -183,7 +185,7 @@ impl crate::Capture {
         self.space_held
     }
     /// The frame point the eyedropper loupe magnifies.
-    pub fn loupe_center(&self) -> Point {
+    pub(crate) fn loupe_center(&self) -> Point {
         self.to_frame(self.pointer)
     }
 }

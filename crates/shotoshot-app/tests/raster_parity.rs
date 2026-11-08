@@ -4,6 +4,8 @@ use shotoshot_app::{ComApartment, Image, Renderer, save_png};
 use shotoshot_core::*;
 use shotoshot_raster::Raster;
 
+const PINK: [u8; 3] = [246, 165, 192];
+
 fn scene() -> Vec<Object> {
     let mut e = Editor::default();
     let draw = |e: &mut Editor, tool: Tool, color: [u8; 3], width: f64, points: &[Point]| {
@@ -67,12 +69,29 @@ fn scene() -> Vec<Object> {
         6.,
         &[p(120., 380.), p(260., 385.), p(430., 370.)],
     );
+    // A pen loop closed by hand, a few pixels short of where it started.
+    draw(
+        &mut e,
+        Tool::Pen,
+        [237, 79, 92],
+        5.,
+        &[
+            p(360., 190.),
+            p(440., 185.),
+            p(450., 260.),
+            p(365., 265.),
+            p(362., 198.),
+        ],
+    );
     // Fills lie under their own outline and under whatever was drawn afterwards.
     e.style.color = [250, 192, 66];
     e.fill_at(p(120., 90.), false);
     e.style.color = [28, 31, 40];
     e.fill_at(p(380., 90.), false);
+    e.style.color = PINK;
+    e.fill_at(p(405., 225.), false);
     assert!(e.objects()[..2].iter().all(|o| !o.fill.is_empty()));
+    assert!(!e.objects()[6].fill.is_empty(), "the pen loop is filled");
     let mut objects = e.objects().to_vec();
     // An elbow arrow out of the rectangle's bottom, one rounded turn to a free point.
     objects.push(Object {
@@ -122,8 +141,10 @@ fn both_renderers_fill_shapes_and_the_capture_with_the_exact_colour() {
         };
         assert_eq!(rgb(120, 90), [250, 192, 66], "filled rectangle");
         assert_eq!(rgb(380, 90), SLATE, "filled circle");
+        assert_eq!(rgb(405, 225), PINK, "filled pen loop");
+        assert_eq!(rgb(363, 228), [237, 79, 92], "its ink over the fill");
         assert_eq!(rgb(30, 89), [237, 79, 92], "outline over the fill");
-        for (x, y) in [(20, 10), (469, 409), (440, 200), (265, 25)] {
+        for (x, y) in [(20, 10), (469, 409), (464, 200), (265, 25)] {
             assert_eq!(rgb(x, y), SLATE, "background at {x},{y}");
         }
     }
@@ -337,9 +358,11 @@ fn portable_renderer_paints_the_whole_capture_overlay() {
     let mut capture = Capture::new(backdrop);
     capture.region = Rect::new(Point { x: 60., y: 80. }, Point { x: 760., y: 440. });
     capture.selecting = false;
-    capture
-        .editor
-        .add_text(Point { x: 100., y: 380. }, "Portable text".into());
+    capture.editor.add_text(
+        Point { x: 100., y: 380. },
+        "Portable text".into(),
+        TextSpec::default(),
+    );
     capture.pointer = Point { x: 400., y: 300. };
     capture.width_preview = true;
     let mut raster = Raster::new();

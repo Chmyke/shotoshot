@@ -11,6 +11,63 @@ fn ids(objects: &[Object]) -> Vec<u64> {
     objects.iter().map(|o| o.id).collect()
 }
 
+/// Size of a new text when nothing else is asked.
+const TEXT_SIZE: f64 = 24.;
+
+/// What `Editor::add_text` and `Editor::update_text` give a text. A field left `None` takes,
+/// for a new text, the default (estimated extent, 24 px, the drawing colour, the automatic
+/// ink, no panel); for an edit, the text's own.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TextSpec {
+    /// The measured extent; `None` estimates it from the characters.
+    pub extent: Option<Point>,
+    pub size: Option<f64>,
+    pub color: Option<[u8; 3]>,
+    /// The panel of a new text; an edit keeps the text's own.
+    pub label: Option<Label>,
+    /// A panel's text ink, `Some(None)` being the black or white that contrasts with it.
+    pub ink: Option<Option<[u8; 3]>>,
+}
+impl TextSpec {
+    /// A text of `extent`, as the host measured it.
+    pub fn measured(extent: Point) -> Self {
+        Self {
+            extent: Some(extent),
+            ..Self::default()
+        }
+    }
+    pub fn size(self, size: f64) -> Self {
+        Self {
+            size: Some(size),
+            ..self
+        }
+    }
+    pub fn color(self, color: [u8; 3]) -> Self {
+        Self {
+            color: Some(color),
+            ..self
+        }
+    }
+    pub fn label(self, label: Option<Label>) -> Self {
+        Self { label, ..self }
+    }
+    /// A panel's text ink; `None` is the automatic black or white.
+    pub fn ink(self, ink: Option<[u8; 3]>) -> Self {
+        Self {
+            ink: Some(ink),
+            ..self
+        }
+    }
+}
+
+/// A text's extent from its characters, when the host did not measure it.
+fn estimated_extent(text: &str, size: f64) -> Point {
+    Point {
+        x: text.lines().map(|l| l.chars().count()).max().unwrap_or(1) as f64 * size * 0.65,
+        y: text.lines().count().max(1) as f64 * size * 1.4,
+    }
+}
+
 impl Editor {
     pub(super) fn commit(&mut self, before: Vec<Object>) {
         if before == self.objects {
@@ -143,53 +200,13 @@ impl Editor {
         let ids = std::mem::take(&mut self.selected);
         self.remove_objects(&ids);
     }
-    pub fn add_text(&mut self, position: Point, text: String) {
-        if text.trim().is_empty() || !position.finite() {
-            return;
-        }
-        let size = 24.;
-        let lines = text.lines().count().max(1) as f64;
-        let extent = Point {
-            x: text.lines().map(|l| l.chars().count()).max().unwrap_or(1) as f64 * size * 0.65,
-            y: lines * size * 1.4,
-        };
-        self.add_text_measured(position, text, extent);
-    }
-    pub fn add_text_measured(&mut self, position: Point, text: String, extent: Point) {
-        self.add_text_measured_colored(position, text, extent, self.style.color);
-    }
-    pub fn add_text_measured_colored(
-        &mut self,
-        position: Point,
-        text: String,
-        extent: Point,
-        color: [u8; 3],
-    ) -> Option<u64> {
-        self.add_text_measured_sized_colored(position, text, extent, color, 24.)
-    }
-    pub fn add_text_measured_sized_colored(
-        &mut self,
-        position: Point,
-        text: String,
-        extent: Point,
-        color: [u8; 3],
-        size: f64,
-    ) -> Option<u64> {
-        self.add_label(position, text, extent, color, size, None, None)
-    }
-    /// A text on a panel of `color` when `label` is given, or a plain text otherwise. A
-    /// panel's text takes `ink`, or with `None` the black or white that contrasts with it.
-    #[allow(clippy::too_many_arguments)]
-    pub fn add_label(
-        &mut self,
-        position: Point,
-        text: String,
-        extent: Point,
-        color: [u8; 3],
-        size: f64,
-        label: Option<Label>,
-        ink: Option<[u8; 3]>,
-    ) -> Option<u64> {
+    /// Adds a text at `position`, as one step; its id, or `None` when refused (no words outside
+    /// a panel, a position, extent or size out of range). See `TextSpec` for the defaults.
+    pub fn add_text(&mut self, position: Point, text: String, spec: TextSpec) -> Option<u64> {
+        let size = spec.size.unwrap_or(TEXT_SIZE);
+        let extent = spec.extent.unwrap_or_else(|| estimated_extent(&text, size));
+        let color = spec.color.unwrap_or(self.style.color);
+        let (label, ink) = (spec.label, spec.ink.flatten());
         // A box stays when validated empty (`kept_block`); a bare text needs words.
         if (text.trim().is_empty() && label.is_none())
             || !position.finite()
@@ -227,87 +244,32 @@ impl Editor {
         self.commit(before);
         Some(self.next_id)
     }
-    pub fn update_text(&mut self, id: u64, text: String) {
-        let size = self
-            .objects
-            .iter()
-            .find(|o| o.id == id)
-            .and_then(|o| {
-                if let Shape::Text { size, .. } = o.shape {
-                    Some(size)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(24.);
-        let extent = Point {
-            x: text.lines().map(|l| l.chars().count()).max().unwrap_or(1) as f64 * size * 0.65,
-            y: text.lines().count().max(1) as f64 * size * 1.4,
-        };
-        self.update_text_measured(id, text, extent);
-    }
-    pub fn update_text_measured(&mut self, id: u64, text: String, measured: Point) {
-        let Some(color) = self
-            .objects
-            .iter()
-            .find(|o| o.id == id)
-            .map(|o| o.style.color)
-        else {
+    /// The edited text, with what `spec` gives (extent, size, colour, a panel's ink), as one
+    /// step; what it leaves out stays the text's own. Nothing changes when a value left out
+    /// cannot be read: no such object, or no size outside a text.
+    pub fn update_text(&mut self, id: u64, text: String, spec: TextSpec) {
+        let own = self.objects.iter().find(|o| o.id == id);
+        let own_size = own.and_then(|o| match o.shape {
+            Shape::Text { size, .. } => Some(size),
+            _ => None,
+        });
+        let Some(new_size) = spec.size.or(own_size) else {
             return;
         };
-        self.update_text_measured_colored(id, text, measured, color);
-    }
-    pub fn update_text_measured_colored(
-        &mut self,
-        id: u64,
-        text: String,
-        measured: Point,
-        color: [u8; 3],
-    ) {
-        let Some(size) = self.objects.iter().find(|o| o.id == id).and_then(|o| {
-            if let Shape::Text { size, .. } = o.shape {
-                Some(size)
-            } else {
-                None
-            }
-        }) else {
+        let Some(color) = spec.color.or(own.map(|o| o.style.color)) else {
             return;
         };
-        self.update_text_measured_sized_colored(id, text, measured, color, size);
-    }
-    /// The edited text, its extent, colour and size as one step; a panel keeps its ink.
-    pub fn update_text_measured_sized_colored(
-        &mut self,
-        id: u64,
-        text: String,
-        measured: Point,
-        color: [u8; 3],
-        new_size: f64,
-    ) {
-        let Some(ink) = self
-            .objects
-            .iter()
-            .find(|o| o.id == id)
-            .map(|o| match o.shape {
+        let Some(ink) = spec.ink.or_else(|| {
+            own.map(|o| match o.shape {
                 Shape::Text { ink, .. } => ink,
                 _ => None,
             })
-        else {
+        }) else {
             return;
         };
-        self.update_text_inked(id, text, measured, color, new_size, ink);
-    }
-    /// `update_text_measured_sized_colored` that also gives a panel's text `ink` (`None`:
-    /// the automatic black or white), as one step.
-    pub fn update_text_inked(
-        &mut self,
-        id: u64,
-        text: String,
-        measured: Point,
-        color: [u8; 3],
-        new_size: f64,
-        ink: Option<[u8; 3]>,
-    ) {
+        let measured = spec
+            .extent
+            .unwrap_or_else(|| estimated_extent(&text, new_size));
         if !measured.finite()
             || measured.x < 0.
             || measured.y < 0.

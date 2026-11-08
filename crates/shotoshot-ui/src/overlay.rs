@@ -634,9 +634,7 @@ fn width_label_size(label: Point, scale: f64) -> Point {
 }
 /// The outlines of the shapes `coat` spares, its zone's place in the pile being `floor`.
 fn holes(coat: &Paint, objects: &[Object], floor: usize) -> Vec<Vec<Point>> {
-    coat.holes(objects, floor)
-        .flat_map(|o| paths(o, objects))
-        .collect()
+    coat.hole_paths(objects, floor)
 }
 /// A closed outline through `corners`, in dashes of 4 by 3 interface pixels at `scale`.
 fn dashed<C: Canvas>(

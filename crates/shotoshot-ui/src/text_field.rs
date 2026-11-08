@@ -4,7 +4,8 @@
 //! geometry comes from the caller's text measure, the same one that renders the text.
 use crate::{Canvas, Capture, Ink, caret, keys};
 use shotoshot_core::{
-    Label, Modifiers, Object, Point, Rect, Shape, kept_block, label_ink, rotate_point, text_lines,
+    Label, Modifiers, Object, Point, Rect, Shape, TextSpec, kept_block, label_ink, rotate_point,
+    text_lines,
 };
 use std::ops::Range;
 
@@ -133,7 +134,7 @@ impl TextField {
     pub fn caret(&self) -> usize {
         self.caret
     }
-    pub fn select_all(&mut self) {
+    pub(crate) fn select_all(&mut self) {
         self.anchor = 0;
         self.caret = self.text.len();
     }
@@ -145,12 +146,9 @@ impl TextField {
     pub fn caret_state(&self) -> [usize; 3] {
         [self.caret, self.anchor, self.text.len()]
     }
-    pub fn selected_text(&self) -> &str {
+    pub(crate) fn selected_text(&self) -> &str {
         let (a, b) = self.selection();
         &self.text[a..b]
-    }
-    pub fn dragging(&self) -> bool {
-        self.dragging
     }
     fn size(&self) -> f64 {
         // Sizes go through f32 exactly as the Windows field stores them.
@@ -403,18 +401,23 @@ impl TextField {
         let size = self.size();
         let extent = kept_block(&self.text, self.label, extent, size, self.height);
         if let Some(id) = self.object {
-            capture
-                .editor
-                .update_text_inked(id, self.text, extent, self.color, size, self.ink);
+            capture.editor.update_text(
+                id,
+                self.text,
+                TextSpec::measured(extent)
+                    .color(self.color)
+                    .size(size)
+                    .ink(self.ink),
+            );
             capture.select_committed_text(id);
-        } else if let Some(id) = capture.editor.add_label(
+        } else if let Some(id) = capture.editor.add_text(
             self.position,
             self.text,
-            extent,
-            self.color,
-            size,
-            self.label,
-            self.ink,
+            TextSpec::measured(extent)
+                .color(self.color)
+                .size(size)
+                .label(self.label)
+                .ink(self.ink),
         ) {
             capture.select_committed_text(id);
         }

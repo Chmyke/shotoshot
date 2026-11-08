@@ -75,9 +75,18 @@ pub struct Object {
     pub fill: Vec<Paint>,
 }
 impl Object {
-    /// A rectangle or an ellipse: the shapes the bucket fills and whose outline stops it.
+    /// A rectangle, an ellipse or a pen loop (`pen_loop`): the shapes the bucket fills and
+    /// whose outline stops it.
     pub fn closed(&self) -> bool {
-        matches!(self.shape, Shape::Rectangle(_) | Shape::Ellipse(_))
+        match &self.shape {
+            Shape::Rectangle(_) | Shape::Ellipse(_) => true,
+            Shape::Stroke {
+                points,
+                highlight: false,
+                ..
+            } => pen_loop(points, self.style.width),
+            _ => false,
+        }
     }
     /// A blur: it changes the capture, not what is drawn, so colours and the bucket pass it by.
     pub fn is_blur(&self) -> bool {
@@ -343,6 +352,20 @@ impl Object {
     }
     /// Inside a closed shape, outline included; open shapes and text contain nothing.
     pub fn contains(&self, p: Point) -> bool {
+        if let Shape::Stroke { widths, .. } = &self.shape {
+            // Cheap first: the smoothed pen stays inside the bounds of its points.
+            let widest = widths.iter().copied().fold(self.style.width, f64::max);
+            if !self.bounds().expanded(widest * 0.5 + 0.5).contains(p) {
+                return false;
+            }
+            let Some(outline) = crate::interior(self, &[]) else {
+                return false;
+            };
+            return winds_around(&outline, p)
+                || outline
+                    .windows(2)
+                    .any(|s| segment_distance(p, s[0], s[1]) <= widest * 0.5);
+        }
         let r = self.local_bounds();
         let half = self.style.width * 0.5;
         let radius = r.size() * 0.5 + Point { x: half, y: half };
@@ -424,6 +447,41 @@ impl Object {
             Shape::Blur(r) => r.expanded(tolerance).contains(p),
         }
     }
+}
+/// Farthest the ends of a pen stroke may stay apart, past its width, for it to close a loop:
+/// a hand lifting near where it started (Mickaël, 2026-11-08: the bucket fills a drawn heart).
+const LOOP_GAP: f64 = 12.;
+/// A pen stroke that closes on itself: its ends meet within `LOOP_GAP` past its width, and it
+/// encloses more than a square twice that side, so a line drawn there and back is no loop.
+fn pen_loop(points: &[Point], width: f64) -> bool {
+    let (Some(&first), Some(&last)) = (points.first(), points.last()) else {
+        return false;
+    };
+    let gap = LOOP_GAP + width;
+    if points.len() < 3 || (last - first).length() > gap {
+        return false;
+    }
+    let twice_area: f64 = points
+        .iter()
+        .zip(points.iter().cycle().skip(1))
+        .map(|(a, b)| a.x * b.y - b.x * a.y)
+        .sum();
+    twice_area.abs() * 0.5 >= (2. * gap).powi(2)
+}
+/// Whether the closed `polygon` winds around `p` (non-zero rule, the one every renderer
+/// fills a pen loop with).
+fn winds_around(polygon: &[Point], p: Point) -> bool {
+    let mut winding = 0i32;
+    for edge in polygon.windows(2) {
+        let (a, b) = (edge[0], edge[1]);
+        let side = (b.x - a.x) * (p.y - a.y) - (p.x - a.x) * (b.y - a.y);
+        if a.y <= p.y && b.y > p.y && side > 0. {
+            winding += 1;
+        } else if a.y > p.y && b.y <= p.y && side < 0. {
+            winding -= 1;
+        }
+    }
+    winding != 0
 }
 /// Numbers `objects` `first`, `first + 1`… in pile order, the order a saved scene stores
 /// them in. An attachment or a wall follows its target's new number; one whose target is not

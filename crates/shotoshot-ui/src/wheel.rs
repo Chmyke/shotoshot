@@ -43,29 +43,29 @@ pub fn stroke_width_after(width: f64, notches: i32) -> f64 {
     walk(&STROKE_WIDTHS, width, notches)
 }
 /// Eraser diameter after `notches` (positive: larger).
-pub fn eraser_size_after(size: f64, notches: i32) -> f64 {
+pub(crate) fn eraser_size_after(size: f64, notches: i32) -> f64 {
     walk(&ERASER_SIZES, size, notches)
 }
 /// Text size after `notches` (positive: larger).
-pub fn text_size_after(size: f64, notches: i32) -> f64 {
+pub(crate) fn text_size_after(size: f64, notches: i32) -> f64 {
     walk(&TEXT_SIZES, size, notches)
 }
 
 /// Stroke width re-proportioned by `factor` for a screen of another scale: whole pixels,
 /// within the ladder.
-pub fn stroke_width_scaled(width: f64, factor: f64) -> f64 {
+pub(crate) fn stroke_width_scaled(width: f64, factor: f64) -> f64 {
     (width * factor)
         .round()
         .clamp(STROKE_WIDTHS[0], STROKE_WIDTHS[STROKE_WIDTHS.len() - 1])
 }
 /// Eraser diameter re-proportioned by `factor`, as `stroke_width_scaled`.
-pub fn eraser_size_scaled(size: f64, factor: f64) -> f64 {
+pub(crate) fn eraser_size_scaled(size: f64, factor: f64) -> f64 {
     (size * factor)
         .round()
         .clamp(ERASER_SIZES[0], ERASER_SIZES[ERASER_SIZES.len() - 1])
 }
 /// Text size re-proportioned by `factor`, as `stroke_width_scaled`.
-pub fn text_size_scaled(size: f64, factor: f64) -> f64 {
+pub(crate) fn text_size_scaled(size: f64, factor: f64) -> f64 {
     (size * factor)
         .round()
         .clamp(TEXT_SIZES[0], TEXT_SIZES[TEXT_SIZES.len() - 1])

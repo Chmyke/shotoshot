@@ -94,12 +94,16 @@ mod tests {
     fn one_wheel_gesture_resizes_all_selected_texts_in_one_undo_step() -> Result<()> {
         let _com = ComApartment::new()?;
         let mut s = Session::new(Image::solid(500, 300, [0, 0, 0, 255]))?;
-        s.capture
-            .editor
-            .add_text(Point { x: 20., y: 30. }, "First".into());
-        s.capture
-            .editor
-            .add_text(Point { x: 120., y: 130. }, "Second".into());
+        s.capture.editor.add_text(
+            Point { x: 20., y: 30. },
+            "First".into(),
+            TextSpec::default(),
+        );
+        s.capture.editor.add_text(
+            Point { x: 120., y: 130. },
+            "Second".into(),
+            TextSpec::default(),
+        );
         s.capture.editor.selected = s.capture.editor.objects().iter().map(|o| o.id).collect();
         let original = s.capture.editor.objects().to_vec();
         s.wheel(HWND::default(), 120)?;

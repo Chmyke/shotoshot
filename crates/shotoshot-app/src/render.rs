@@ -1,7 +1,7 @@
 //! ROLE: Shared Direct2D drawing for the overlay and flattened output.
 //! OWNER: Each capture owns one renderer; no rendering exists while resident.
 use crate::{Image, ImageExt};
-use shotoshot_core::{BlurPatch, Label, Object, Paint, Point, Rect, Shape, paths};
+use shotoshot_core::{BlurPatch, Label, Object, Paint, Point, Rect, Shape, interior, paths};
 use shotoshot_ui::{Canvas, Ink, TextStyle, View};
 use windows::{
     Win32::{
@@ -573,11 +573,13 @@ impl Renderer {
         self.strokes.borrow_mut().retain_present(objects);
         self.annotation_range(target, objects, skip, 0..objects.len())
     }
-    /// The closed polygon through `points`.
+    /// The closed polygon through `points`, filled by the non-zero rule like the portable
+    /// renderer and `Object::contains` (a pen loop may cross itself).
     fn polygon(&self, points: &[Point]) -> Result<ID2D1Geometry> {
         unsafe {
             let geometry = self.factory.CreatePathGeometry()?;
             let sink = geometry.Open()?;
+            sink.SetFillMode(D2D1_FILL_MODE_WINDING);
             if let Some((first, rest)) = points.split_first() {
                 sink.BeginFigure(vector(*first), D2D1_FIGURE_BEGIN_FILLED);
                 for p in rest {
@@ -727,6 +729,15 @@ impl Renderer {
                         None,
                     )?;
                     if matches!(o.shape, Shape::Stroke { .. }) {
+                        // A pen loop's coats lie under its ink.
+                        if let Some(inside) = interior(o, objects) {
+                            for coat in &o.fill {
+                                let paint =
+                                    target.CreateSolidColorBrush(&color(coat.color, 1.), None)?;
+                                let holes = coat.hole_paths(objects, index + 1);
+                                self.fill_except(target, self.polygon(&inside)?, &holes, &paint)?;
+                            }
+                        }
                         #[cfg(test)]
                         scene_tests::record_fill();
                         target.FillGeometry(strokes.outline(self, o)?, &brush, None);
@@ -771,7 +782,7 @@ impl Renderer {
                         for coat in fill {
                             let interior =
                                 target.CreateSolidColorBrush(&color(coat.color, 1.), None)?;
-                            let holes = holes(coat, objects, index + 1);
+                            let holes = coat.hole_paths(objects, index + 1);
                             self.fill_except(target, geometry.clone().into(), &holes, &interior)?;
                         }
                         if filled_head {
@@ -887,7 +898,7 @@ impl Renderer {
             let coats = background.iter().try_for_each(|coat| {
                 let brush = target.CreateSolidColorBrush(&color(coat.color, 1.), None)?;
                 let area = self.polygon(&whole.corners())?;
-                self.fill_except(&target, area, &holes(coat, objects, 0), &brush)
+                self.fill_except(&target, area, &coat.hole_paths(objects, 0), &brush)
             });
             let result = coats
                 .and_then(|()| self.annotations(&target, objects))
@@ -908,13 +919,6 @@ impl Renderer {
             Ok(output)
         }
     }
-}
-
-/// Outlines of the shapes `coat` spares, `floor` being the first place above its zone.
-fn holes(coat: &Paint, objects: &[Object], floor: usize) -> Vec<Vec<Point>> {
-    coat.holes(objects, floor)
-        .flat_map(|o| paths(o, objects))
-        .collect()
 }
 
 /// One fill under the annotations: a rectangle, its ink and the outlines it spares.

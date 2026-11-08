@@ -136,6 +136,31 @@ pub fn paths(object: &Object, objects: &[Object]) -> Vec<Vec<Point>> {
     }
 }
 
+/// The inside of a closed shape (`Object::closed`) as one polygon whose last point is its
+/// first: what the bucket fills and what a coat spares. A pen loop's runs are joined end to
+/// end, its gap closed by a straight edge. `None` for a shape that encloses nothing.
+pub fn interior(object: &Object, objects: &[Object]) -> Option<Vec<Point>> {
+    if !object.closed() {
+        return None;
+    }
+    let mut outline = match object.shape {
+        Shape::Stroke { .. } => {
+            let mut joined: Vec<Point> = Vec::new();
+            for (run, _) in stroke_runs(object) {
+                let skip = usize::from(!run.is_empty() && joined.last() == run.first());
+                joined.extend_from_slice(&run[skip..]);
+            }
+            joined
+        }
+        _ => paths(object, objects).into_iter().next()?,
+    };
+    let first = *outline.first()?;
+    if outline.last() != Some(&first) {
+        outline.push(first);
+    }
+    Some(outline)
+}
+
 // Round only a two-pixel neighbourhood of each sample. Keep endpoints and avoid
 // spline overshoot, so the pen follows the hand without lag or changing bounds.
 fn smooth_pen(points: &[Point]) -> Vec<Point> {

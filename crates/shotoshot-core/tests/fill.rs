@@ -119,24 +119,138 @@ fn bucket_follows_a_turned_rectangle() {
     assert!(fill_of(&editor, id).is_some(), "inside the turned box only");
 }
 
-#[test]
-fn pen_loops_arrows_and_text_are_not_fillable() {
-    let mut editor = Editor::default();
+/// A pen stroke through `points`, in the editor's current colour and width.
+fn pen(editor: &mut Editor, points: &[Point]) -> u64 {
     editor.tool = Tool::Pen;
+    editor.begin(points[0], Modifiers::default());
+    for point in &points[1..] {
+        editor.update(*point);
+    }
+    editor.finish();
+    editor.objects().last().unwrap().id
+}
+
+/// A square loop from (10, 10) to (100, 100), its hand lifted `gap` pixels short of the start.
+fn pen_loop(editor: &mut Editor, gap: f64) -> u64 {
+    pen(
+        editor,
+        &[
+            p(10., 10.),
+            p(100., 10.),
+            p(100., 100.),
+            p(10., 100.),
+            p(10., 10. + gap),
+        ],
+    )
+}
+
+#[test]
+fn arrows_and_text_are_not_fillable() {
+    let mut editor = Editor::default();
+    draw(&mut editor, Tool::Arrow, p(200., 50.), p(300., 50.));
+    editor.add_text(p(200., 200.), "label".into(), TextSpec::default());
+    // Beside the arrow, the click reaches the capture behind it.
+    editor.fill_at(p(250., 70.), false);
+    assert!(background(&editor).is_some());
+    assert!(editor.objects().iter().all(|o| o.fill.is_empty()));
+}
+
+#[test]
+fn bucket_fills_a_pen_loop_closed_by_hand() {
+    // Mickaël, 2026-11-08: the heart drawn with the pen fills like a circle.
+    let mut editor = Editor::default();
+    let id = pen_loop(&mut editor, 10.);
+    editor.style.color = BLACK;
+    editor.fill_at(p(55., 55.), false);
+    assert_eq!(fill_of(&editor, id), Some(BLACK));
+    assert_eq!(background(&editor), None);
+    assert_eq!(
+        colour_of(&editor, id),
+        Style::default().color,
+        "the ink keeps its colour"
+    );
+    // The inside of a filled loop is solid to the eye: it is grabbed like the outline.
+    assert!(editor.objects()[0].hit(p(55., 55.), 0., editor.objects()));
+    editor.fill_at(p(55., 55.), false);
+    assert_eq!(
+        fill_of(&editor, id),
+        None,
+        "the same colour again takes it off"
+    );
+}
+
+#[test]
+fn an_open_stroke_or_a_line_drawn_there_and_back_fills_the_capture() {
+    for points in [
+        // Its hand lifted far from the start.
+        vec![
+            p(10., 10.),
+            p(100., 10.),
+            p(100., 100.),
+            p(10., 100.),
+            p(10., 60.),
+        ],
+        // Back where it started, but around nothing.
+        vec![p(10., 10.), p(100., 12.), p(12., 14.)],
+    ] {
+        let mut editor = Editor::default();
+        pen(&mut editor, &points);
+        assert!(!editor.objects()[0].closed(), "{points:?}");
+        editor.fill_at(p(55., 55.), false);
+        assert!(background(&editor).is_some(), "{points:?}");
+        assert!(editor.objects()[0].fill.is_empty());
+    }
+}
+
+#[test]
+fn a_highlighter_loop_is_never_filled() {
+    let mut editor = Editor::default();
+    editor.tool = Tool::Highlight;
     editor.begin(p(10., 10.), Modifiers::default());
     for point in [p(100., 10.), p(100., 100.), p(10., 100.), p(10., 10.)] {
         editor.update(point);
     }
     editor.finish();
-    draw(&mut editor, Tool::Arrow, p(200., 50.), p(300., 50.));
-    editor.add_text(p(200., 200.), "label".into());
-    // Inside the loop and beside the arrow, the click reaches the capture behind them.
-    for beside in [p(50., 50.), p(250., 70.)] {
-        editor.fill_at(beside, false);
-        assert!(background(&editor).is_some());
-        assert!(editor.objects().iter().all(|o| o.fill.is_empty()));
-        editor.undo();
-    }
+    assert!(!editor.objects()[0].closed());
+}
+
+#[test]
+fn a_pen_loop_already_drawn_stops_the_colour_of_the_capture() {
+    let mut editor = Editor::default();
+    let id = pen_loop(&mut editor, 0.);
+    editor.style.color = BLACK;
+    editor.fill_at(p(300., 300.), false);
+    let coat = editor.background().last().unwrap();
+    assert_eq!(
+        coat.walls,
+        [id],
+        "its outline stops the colour, as a circle's does"
+    );
+    assert_eq!(
+        coat_seen(editor.background(), p(55., 55.), editor.objects(), 0),
+        None
+    );
+    assert!(coat_seen(editor.background(), p(300., 300.), editor.objects(), 0).is_some());
+}
+
+#[test]
+fn erasing_a_filled_loop_open_takes_its_colour_off() {
+    let mut editor = Editor::default();
+    let id = pen_loop(&mut editor, 0.);
+    editor.style.color = BLACK;
+    editor.fill_at(p(55., 55.), false);
+    assert_eq!(fill_of(&editor, id), Some(BLACK));
+    editor.tool = Tool::Eraser;
+    editor.begin(p(55., 10.), Modifiers::default());
+    editor.finish();
+    assert!(
+        editor.objects().iter().all(|o| !o.closed()),
+        "the eraser cut the loop open"
+    );
+    assert!(
+        editor.objects().iter().all(|o| o.fill.is_empty()),
+        "an open stroke holds no colour"
+    );
 }
 
 #[test]
@@ -153,7 +267,7 @@ fn bucket_on_drawn_ink_recolours_it_and_fills_nothing() {
     let line = draw(&mut editor, Tool::Line, p(200., 30.), p(300., 30.));
     let arrow = draw(&mut editor, Tool::Arrow, p(200., 60.), p(300., 60.));
     let marker = draw(&mut editor, Tool::Highlight, p(200., 90.), p(300., 90.));
-    editor.add_text(p(200., 200.), "label".into());
+    editor.add_text(p(200., 200.), "label".into(), TextSpec::default());
     let text = editor.objects().last().unwrap().id;
 
     editor.style.color = BLACK;

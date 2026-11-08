@@ -25,7 +25,7 @@ pub mod pointer;
 mod scale_tests;
 pub mod settings_panel;
 mod shortcut_label;
-pub use shortcut_label::{shortcut_label, shortcut_label_in};
+pub(crate) use shortcut_label::shortcut_label_in;
 #[cfg(test)]
 mod test_host;
 mod text_field;
@@ -33,7 +33,8 @@ pub mod toolbar;
 mod view;
 pub mod wheel;
 pub use canvas::{Canvas, Face, Ink, TextStyle, annotation_font};
-pub use capture::{BADGE_LABEL_SIZE, BadgeText, Capture, CursorKind, Monitor, region_handles};
+pub(crate) use capture::{BADGE_LABEL_SIZE, region_handles};
+pub use capture::{Capture, CursorKind, Monitor};
 pub use dimension_fields::{DimensionFields, DimensionKey};
 pub use document::placement;
 pub use host::Host;
@@ -44,4 +45,4 @@ pub use overlay::{
     top_center,
 };
 pub use text_field::{FieldKey, TextField};
-pub use view::{MAX_ZOOM, View};
+pub use view::View;

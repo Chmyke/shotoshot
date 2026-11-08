@@ -8,6 +8,7 @@ mod history;
 mod stacking;
 use crate::*;
 pub use fill::FillChange;
+pub use history::TextSpec;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Tool {
@@ -40,7 +41,7 @@ pub struct Modifiers {
 }
 impl Modifiers {
     /// Linear endpoints bind to shapes only on request; Shift keeps its angle snap.
-    pub fn attaches(self) -> bool {
+    pub(crate) fn attaches(self) -> bool {
         (self.ctrl || self.alt) && !self.shift
     }
 }

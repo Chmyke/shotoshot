@@ -1,15 +1,14 @@
-use shotoshot_core::{Editor, Point, Shape};
+use shotoshot_core::{Editor, Point, Shape, TextSpec};
 
 #[test]
 fn committing_new_text_uses_draft_color_and_one_undo() {
     let mut editor = Editor::default();
     let color = [40, 90, 180];
     let id = editor
-        .add_text_measured_colored(
+        .add_text(
             Point { x: 5., y: 8. },
             "é😀".into(),
-            Point { x: 60., y: 30. },
-            color,
+            TextSpec::measured(Point { x: 60., y: 30. }).color(color),
         )
         .unwrap();
     let object = editor.objects()[0].clone();
@@ -26,15 +25,18 @@ fn committing_new_text_uses_draft_color_and_one_undo() {
 fn text_and_color_commit_together_preserving_other_style_fields() {
     let mut editor = Editor::default();
     editor.style.width = 7.;
-    editor.add_text(Point { x: 5., y: 8. }, "Original".into());
+    editor.add_text(
+        Point { x: 5., y: 8. },
+        "Original".into(),
+        TextSpec::default(),
+    );
     let original = editor.objects()[0].clone();
     editor.style.width = 2.;
     let color = [10, 230, 110];
-    editor.update_text_measured_colored(
+    editor.update_text(
         original.id,
         "Modifié\n日本".into(),
-        Point { x: 95., y: 60. },
-        color,
+        TextSpec::measured(Point { x: 95., y: 60. }).color(color),
     );
     let edited = editor.objects()[0].clone();
     assert_eq!(edited.style.color, color);

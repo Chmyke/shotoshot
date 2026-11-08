@@ -41,7 +41,7 @@ pub struct DimensionFields {
 
 impl DimensionFields {
     /// Font size of the fields at 100 %, as on Windows.
-    pub const FONT_SIZE: f64 = FIELD_SIZE;
+    pub(crate) const FONT_SIZE: f64 = FIELD_SIZE;
     /// Font size of these fields; platforms measure with it.
     pub fn font_size(&self) -> f64 {
         FIELD_SIZE * self.scale

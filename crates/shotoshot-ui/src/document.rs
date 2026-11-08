@@ -209,7 +209,7 @@ pub fn placement(size: Point, origin: Point, screens: &[Rect], pointer: Point) -
 mod tests {
     use super::*;
     use crate::{keys::KeyOutcome, test_host::FakeHost, toolbar::Action};
-    use shotoshot_core::{Modifiers, Tool};
+    use shotoshot_core::{Modifiers, TextSpec, Tool};
 
     fn point(x: f64, y: f64) -> Point {
         Point { x, y }
@@ -410,8 +410,11 @@ mod tests {
             point(60., 12.),
             none(),
         );
-        c.editor
-            .add_text_measured(point(55., 8.), "note".into(), point(3., 2.));
+        c.editor.add_text(
+            point(55., 8.),
+            "note".into(),
+            TextSpec::measured(point(3., 2.)),
+        );
         // The bucket on bare capture: a solid background.
         c.editor.fill_at(point(75., 18.), false);
         let (scene, frame) = c.document(&c.image).unwrap();

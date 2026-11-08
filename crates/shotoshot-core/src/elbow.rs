@@ -4,7 +4,7 @@
 use crate::{Attachment, Object, Point, Rect, Shape};
 
 /// How far, in interface pixels, an anchor sits outside the side of its box.
-pub const ANCHOR_GAP: f64 = 12.;
+pub(crate) const ANCHOR_GAP: f64 = 12.;
 /// How deep, in image pixels, the head bites into its target's outline.
 const BITE: f64 = 1.;
 /// Corners in samples: a quarter turn drawn as this many chords.
@@ -13,14 +13,14 @@ const CORNER_SEGMENTS: usize = 8;
 /// One end of an elbow arrow: where it rests and, on a side, the outward normal it leaves or
 /// enters along.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Port {
+pub(crate) struct Port {
     pub point: Point,
     pub normal: Option<Point>,
 }
 
 /// The middle of the side of `target` that faces `aim`, `gap` outside it, with that side's
 /// outward normal; both turn with the target.
-pub fn facing_port(target: &Object, aim: Point, gap: f64) -> Port {
+pub(crate) fn facing_port(target: &Object, aim: Point, gap: f64) -> Port {
     let r = target.local_bounds();
     let c = r.center();
     let half = r.size() * 0.5;
@@ -67,7 +67,7 @@ fn end_gap(target: &Object, cap: f64) -> f64 {
 
 /// Both ends of an elbow arrow, each attached one on the side facing the other end: the
 /// other target's centre, or the other free point.
-pub fn elbow_ends(o: &Object, objects: &[Object]) -> Option<(Port, Port)> {
+pub(crate) fn elbow_ends(o: &Object, objects: &[Object]) -> Option<(Port, Port)> {
     let Shape::Arrow {
         start,
         end,
@@ -145,7 +145,7 @@ fn slide_in_line(port: &mut Port, target: Option<&Object>, other: Point, toleran
 
 /// The straight leg before the first turn and after the last: room for the head and a
 /// rounded corner, so the head always sits on a straight run into its side.
-pub fn elbow_leg(width: f64) -> f64 {
+pub(crate) fn elbow_leg(width: f64) -> f64 {
     width * 3.84 + corner_radius(width) + 4.
 }
 fn corner_radius(width: f64) -> f64 {
@@ -196,7 +196,7 @@ fn toward_free(p: Point, n: Point, q: Point, leg: f64) -> Vec<Point> {
 /// each side, then right angles in screen axes. A free start bound for a side leaves along
 /// the axis that leads most toward it, as if out of a side of its own: an S or an L, never a
 /// run flat along the box it came off (Mickaël, 2026-10-30).
-pub fn elbow_route(a: Port, b: Port, leg: f64) -> Vec<Point> {
+pub(crate) fn elbow_route(a: Port, b: Port, leg: f64) -> Vec<Point> {
     let nb = b.normal.map(axis);
     let na = a
         .normal
@@ -261,7 +261,7 @@ pub fn elbow_route(a: Port, b: Port, leg: f64) -> Vec<Point> {
 }
 
 /// `corners` with each turn rounded, never by more than half of either side of it.
-pub fn round_corners(corners: &[Point], radius: f64) -> Vec<Point> {
+pub(crate) fn round_corners(corners: &[Point], radius: f64) -> Vec<Point> {
     let mut out = Vec::with_capacity(corners.len() * (CORNER_SEGMENTS + 1));
     let Some(&first) = corners.first() else {
         return out;
@@ -294,11 +294,11 @@ pub fn elbow_corners(o: &Object, objects: &[Object]) -> Option<Vec<Point>> {
     Some(elbow_route(a, b, elbow_leg(o.style.width)))
 }
 /// The elbow arrow's centre line as a polyline, corners rounded: what renders and is hit.
-pub fn elbow_points(o: &Object, objects: &[Object]) -> Option<Vec<Point>> {
+pub(crate) fn elbow_points(o: &Object, objects: &[Object]) -> Option<Vec<Point>> {
     elbow_corners(o, objects).map(|c| round_corners(&c, corner_radius(o.style.width)))
 }
 /// The extent of a polyline.
-pub fn polyline_bounds(points: &[Point]) -> Option<Rect> {
+pub(crate) fn polyline_bounds(points: &[Point]) -> Option<Rect> {
     let (first, rest) = points.split_first()?;
     rest.iter().try_fold(Rect::new(*first, *first)?, |r, p| {
         Some(r.union(Rect::new(*p, *p)?))
