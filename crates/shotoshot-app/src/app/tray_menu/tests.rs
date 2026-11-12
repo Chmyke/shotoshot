@@ -131,15 +131,13 @@ fn the_menu_acts_and_settings_open_elsewhere() {
         .iter()
         .filter(|row| !matches!(row.kind, Kind::Title | Kind::Separator))
         .count();
-    assert_eq!(actions, 16, "a short menu");
+    assert_eq!(actions, 15, "a short menu");
     assert!(find(170).is_some_and(|r| english(r) == "Settings" && r.kind == Kind::Command));
-    // One submenu only: the language, the way back for who cannot read the current one.
-    let submenus: Vec<u32> = ROOT
-        .iter()
-        .filter(|row| row.kind == Kind::Submenu)
-        .map(|row| row.id)
-        .collect();
-    assert_eq!(submenus, [150]);
+    // No language here: it is chosen in the Settings window (Mickael, 2026-11-12).
+    assert!(
+        ROOT.iter()
+            .all(|row| row.id != 150 && row.icon != Icon::Globe)
+    );
     // Each board row has its own icon.
     assert!(matches!(find(8).map(|r| r.icon), Some(Icon::BoardEdit)));
     assert!(matches!(find(9).map(|r| r.icon), Some(Icon::Eye)));
@@ -267,11 +265,7 @@ fn width_leaves_room_for_the_shortcut() {
 
 #[test]
 fn english_labels_are_unchanged() {
-    let root: Vec<_> = ROOT
-        .iter()
-        .filter(|row| row.id != 150)
-        .map(english)
-        .collect();
+    let root: Vec<_> = ROOT.iter().map(english).collect();
     assert_eq!(
         root,
         [
@@ -297,122 +291,12 @@ fn english_labels_are_unchanged() {
     );
 }
 
-#[test]
-fn language_row_keeps_the_english_word() {
-    let row = find(150).unwrap();
-    assert!(row.kind == Kind::Submenu && matches!(row.icon, Icon::Globe));
-    assert_eq!(label_in(row, Language::En), "Language");
-    assert_eq!(label_in(row, Language::Ko), "언어 · Language");
-    for language in Language::ALL.into_iter().skip(1) {
-        let label = label_in(row, language);
-        assert!(
-            label.ends_with(" · Language"),
-            "{}: {label}",
-            language.tag()
-        );
-        assert!(
-            !label.starts_with("Language"),
-            "{}: {label}",
-            language.tag()
-        );
-    }
-}
-
-#[test]
-fn language_choices_show_native_names() {
-    let expected = [
-        "English",
-        "简体中文",
-        "Русский",
-        "Español",
-        "Português (Brasil)",
-        "Deutsch",
-        "日本語",
-        "Français",
-        "Polski",
-        "한국어",
-        "繁體中文",
-        "Türkçe",
-        "Українська",
-        "Italiano",
-        "Čeština",
-    ];
-    for language in Language::ALL {
-        let names: Vec<_> = (152..=166)
-            .map(|id| label_in(find(id).unwrap(), language))
-            .collect();
-        assert_eq!(names, expected, "{}", language.tag());
-    }
-    assert_eq!(
-        label_in(find(151).unwrap(), Language::En),
-        "Windows language"
-    );
-    assert_eq!(choices(150).len(), 16);
-    assert!(choices(150).iter().all(|row| row.kind == Kind::Choice));
-}
-
-#[test]
-fn checked_language_follows_the_setting() {
-    let ticked = |values: &Values| {
-        (150..=167)
-            .filter(|&id| values.checked(id))
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(ticked(&Values::default()), [151]);
-    let german = Values {
-        language: LanguageChoice::Fixed(Language::De),
-        ..Default::default()
-    };
-    assert_eq!(ticked(&german), [157]);
-    // The row names the current choice, like the other submenus.
-    let row = find(150).unwrap();
-    assert_eq!(detail_in(row, german.data(150), Language::En), "Deutsch");
-    assert_eq!(
-        detail_in(row, Values::default().data(150), Language::En),
-        "Windows language"
-    );
-}
-
-#[test]
-fn a_language_choice_is_read_from_its_id() {
-    assert_eq!(on_language_choice(151), Some(LanguageChoice::Auto));
-    assert_eq!(
-        on_language_choice(152),
-        Some(LanguageChoice::Fixed(Language::En))
-    );
-    assert_eq!(
-        on_language_choice(157),
-        Some(LanguageChoice::Fixed(Language::De))
-    );
-    assert_eq!(
-        on_language_choice(166),
-        Some(LanguageChoice::Fixed(Language::Cs))
-    );
-    for id in [0, 3, 143, 150, 167] {
-        assert_eq!(on_language_choice(id), None, "{id}");
-    }
-    for (index, row) in choices(150).iter().enumerate().skip(1) {
-        assert_eq!(
-            on_language_choice(row.id),
-            Some(LanguageChoice::Fixed(Language::ALL[index - 1]))
-        );
-    }
-}
-
 /// Widest row of a menu column in `language`, in logical pixels at scale 1.
 fn widest(rows: &[Row], values: &Values, language: Language) -> f64 {
     with_painter(|renderer| {
         let mut widest: f64 = 0.;
         for row in rows {
-            // The language row names any of its sixteen choices.
-            let data: Vec<usize> = if row.id == 150 {
-                (0..choices(150).len()).collect()
-            } else {
-                vec![values.data(row.id)]
-            };
-            for data in data {
-                widest = widest.max(width_in(renderer, row, data, language)?);
-            }
+            widest = widest.max(width_in(renderer, row, values.data(row.id), language)?);
         }
         Ok(widest)
     })
@@ -579,21 +463,17 @@ fn every_menu_fits() {
     let _open = Open;
     let values = sample();
     for language in Language::ALL {
-        for rows in [ROOT, &LANGUAGES[..]] {
-            let width = widest(rows, &values, language);
-            assert!(
-                width <= 480.,
-                "{}: a menu is {width:.0} px wide; shorten its longest text",
-                language.tag()
-            );
-        }
+        let width = widest(ROOT, &values, language);
+        assert!(
+            width <= 480.,
+            "{}: the menu is {width:.0} px wide; shorten its longest text",
+            language.tag()
+        );
     }
 }
 
 #[test]
 fn a_closed_menu_keeps_no_renderer() {
-    for open in [0, 150] {
-        render(&sample(), 170, open, &popup::View::default(), 1.).unwrap();
-    }
+    render(&sample(), 170, &popup::View::default(), 1.).unwrap();
     assert!(PAINTER.with(|painter| painter.borrow().is_none()));
 }

@@ -111,8 +111,6 @@ menu.quit = 結束 Shotoshot
 menu.press_keys = 按下按鍵
 menu.seconds = {n} 秒
 menu.percent = {n}%
-menu.language_auto = Windows 語言
-menu.language_system = 系統語言
 
 setup.title_capture = 擷取快速鍵
 setup.title_instant = 即時擷取畫面快速鍵
@@ -229,7 +227,7 @@ keycap.delete == Del
 
 # Installer
 installer.language.title = Shotoshot 語言
-installer.language.description = 之後可以從通知區域中的 Shotoshot 圖示變更。
+installer.language.description = 之後可以在 Shotoshot 設定中變更。
 installer.shoto_file = 可編輯的 Shotoshot 影像
 
 # Pointer effects

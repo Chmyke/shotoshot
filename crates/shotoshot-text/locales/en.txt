@@ -132,8 +132,6 @@ menu.quit = Quit Shotoshot
 menu.press_keys = Press keys
 menu.seconds = {n} s
 menu.percent = {n}%
-menu.language_auto = Windows language
-menu.language_system = System language
 
 # Shortcut window. It keeps its English size and grows only for a longer text, up to 640×400 px
 # (`setup_layout_fits_every_language`): titles at 16 px, buttons at 13 px, the hint wrapped
@@ -267,7 +265,7 @@ keycap.delete = Del
 # The Windows installer (packaging/languages.isi, written by `cargo run -p shotoshot-text --example inno`):
 # one line each, no `%`. Its language page lists the languages under their own names.
 installer.language.title = Shotoshot language
-installer.language.description = You can change it later from the Shotoshot icon in the notification area.
+installer.language.description = You can change it later in the Shotoshot settings.
 installer.shoto_file = Shotoshot editable image
 
 # Pointer effects page of the Settings window: card titles and labels at 13 px, values and

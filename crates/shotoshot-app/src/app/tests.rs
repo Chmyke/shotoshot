@@ -377,8 +377,7 @@ fn language_change_restarts_the_prepared_editor() {
     let mut app = resident(owner.0);
     app.worker = Some(editor_process::tests::idle_editor());
     // English: the process-wide language other tests read stays the same.
-    let choice = tray_menu::on_language_choice(152).unwrap();
-    assert_eq!(choice, LanguageChoice::Fixed(Language::En));
+    let choice = LanguageChoice::Fixed(Language::En);
     app.choose_language(owner.0, choice).unwrap();
     assert_eq!(app.settings.language, choice, "the choice is kept");
     let worker = app.worker.as_ref().unwrap();
@@ -392,6 +391,22 @@ fn language_change_restarts_the_prepared_editor() {
         tip.trim_end_matches('\0'),
         tr_in(Language::En, Key::TrayTooltip)
     );
+}
+
+#[test]
+fn a_language_chosen_in_the_settings_is_saved_as_that_language() {
+    use shotoshot_text::{Language, LanguageChoice};
+    use shotoshot_ui::settings_panel::{Action, Command};
+    let owner = hidden_window();
+    let mut app = resident(owner.0);
+    // Until one is picked, the setting follows Windows.
+    app.settings.language = LanguageChoice::Auto;
+    // An idle editor stands for the prepared one: restarting it launches no real process.
+    app.worker = Some(editor_process::tests::idle_editor());
+    // English keeps the process-wide language other tests read.
+    app.settings_action(owner.0, Action::Command(Command::Language(Language::En)))
+        .unwrap();
+    assert_eq!(app.settings.language, LanguageChoice::Fixed(Language::En));
 }
 
 #[test]
@@ -474,16 +489,6 @@ fn the_menu_stays_open_for_settings_and_the_icon_closes_it() {
     app.menu = Some(open(&app));
     app.menu_closed(root, false);
     assert!(app.menu.is_some());
-    // A language is a setting too: the menu stays, in the chosen language. English keeps
-    // the process-wide language other tests read. An idle editor stands for the prepared one,
-    // so that restarting it launches no real process.
-    app.worker = Some(editor_process::tests::idle_editor());
-    app.menu_command(owner.0, 152, true).unwrap();
-    assert_eq!(
-        app.settings.language,
-        shotoshot_text::LanguageChoice::Fixed(shotoshot_text::Language::En)
-    );
-    assert!(app.menu.is_some(), "a language keeps the menu open");
     // A command closes the menu before it runs.
     app.menu_command(owner.0, 0, false).unwrap();
     assert!(app.menu.is_none());

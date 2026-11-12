@@ -111,8 +111,6 @@ menu.quit = Shotoshot’tan çık
 menu.press_keys = Tuşlara bas
 menu.seconds = {n} sn
 menu.percent = %{n}
-menu.language_auto = Windows dili
-menu.language_system = Sistem dili
 
 setup.title_capture = Yakalama kısayolu
 setup.title_instant = Anında ekran görüntüsü kısayolu
@@ -229,7 +227,7 @@ keycap.delete == Del
 
 # Installer
 installer.language.title = Shotoshot dili
-installer.language.description = Daha sonra bildirim alanındaki Shotoshot simgesinden değiştirebilirsiniz.
+installer.language.description = Daha sonra Shotoshot ayarlarından değiştirebilirsiniz.
 installer.shoto_file = Düzenlenebilir Shotoshot görüntüsü
 
 # Pointer effects

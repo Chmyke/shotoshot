@@ -4,7 +4,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2024"
-version = "0.3.44"
+version = "0.3.45"
 license = "GPL-3.0-only"
 
 # Dependencies declared by several crates (or twice by one): one version for all. Each crate

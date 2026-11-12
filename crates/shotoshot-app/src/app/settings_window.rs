@@ -468,7 +468,7 @@ impl App {
         Ok(())
     }
     /// Shows the current settings in the open window: after a command, a recorded shortcut or
-    /// a change of language from the menu.
+    /// a change of language.
     pub(super) fn refresh_settings_window(&mut self) -> Result<()> {
         let Some(window) = &self.settings_ui.window else {
             return Ok(());
@@ -632,6 +632,10 @@ impl App {
                 };
                 self.run_menu_command(owner, id)?;
             }
+            // Saved, applied, and the window refitted to the new texts below.
+            Command::Language(language) => {
+                self.choose_language(owner, shotoshot_text::LanguageChoice::Fixed(language))?;
+            }
         }
         if let Some(menu) = &self.menu {
             menu.update(self.menu_values()?)?;
@@ -716,6 +720,11 @@ impl App {
                 let p = window.logical(l);
                 window.panel.drag(p)
             }
+            // The open language list lights the row under the pointer; nothing else repaints.
+            WM_MOUSEMOVE => match window.panel.hover(window.logical(l)) {
+                Action::None => return Ok(None),
+                action => action,
+            },
             WM_LBUTTONUP => {
                 unsafe {
                     let _ = ReleaseCapture();
@@ -890,17 +899,26 @@ pub(super) fn preview() -> Result<()> {
         error: String::new(),
     });
     let before = Some((ShortcutRow::Rectangle, vec!["Alt".into(), "R".into()]));
-    for (page, name, edit, back) in [
-        (PAGES[0], "general", None, None),
-        (PAGES[1], "shortcuts", None, None),
-        (PAGES[2], "presentation", None, None),
-        (PAGES[3], "pointer", None, None),
-        (PAGES[1], "shortcuts-editing", editing, None),
-        (PAGES[1], "shortcuts-saved", None, before),
+    // The General page again with its language list open, Japanese lit under the pointer.
+    for (page, name, edit, back, list) in [
+        (PAGES[0], "general", None, None, None),
+        (PAGES[1], "shortcuts", None, None, None),
+        (PAGES[2], "presentation", None, None, None),
+        (PAGES[3], "pointer", None, None, None),
+        (PAGES[1], "shortcuts-editing", editing, None, None),
+        (PAGES[1], "shortcuts-saved", None, before, None),
+        (
+            PAGES[0],
+            "general-languages",
+            None,
+            None,
+            Some(Language::Ja as usize),
+        ),
     ] {
         panel.show_page(page);
         panel.editing = edit;
         panel.before = back;
+        panel.language_list = list;
         // A fixed moment of the preview animation: the same picture on every run.
         for now in (0..2100).step_by(16) {
             panel.tick(now);

@@ -3,8 +3,8 @@
 Native screen capture and annotation for Windows 11 and Linux. Press a key, drag a region,
 annotate on the frozen screen with objects that stay editable, then copy or save. On Windows, the
 same editor writes notes on your desktop, under the icons: the [Board](#board-notes-under-the-icons). The interface is
-available in 15 languages, chosen at install or from the menu; the on-screen keyboard always
-follows the active keyboard layout.
+available in 15 languages, chosen at install or in the settings (from the menu on Linux); the
+on-screen keyboard always follows the active keyboard layout.
 
 - **Light.** A small resident process starts one editor process per capture. That process ends
   with the session, which returns its memory to Windows, graphics caches included.
@@ -44,13 +44,14 @@ option when no shortcut uses the key any more, and on uninstall.
 
 The icon lives in the notification area. Left click and right click open the same short menu,
 made to act: capture and instant screenshot with their keys, the **Board**, then the
-**Presentation** switches, **Settings**, **Language** and the exit. Every row has its icon; what
+**Presentation** switches, **Settings** and the exit. Every row has its icon; what
 can be turned on carries a switch, and a shortcut shows as keys, orange when another program
 holds it.
 
 **Settings** opens one window for what you set once, on the screen of the pointer:
 
-- **General**: **Start with Windows** (on by default) and **Live capture by default**.
+- **General**: **Start with Windows** (on by default), **Live capture by default** and the
+  **Language** (the 15 languages, each under its own name).
 - **Shortcuts**: every Shotoshot shortcut in one place; click the keys to change one. A shortcut
   another program holds turns orange, with a note under its name. The three pointer shortcuts
   can be left unset (**Add**) or cleared with their cross.

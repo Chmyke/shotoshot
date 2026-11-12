@@ -68,6 +68,12 @@ const SWATCH_STEP: f64 = 22.;
 pub(crate) const SWATCH: f64 = 8.;
 const SWITCH: Point = Point { x: 36., y: 18. };
 const CHEVRON: f64 = 20.;
+/// The language list opened from the General page, styled like the notification menu: its rows,
+/// the band above and below them, the room for the tick, and the margin after the name.
+const LIST_ROW: f64 = 30.;
+const LIST_PAD: f64 = 4.;
+const LIST_TICK: f64 = 38.;
+const LIST_MARGIN: f64 = 14.;
 const CAP_PAD: f64 = 7.;
 const CAP_GAP: f64 = 4.;
 const CLEAR: f64 = 24.;
@@ -357,6 +363,8 @@ pub enum Command {
     MoveInput,
     /// Shows or hides it, as its menu switch does.
     Show(Shown),
+    /// Speaks this language from now on, as chosen in the language list.
+    Language(Language),
 }
 
 /// What the platform does after an input.
@@ -614,6 +622,8 @@ pub enum Item {
     Duration,
     MoveInput,
     Shown(Shown),
+    /// The language of the interface: its control opens the list of languages.
+    Language,
     Card(Card),
     Field(Field),
     Reset,
@@ -634,6 +644,7 @@ impl Item {
             Self::Duration => Icon::Clock,
             Self::MoveInput => Icon::Move,
             Self::Shown(shown) => shown.icon(),
+            Self::Language => Icon::Globe,
             Self::Card(card) => card.icon(),
             Self::Field(_) | Self::Reset => Icon::None,
         }
@@ -717,6 +728,8 @@ pub struct Panel {
     pub layout: Layout,
     /// The shortcut being changed in its row.
     pub editing: Option<RowEdit>,
+    /// The open language list and its lit row, an index of `Language::ALL`; None when closed.
+    pub language_list: Option<usize>,
     /// The last shortcut changed and its keys before: its row offers them back until the page
     /// changes.
     pub before: Option<(ShortcutRow, Vec<String>)>,
@@ -760,6 +773,7 @@ impl Panel {
             widths: HashMap::new(),
             layout: Layout::default(),
             editing: None,
+            language_list: None,
             before: None,
             preview: Effects::default(),
             last_click: 0,
@@ -845,6 +859,8 @@ impl Panel {
             Item::Duration => self.text(Key::MenuShapeDuration).into(),
             Item::MoveInput => self.text(Key::MenuMoveInput).into(),
             Item::Shown(shown) => self.text(shown.label()).into(),
+            // In the language shown, then in English: the way back for who cannot read it.
+            Item::Language => shotoshot_text::language_menu_label_in(self.language).into_owned(),
             Item::Card(card) => self.text(card.title()).into(),
             Item::Field(field) => self.text(field.label()).into(),
             Item::Reset => self.text(Key::PointerReset).into(),
@@ -902,6 +918,7 @@ impl Panel {
             Item::InputScale,
             Item::Duration,
             Item::MoveInput,
+            Item::Language,
             Item::Reset,
         ]
         .into_iter()
@@ -929,6 +946,9 @@ impl Panel {
             for cap in &keys.caps {
                 texts.push((cap.clone(), SMALL_SIZE, Body));
             }
+        }
+        for language in Language::ALL {
+            texts.push((language.native_name().into(), LABEL_SIZE, Body));
         }
         texts.push((self.text(Key::SettingsAdd).into(), LABEL_SIZE, Body));
         texts.push((self.text(Key::SettingsInUse).into(), NOTE_SIZE, Caption));
@@ -1043,6 +1063,7 @@ impl Panel {
                 }
             }
             Item::InputScale | Item::Duration => self.segments_width(item),
+            Item::Language => self.names_width() + 2. * SEGMENT_PAD + CHEVRON,
             Item::Card(_) => SWITCH.x + CHEVRON + 12.,
             Item::Field(field) => match field.control() {
                 Control::Segments => self.segments_width(item),
@@ -1052,6 +1073,55 @@ impl Panel {
             },
             Item::Nav(_) | Item::Reset => 0.,
         }
+    }
+    /// What the Language control shows: the language shown, under its own name.
+    fn language_name(&self) -> &'static str {
+        self.language.native_name()
+    }
+    /// The widest name of a language, each under its own name.
+    fn names_width(&self) -> f64 {
+        Language::ALL
+            .iter()
+            .map(|language| self.width(language.native_name(), LABEL_SIZE, TextStyle::Body))
+            .fold(0., f64::max)
+    }
+    /// Where the language list sits: its frame, then one row per language of `Language::ALL`.
+    /// It hangs under its control, right-aligned with it, lifted when the window ends first.
+    fn list_rects(&self) -> Option<(Rect, Vec<Rect>)> {
+        let control = self.layout.zone(Item::Language)?.control;
+        let width = (LIST_TICK + self.names_width() + LIST_MARGIN).max(control.size().x);
+        let height = 2. * LIST_PAD + Language::ALL.len() as f64 * LIST_ROW;
+        let size = self.layout.size;
+        let left = (control.max.x - width).max(NAV_PAD);
+        let below = control.max.y + 4.;
+        let top = if below + height <= size.y - NAV_PAD {
+            below
+        } else {
+            (size.y - NAV_PAD - height).max(NAV_PAD)
+        };
+        let frame = area(left, top, left + width, top + height);
+        let rows = (0..Language::ALL.len())
+            .map(|index| {
+                let row_top = top + LIST_PAD + index as f64 * LIST_ROW;
+                area(left, row_top, left + width, row_top + LIST_ROW)
+            })
+            .collect();
+        Some((frame, rows))
+    }
+    /// The open language list, as `list_rects` places it; None while it is closed.
+    pub fn language_list_rects(&self) -> Option<(Rect, Vec<Rect>)> {
+        self.language_list?;
+        self.list_rects()
+    }
+    /// Opens the language list with the language shown lit.
+    fn open_language_list(&mut self) -> Action {
+        self.language_list = Some(
+            Language::ALL
+                .iter()
+                .position(|language| *language == self.language)
+                .unwrap_or(0),
+        );
+        Action::Repaint
     }
     /// The Add button of a shortcut not set.
     fn add_width(&self) -> f64 {
@@ -1118,12 +1188,16 @@ impl Panel {
             Page::General | Page::Presentation => {
                 // Presentation: what is on screen first, as the menu lists it, then how it shows.
                 let blocks: Vec<Vec<Item>> = if self.page == Page::General {
-                    vec![vec![
-                        Item::Startup,
-                        Item::Live,
-                        Item::MiniToolbar,
-                        Item::Shown(Shown::Board),
-                    ]]
+                    vec![
+                        vec![
+                            Item::Startup,
+                            Item::Live,
+                            Item::MiniToolbar,
+                            Item::Shown(Shown::Board),
+                        ],
+                        // Chosen here, no longer in the notification menu (Mickael, 2026-11-12).
+                        vec![Item::Language],
+                    ]
                 } else {
                     vec![
                         PRESENTATION_SHOWN.map(Item::Shown).to_vec(),
@@ -1350,6 +1424,21 @@ impl Panel {
                 }
                 if zone.control.min.x < zone.row.min.x {
                     cut.push(format!("{:?} segments", zone.item));
+                }
+            }
+        }
+        if let Some(zone) = self.layout.zone(Item::Language) {
+            let room = zone.control.size().x - 2. * SEGMENT_PAD - CHEVRON;
+            if let Some((frame, rows)) = self.list_rects() {
+                if !window.contains_rect(frame) {
+                    cut.push("language list outside the window".into());
+                }
+                for (language, row) in Language::ALL.iter().zip(rows) {
+                    let name = language.native_name();
+                    let width = measure(name, LABEL_SIZE, TextStyle::Body)?;
+                    if width > room + 0.5 || width > row.size().x - LIST_TICK - LIST_MARGIN + 0.5 {
+                        cut.push(name.into());
+                    }
                 }
             }
         }
@@ -1676,6 +1765,7 @@ impl Panel {
     pub fn show_page(&mut self, page: Page) {
         self.page = page;
         self.before = None;
+        self.language_list = None;
         self.drag = None;
         self.arrange();
     }
@@ -1734,6 +1824,17 @@ impl Panel {
     }
     fn press_unseen(&mut self, p: Point) -> Action {
         self.keyboard = false;
+        // An open list takes the click: a language is chosen, anywhere else closes it.
+        if let Some((frame, rows)) = self.language_list_rects() {
+            if let Some(index) = rows.iter().position(|row| row.contains(p)) {
+                self.language_list = None;
+                return Action::Command(Command::Language(Language::ALL[index]));
+            }
+            if !frame.contains(p) {
+                self.language_list = None;
+            }
+            return Action::Repaint;
+        }
         // While a row is being changed, a click elsewhere leaves it as it was.
         if let Some(edit) = &self.editing {
             let row = edit.row;
@@ -1803,6 +1904,7 @@ impl Panel {
             },
             Item::MoveInput => Action::Command(Command::MoveInput),
             Item::Shown(shown) => Action::Command(Command::Show(shown)),
+            Item::Language => self.open_language_list(),
             Item::Card(card) => {
                 if r.expanded(4.).contains(p) && p.x >= r.max.x - SWITCH.x - 4. {
                     self.toggle_card(card)
@@ -1894,6 +1996,19 @@ impl Panel {
     pub fn press(&mut self, p: Point) -> Action {
         self.press_unseen(p)
     }
+    /// The pointer moved to `p`, no button held: the open language list lights the row under it.
+    pub fn hover(&mut self, p: Point) -> Action {
+        let Some((_, rows)) = self.language_list_rects() else {
+            return Action::None;
+        };
+        match rows.iter().position(|row| row.contains(p)) {
+            Some(index) if self.language_list != Some(index) => {
+                self.language_list = Some(index);
+                Action::Repaint
+            }
+            _ => Action::None,
+        }
+    }
     /// The pointer moved to `p` with the button held.
     pub fn drag(&mut self, p: Point) -> Action {
         match self.drag {
@@ -1916,7 +2031,7 @@ impl Panel {
     }
     /// The wheel turned `notches` (positive: away from the user) over `p`.
     pub fn wheel(&mut self, p: Point, notches: i32) -> Action {
-        if notches == 0 {
+        if notches == 0 || self.language_list.is_some() {
             return Action::None;
         }
         match self.at(p) {
@@ -1937,6 +2052,23 @@ impl Panel {
     }
     pub fn key(&mut self, key: KeyInput) -> Action {
         self.keyboard = true;
+        // The open list takes the keys: the arrows walk it, Enter chooses, Escape closes it.
+        if let Some(lit) = self.language_list {
+            let count = Language::ALL.len();
+            match key {
+                KeyInput::Escape => self.language_list = None,
+                KeyInput::Down | KeyInput::Next => self.language_list = Some((lit + 1) % count),
+                KeyInput::Up | KeyInput::Previous => {
+                    self.language_list = Some((lit + count - 1) % count);
+                }
+                KeyInput::Activate => {
+                    self.language_list = None;
+                    return Action::Command(Command::Language(Language::ALL[lit]));
+                }
+                _ => return Action::None,
+            }
+            return Action::Repaint;
+        }
         let order = self.order();
         let index = order.iter().position(|f| *f == self.focus).unwrap_or(0) as i32;
         let moved = |delta: i32| order[(index + delta).rem_euclid(order.len() as i32) as usize];
@@ -1964,6 +2096,7 @@ impl Panel {
                 Item::Shortcut(row) => Action::Command(Command::EditShortcut(row)),
                 Item::MoveInput => Action::Command(Command::MoveInput),
                 Item::Shown(shown) => Action::Command(Command::Show(shown)),
+                Item::Language => self.open_language_list(),
                 Item::Card(card) => {
                     self.open_card(card);
                     Action::Repaint

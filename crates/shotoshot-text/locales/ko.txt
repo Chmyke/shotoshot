@@ -111,8 +111,6 @@ menu.quit = Shotoshot 종료
 menu.press_keys = 키를 누르세요
 menu.seconds = {n}초
 menu.percent = {n}%
-menu.language_auto = Windows 언어
-menu.language_system = 시스템 언어
 
 setup.title_capture = 캡처 바로 가기 키
 setup.title_instant = 즉시 스크린샷 바로 가기 키
@@ -229,7 +227,7 @@ keycap.delete == Del
 
 # Installer
 installer.language.title = Shotoshot 언어
-installer.language.description = 나중에 알림 영역의 Shotoshot 아이콘에서 변경할 수 있습니다.
+installer.language.description = 나중에 Shotoshot 설정에서 변경할 수 있습니다.
 installer.shoto_file = 편집 가능한 Shotoshot 이미지
 
 # Pointer effects

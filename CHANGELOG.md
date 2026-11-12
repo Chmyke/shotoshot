@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.45 · 2026-11-12
+
+- The language picker moved into Settings, General, where settings belong. It no longer offers a vague "system language" option: the language Windows speaks is simply ticked until you pick another.
+
 ## 0.3.44 · 2026-11-08
 
 - The paint bucket now fills a shape you draw with the pen, as long as you close it: a heart, a cloud, a wobbly circle. Lift the pen near where you started, click inside, done. Your hand does not need to be perfect.

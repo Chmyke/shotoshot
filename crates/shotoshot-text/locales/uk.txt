@@ -111,8 +111,6 @@ menu.quit = Вийти з Shotoshot
 menu.press_keys = Натисни клавіші
 menu.seconds = {n} с
 menu.percent = {n} %
-menu.language_auto = Мова Windows
-menu.language_system = Мова системи
 
 setup.title_capture = Сполучення клавіш для знімка
 setup.title_instant = Сполучення клавіш для миттєвого знімка
@@ -229,7 +227,7 @@ keycap.delete == Del
 
 # Installer
 installer.language.title = Мова Shotoshot
-installer.language.description = Її можна змінити пізніше через значок Shotoshot в області сповіщень.
+installer.language.description = Її можна змінити пізніше в налаштуваннях Shotoshot.
 installer.shoto_file = Зображення Shotoshot для редагування
 
 # Pointer effects

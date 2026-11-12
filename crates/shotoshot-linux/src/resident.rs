@@ -19,8 +19,6 @@ enum Request {
 struct Tray {
     requests: Sender<Request>,
     icons: Vec<ksni::Icon>,
-    /// The stored choice, marked in the language submenu.
-    language: LanguageChoice,
     /// Whether labwc's magnifier is on; None outside labwc, where the menu has no such line.
     magnifier: Option<bool>,
 }
@@ -43,7 +41,7 @@ impl ksni::Tray for Tray {
         self.send(Request::Capture);
     }
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
-        menu_in(language(), self.language, self.magnifier)
+        menu_in(language(), self.magnifier)
     }
 }
 
@@ -52,22 +50,10 @@ fn label(text: &str) -> String {
     text.replace('_', "__")
 }
 
-/// The name of `choice` in the language submenu: the system language in `language`, or a
-/// language under its own name.
-fn choice_label_in(choice: LanguageChoice, language: Language) -> String {
-    match choice {
-        LanguageChoice::Auto => label(tr_in(language, Key::MenuLanguageSystem)),
-        LanguageChoice::Fixed(fixed) => label(fixed.native_name()),
-    }
-}
-
-/// The menu in `language`, with `chosen` marked in the language submenu and the magnifier's
-/// line when `magnifier` says whether it is on.
-fn menu_in(
-    language: Language,
-    chosen: LanguageChoice,
-    magnifier: Option<bool>,
-) -> Vec<ksni::MenuItem<Tray>> {
+/// The menu in `language`, that language marked in the language submenu, and the magnifier's
+/// line when `magnifier` says whether it is on. Linux has no Settings window: the language
+/// stays here, without a "system language" row (Mickael, 2026-11-12).
+fn menu_in(language: Language, magnifier: Option<bool>) -> Vec<ksni::MenuItem<Tray>> {
     let item = |key: Key, request: fn() -> Request| {
         ksni::menu::StandardItem {
             label: label(tr_in(language, key)),
@@ -77,17 +63,18 @@ fn menu_in(
         .into()
     };
     let languages = ksni::menu::RadioGroup {
-        selected: chosen.position(),
-        // The stored setting decides the mark: the resident moves it once the choice is saved.
+        // Until one is picked, the language the system gave is the one shown, and ticked.
+        selected: language as usize,
+        // The language shown decides the mark: the resident moves it once the choice is saved.
         select: Box::new(|tray: &mut Tray, index| {
-            if let Some(&choice) = LanguageChoice::ALL.get(index) {
-                tray.send(Request::Language(choice));
+            if let Some(&choice) = Language::ALL.get(index) {
+                tray.send(Request::Language(LanguageChoice::Fixed(choice)));
             }
         }),
-        options: LanguageChoice::ALL
+        options: Language::ALL
             .into_iter()
-            .map(|choice| ksni::menu::RadioItem {
-                label: choice_label_in(choice, language),
+            .map(|each| ksni::menu::RadioItem {
+                label: label(each.native_name()),
                 ..Default::default()
             })
             .collect(),
@@ -153,7 +140,8 @@ fn choose_language(handle: &ksni::blocking::Handle<Tray>, choice: LanguageChoice
         return;
     }
     shotoshot_text::set_language(choice.resolve(&crate::language::system_tag()));
-    handle.update(|tray| tray.language = choice);
+    // The menu is built again, in the new language.
+    handle.update(|_| {});
 }
 
 /// ARGB32 (network order) icons from the shipped PNGs.
@@ -185,7 +173,7 @@ pub fn run() -> Result<bool, Box<dyn Error>> {
         return Ok(false);
     }
     // The menu is built in the stored language; a settings file that cannot be read leaves the
-    // session's language and marks the automatic choice (the editor reports the damage when it
+    // session's language (the editor reports the damage when it
     // opens).
     let settings = crate::settings::load().unwrap_or_default();
     crate::language::apply(&settings);
@@ -198,7 +186,6 @@ pub fn run() -> Result<bool, Box<dyn Error>> {
     let tray = Tray {
         requests,
         icons: icons(),
-        language: settings.language,
         magnifier: labwc.then_some(false),
     };
     use ksni::blocking::TrayMethods;
@@ -260,7 +247,7 @@ mod tests {
 
     #[test]
     fn tray_labels_follow_the_language() {
-        let english = labels(&menu_in(Language::En, LanguageChoice::Auto, None));
+        let english = labels(&menu_in(Language::En, None));
         assert_eq!(
             english,
             [
@@ -270,11 +257,11 @@ mod tests {
                 "Quit Shotoshot"
             ]
         );
-        let french = labels(&menu_in(Language::Fr, LanguageChoice::Auto, None));
+        let french = labels(&menu_in(Language::Fr, None));
         assert_eq!(french[3], "Quitter Shotoshot");
         assert_eq!(french[2], "Langue · Language");
         for language in Language::ALL.into_iter().skip(1) {
-            let translated = labels(&menu_in(language, LanguageChoice::Auto, None));
+            let translated = labels(&menu_in(language, None));
             assert_ne!(translated[3], english[3], "{}", language.tag());
             assert!(translated[2].ends_with(" · Language"), "{}", language.tag());
         }
@@ -288,32 +275,23 @@ mod tests {
                 _ => None,
             })
         };
-        assert_eq!(
-            checked(&menu_in(Language::En, LanguageChoice::Auto, None)),
-            None
-        );
-        let on = menu_in(Language::En, LanguageChoice::Auto, Some(true));
+        assert_eq!(checked(&menu_in(Language::En, None)), None);
+        let on = menu_in(Language::En, Some(true));
         assert_eq!(checked(&on), Some(("Magnifier".into(), true)));
-        let off = menu_in(Language::Fr, LanguageChoice::Auto, Some(false));
+        let off = menu_in(Language::Fr, Some(false));
         assert_eq!(checked(&off).map(|(_, c)| c), Some(false));
         // Right under the captures, as the switch of the Windows menu sits among its effects.
         assert!(matches!(off[2], ksni::MenuItem::Checkmark(_)));
     }
 
     #[test]
-    fn language_radio_marks_the_setting() {
-        let (selected, names) = radio(&menu_in(Language::En, LanguageChoice::Auto, None));
-        assert_eq!(selected, 0);
-        assert_eq!(names.len(), 1 + Language::ALL.len());
-        assert_eq!(names[0], "System language");
+    fn language_radio_lists_the_languages_and_marks_the_one_shown() {
         let natives: Vec<&str> = Language::ALL.iter().map(|l| l.native_name()).collect();
-        assert_eq!(names[1..], natives[..]);
-        let (_, french) = radio(&menu_in(Language::Fr, LanguageChoice::Auto, None));
-        assert_eq!(french[0], "Langue du système");
-        assert_eq!(french[1..], natives[..], "native names never change");
-        for choice in LanguageChoice::ALL {
-            let (selected, _) = radio(&menu_in(Language::De, choice, None));
-            assert_eq!(LanguageChoice::ALL[selected], choice);
+        for language in Language::ALL {
+            let (selected, names) = radio(&menu_in(language, None));
+            // No "system language" row: only the languages, under their own names.
+            assert_eq!(names, natives, "{}", language.tag());
+            assert_eq!(Language::ALL[selected], language);
         }
     }
 }

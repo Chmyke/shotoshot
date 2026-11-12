@@ -32,6 +32,9 @@ pub const EDITING: [u8; 3] = [0x1d, 0x2a, 0x31];
 const PREVIEW_DARK: [u8; 3] = [0x1b, 0x1e, 0x24];
 const PREVIEW_LIGHT: [u8; 3] = [0xf3, 0xf4, 0xf6];
 const RADIUS: f64 = 6.;
+/// The language list and its lit row: the notification menu's own colours.
+const LIST: [u8; 3] = [0x2b, 0x2b, 0x2b];
+const LIST_HOVER: [u8; 3] = [0x41, 0x41, 0x41];
 
 impl Panel {
     pub fn paint<C: Canvas>(&self, canvas: &mut C, scale: f64, now: u64) -> Result<(), C::Error> {
@@ -153,7 +156,7 @@ impl Panel {
         if self.page == Page::Pointer {
             self.paint_preview(canvas, scale, now)?;
         }
-        if self.keyboard {
+        if self.keyboard && self.language_list.is_none() {
             let focused = match self.focus {
                 Item::Nav(page) => zones.nav.iter().find(|(p, _)| *p == page).map(|(_, r)| *r),
                 item => zones.zone(item).map(|zone| zone.row),
@@ -161,6 +164,66 @@ impl Panel {
             if let Some(r) = focused {
                 canvas.stroke_round_rect(px(r), u(RADIUS), Ink::solid(ACCENT), u(1.5))?;
             }
+        }
+        self.paint_language_list(canvas, scale)
+    }
+
+    /// The open language list over the page, drawn like the notification menu: the language
+    /// shown ticked, the lit row on a lighter band.
+    fn paint_language_list<C: Canvas>(&self, canvas: &mut C, scale: f64) -> Result<(), C::Error> {
+        let Some((frame, rows)) = self.language_list_rects() else {
+            return Ok(());
+        };
+        let u = |value: f64| value * scale;
+        let px = |r: Rect| Rect {
+            min: r.min * scale,
+            max: r.max * scale,
+        };
+        canvas.fill_round_rect(px(frame), u(RADIUS), Ink::solid(LIST))?;
+        canvas.stroke_round_rect(
+            px(frame).expanded(-u(0.5)),
+            u(RADIUS),
+            Ink::solid(RULE),
+            u(1.),
+        )?;
+        for ((index, language), row) in Language::ALL.iter().enumerate().zip(rows) {
+            let r = px(row);
+            if self.language_list == Some(index) {
+                canvas.fill_round_rect(
+                    Rect {
+                        min: r.min + Point { x: u(4.), y: u(1.) },
+                        max: r.max - Point { x: u(4.), y: u(1.) },
+                    },
+                    u(4.),
+                    Ink::solid(LIST_HOVER),
+                )?;
+            }
+            if *language == self.language {
+                icon::draw(
+                    canvas,
+                    Icon::Check,
+                    Point {
+                        x: r.min.x + u(12.),
+                        y: r.center().y - u(8.),
+                    },
+                    u(0.8),
+                    TEXT,
+                )?;
+            }
+            left_text(
+                canvas,
+                language.native_name(),
+                Rect {
+                    min: Point {
+                        x: r.min.x + u(LIST_TICK),
+                        y: r.min.y,
+                    },
+                    max: r.max,
+                },
+                u(LABEL_SIZE),
+                TextStyle::Body,
+                TEXT,
+            )?;
         }
         Ok(())
     }
@@ -300,6 +363,38 @@ impl Panel {
             }
             Item::MoveInput => switch(canvas, control, self.values.moving_input, scale),
             Item::Shown(shown) => switch(canvas, control, self.is_shown(shown), scale),
+            Item::Language => {
+                canvas.fill_round_rect(control, u(4.), Ink::solid(BUTTON))?;
+                canvas.stroke_round_rect(
+                    control.expanded(-u(0.5)),
+                    u(4.),
+                    Ink::solid(BUTTON_EDGE),
+                    u(1.),
+                )?;
+                left_text(
+                    canvas,
+                    self.language_name(),
+                    Rect {
+                        min: Point {
+                            x: control.min.x + u(SEGMENT_PAD),
+                            y: control.min.y,
+                        },
+                        max: control.max,
+                    },
+                    u(LABEL_SIZE),
+                    TextStyle::Body,
+                    TEXT,
+                )?;
+                chevron_vertical(
+                    canvas,
+                    Point {
+                        x: control.max.x - u(SEGMENT_PAD / 2. + CHEVRON / 2.),
+                        y: control.center().y,
+                    },
+                    self.language_list.is_some(),
+                    scale,
+                )
+            }
             Item::Card(card) => {
                 chevron_vertical(
                     canvas,

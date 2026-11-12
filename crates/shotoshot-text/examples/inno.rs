@@ -2,7 +2,7 @@
 //! `cargo run -p shotoshot-text --example inno`. `cargo test` fails while the committed file
 //! differs from what this writes.
 
-use shotoshot_text::{Key, Language, LanguageChoice, tr_in};
+use shotoshot_text::{Key, Language, tr_in};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -51,15 +51,10 @@ fn render() -> String {
          ; crates/shotoshot-text/locales: do not edit. Included by shotoshot.iss.\n\
          [CustomMessages]\n\
          ; The choices of the language page: each language under its own name (never\n\
-         ; translated), in the order of the application's language menu. No automatic choice:\n\
+         ; translated), in the order of the application's language list. No automatic choice:\n\
          ; the language of Windows is preselected instead (WizardTag, Mickael 2026-11-04).\n",
     );
-    let fixed = LanguageChoice::ALL
-        .into_iter()
-        .filter_map(|choice| match choice {
-            LanguageChoice::Fixed(language) => Some(language),
-            LanguageChoice::Auto => None,
-        });
+    let fixed = Language::ALL.into_iter();
     let _ = writeln!(out, "ChoiceCount={}", fixed.clone().count());
     for (index, language) in fixed.enumerate() {
         let _ = writeln!(out, "ChoiceTag{index}={}", language.tag());

@@ -55,8 +55,6 @@ impl EditOp {
     }
 }
 const CLASS: PCWSTR = w!("Shotoshot.Menu");
-/// Shows the submenu of the row the pointer rests on, after the system's menu delay.
-const SHOW_TIMER: usize = 1;
 /// Empty band above the first row and below the last, in logical pixels.
 const PADDING: f64 = 4.;
 
@@ -67,15 +65,12 @@ enum Effect {
     Apply(u32),
     /// Opens or runs something: the menu closes first.
     Run(u32),
-    /// Shows the row's submenu.
-    Open,
     None,
 }
 fn effect(row: &Row) -> Effect {
     match row.kind {
-        Kind::Toggle | Kind::Choice => Effect::Apply(row.id),
+        Kind::Toggle => Effect::Apply(row.id),
         Kind::Command => Effect::Run(row.id),
-        Kind::Submenu => Effect::Open,
         Kind::Title | Kind::Separator => Effect::None,
     }
 }
@@ -212,46 +207,21 @@ impl Column {
     }
 }
 
-/// Where a submenu of `size` opens beside `root`, its top wished at `top`: on the right,
-/// flipped to the left when `work` ends first, and always inside `work`.
-fn submenu_origin(root: RECT, top: i32, size: SIZE, work: RECT) -> POINT {
-    let x = if root.right + size.cx <= work.right {
-        root.right
-    } else if root.left - size.cx >= work.left {
-        root.left - size.cx
-    } else {
-        (work.right - size.cx).max(work.left)
-    };
-    let y = top.min(work.bottom - size.cy).max(work.top);
-    POINT { x, y }
-}
-
 struct Model {
     owner: HWND,
     root: HWND,
-    sub: HWND,
     /// The notification icon, in screen pixels; empty when unknown.
     icon: RECT,
     values: Values,
     scale: f64,
-    /// The root rows, then the rows of the open submenu.
-    columns: [Column; 2],
-    /// Root row whose submenu shows.
-    open: Option<usize>,
-    selected: [Option<usize>; 2],
-    /// The arrow keys move in the submenu.
-    in_sub: bool,
+    column: Column,
+    selected: Option<usize>,
     view: View,
-    /// False for tests: windows stay off screen, where nothing fits a work area.
-    on_screen: bool,
 }
 impl Model {
-    fn window(&self, column: usize) -> HWND {
-        [self.root, self.sub][column]
-    }
-    fn redraw(&self, column: usize) {
+    fn redraw(&self) {
         unsafe {
-            let _ = InvalidateRect(Some(self.window(column)), None, false);
+            let _ = InvalidateRect(Some(self.root), None, false);
         }
     }
     fn post(&self, msg: u32, w: usize, l: isize) {
@@ -261,8 +231,6 @@ impl Model {
     }
     fn hide(&self) {
         unsafe {
-            let _ = KillTimer(Some(self.root), SHOW_TIMER);
-            let _ = ShowWindow(self.sub, SW_HIDE);
             let _ = ShowWindow(self.root, SW_HIDE);
         }
     }
@@ -270,193 +238,63 @@ impl Model {
         self.hide();
         self.post(CLOSED, usize::from(by_icon), self.root.0 as isize);
     }
-    /// Sizes the root window and places the open submenu beside it.
+    /// Sizes the window to its rows.
     fn place(&self) -> Result<()> {
         unsafe {
-            let mut root = RECT::default();
-            GetWindowRect(self.root, &mut root)?;
             SetWindowPos(
                 self.root,
                 Some(HWND_TOPMOST),
                 0,
                 0,
-                self.columns[0].width,
-                self.columns[0].height(),
+                self.column.width,
+                self.column.height(),
                 SWP_NOMOVE | SWP_NOACTIVATE,
-            )?;
-            root.right = root.left + self.columns[0].width;
-            root.bottom = root.top + self.columns[0].height();
-            let Some(open) = self.open else {
-                return Ok(());
-            };
-            let sub = &self.columns[1];
-            let beside = POINT {
-                x: root.right,
-                y: root.top + self.columns[0].top(open) - sub.top(0),
-            };
-            let mut placed = beside;
-            if self.on_screen {
-                // The root's own screen: anchored at the root's right edge, the system would
-                // take the work area of the screen beyond it and open the submenu there.
-                let mut monitor = MONITORINFO {
-                    cbSize: size_of::<MONITORINFO>() as u32,
-                    ..Default::default()
-                };
-                GetMonitorInfoW(
-                    MonitorFromRect(&root, MONITOR_DEFAULTTONEAREST),
-                    &mut monitor,
-                )
-                .ok()?;
-                placed = submenu_origin(
-                    root,
-                    beside.y,
-                    SIZE {
-                        cx: sub.width,
-                        cy: sub.height(),
-                    },
-                    monitor.rcWork,
-                );
-            }
-            SetWindowPos(
-                self.sub,
-                Some(HWND_TOPMOST),
-                placed.x,
-                placed.y,
-                sub.width,
-                sub.height(),
-                SWP_NOACTIVATE,
             )
         }
-    }
-    fn set_open(&mut self, open: Option<usize>) -> Result<()> {
-        if open == self.open {
-            return Ok(());
-        }
-        self.open = open;
-        self.selected[1] = None;
-        self.in_sub = false;
-        let rows = open.map_or(&[][..], |index| choices(ROOT[index].id));
-        self.columns[1] = Column::new(rows, &self.values, self.scale)?;
-        if open.is_some() {
-            self.place()?;
-            unsafe {
-                let _ = ShowWindow(self.sub, SW_SHOWNOACTIVATE);
-            }
-            self.redraw(1);
-        } else {
-            unsafe {
-                let _ = ShowWindow(self.sub, SW_HIDE);
-            }
-        }
-        Ok(())
     }
     fn post_edit(&self, id: u32, op: EditOp) {
         self.post(EDIT, id as usize, op.pack());
     }
-    fn activate(&mut self, column: usize, index: usize, keyboard: bool) -> Result<()> {
-        match effect(&self.columns[column].rows[index]) {
+    fn activate(&mut self, index: usize) {
+        match effect(&self.column.rows[index]) {
             Effect::Apply(id) => self.post(COMMAND, id as usize, 1),
             Effect::Run(id) => {
                 self.hide();
                 self.post(COMMAND, id as usize, 0);
             }
-            Effect::Open => {
-                self.set_open(Some(index))?;
-                if keyboard {
-                    self.in_sub = true;
-                    self.selected[1] = step(self.columns[1].rows, None, true);
-                    self.redraw(1);
-                }
-            }
             Effect::None => {}
         }
-        Ok(())
     }
-    fn hover(&mut self, column: usize, index: Option<usize>) {
-        if column == 1 {
-            // Reaching the submenu keeps it, whatever rows the pointer crossed on its way.
-            unsafe {
-                let _ = KillTimer(Some(self.root), SHOW_TIMER);
-            }
-            if self.selected[0] != self.open {
-                self.selected[0] = self.open;
-                self.redraw(0);
-            }
-            self.in_sub = true;
-            if index.is_some() && index != self.selected[1] {
-                self.selected[1] = index;
-                self.redraw(1);
-            }
-            return;
-        }
-        if index.is_none() || index == self.selected[0] {
-            return;
-        }
-        self.selected[0] = index;
-        self.in_sub = false;
-        self.redraw(0);
-        let mut delay = 400u32;
-        unsafe {
-            let _ = SystemParametersInfoW(
-                SPI_GETMENUSHOWDELAY,
-                0,
-                Some((&mut delay as *mut u32).cast()),
-                SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
-            );
-            SetTimer(Some(self.root), SHOW_TIMER, delay.max(1), None);
+    fn hover(&mut self, index: Option<usize>) {
+        if index.is_some() && index != self.selected {
+            self.selected = index;
+            self.redraw();
         }
     }
-    /// The submenu follows the row the pointer rested on.
-    fn rested(&mut self) -> Result<()> {
-        unsafe {
-            let _ = KillTimer(Some(self.root), SHOW_TIMER);
-        }
-        let open = self.selected[0].filter(|&index| ROOT[index].kind == Kind::Submenu);
-        self.set_open(open)
+    fn left(&mut self) {
+        self.selected = None;
+        self.redraw();
     }
-    fn left(&mut self, column: usize) {
-        // The row whose submenu shows stays lit, as in a native menu.
-        if column == 1 || self.open.is_none() {
-            self.selected[column] = None;
-            self.redraw(column);
-        }
-    }
-    fn key(&mut self, key: VIRTUAL_KEY) -> Result<()> {
+    fn key(&mut self, key: VIRTUAL_KEY) {
         // The keyboard lights whole rows.
         self.view.pointer = None;
-        let column = usize::from(self.in_sub);
         match key {
             VK_DOWN | VK_UP => {
-                let forward = key == VK_DOWN;
-                self.selected[column] =
-                    step(self.columns[column].rows, self.selected[column], forward);
-                if column == 0 {
-                    self.set_open(None)?;
-                }
-                self.redraw(column);
+                self.selected = step(self.column.rows, self.selected, key == VK_DOWN);
+                self.redraw();
             }
-            VK_RIGHT if column == 0 => {
-                if let Some(index) = self.selected[0]
-                    && ROOT[index].kind == Kind::Submenu
-                {
-                    self.activate(0, index, true)?;
-                }
-            }
-            VK_LEFT if column == 1 => self.set_open(None)?,
-            VK_ESCAPE if self.open.is_some() => self.set_open(None)?,
             VK_ESCAPE => self.close(false),
             VK_RETURN | VK_SPACE => {
-                if let Some(index) = self.selected[column] {
-                    self.activate(column, index, true)?;
+                if let Some(index) = self.selected {
+                    self.activate(index);
                 }
             }
             _ => {}
         }
-        Ok(())
     }
     /// The size of root row `index`, in logical pixels.
     fn row_size(&self, index: usize) -> Point {
-        let column = &self.columns[0];
+        let column = &self.column;
         Point {
             x: column.width as f64 / self.scale,
             y: (column.top(index + 1) - column.top(index)) as f64 / self.scale,
@@ -472,17 +310,17 @@ impl Model {
             with_painter(|renderer| caps_width_in(renderer, self.values.data(id), language()))?;
         Ok(x >= keys_left(self.row_size(index).x, caps))
     }
-    /// The pointer moved to `x`, `y` of `column`: a shortcut row lights its label or its keys.
-    fn point(&mut self, column: usize, x: i32, y: i32) -> Result<()> {
-        let pointer = match self.columns[column].at(y) {
-            Some(index) if column == 0 && shortcut_row(ROOT[index].id).is_some() => {
+    /// The pointer moved to `x`, `y`: a shortcut row lights its label or its keys.
+    fn point(&mut self, x: i32, y: i32) -> Result<()> {
+        let pointer = match self.column.at(y) {
+            Some(index) if shortcut_row(ROOT[index].id).is_some() => {
                 Some((ROOT[index].id, self.on_keys(index, x as f64 / self.scale)?))
             }
             _ => None,
         };
         if pointer != self.view.pointer {
             self.view.pointer = pointer;
-            self.redraw(0);
+            self.redraw();
         }
         Ok(())
     }
@@ -503,12 +341,12 @@ impl Model {
         Ok((x >= keys_left(size.x, caps)).then_some(EditOp::Begin))
     }
     /// A release at `x`, `y` while a row listens: its buttons act, anywhere else leaves it.
-    fn editing_click(&self, edit: &RowEdit, column: usize, x: f64, y: i32) -> Result<()> {
+    fn editing_click(&self, edit: &RowEdit, x: f64, y: i32) -> Result<()> {
         let Some(id) = row_id(edit.row) else {
             return Ok(());
         };
-        let index = self.columns[column].at(y);
-        if column == 1 || index.is_none_or(|index| ROOT[index].id != id) {
+        let index = self.column.at(y);
+        if index.is_none_or(|index| ROOT[index].id != id) {
             self.post_edit(id, EditOp::Cancel);
             return Ok(());
         }
@@ -531,21 +369,20 @@ impl Model {
         }
         Ok(())
     }
-    fn released(&mut self, column: usize, x: i32, y: i32) -> Result<()> {
+    fn released(&mut self, x: i32, y: i32) -> Result<()> {
         let x = x as f64 / self.scale;
         if let Some(edit) = &self.view.editing {
-            return self.editing_click(edit, column, x, y);
+            return self.editing_click(edit, x, y);
         }
-        let Some(index) = self.columns[column].at(y) else {
+        let Some(index) = self.column.at(y) else {
             return Ok(());
         };
-        if column == 0
-            && let Some(op) = self.shortcut_click(index, x)?
-        {
+        if let Some(op) = self.shortcut_click(index, x)? {
             self.post_edit(ROOT[index].id, op);
             return Ok(());
         }
-        self.activate(column, index, false)
+        self.activate(index);
+        Ok(())
     }
     /// A key while a row listens: every key goes to it, Esc leaves it and Backspace gives the
     /// default keys; a key held down repeats, and only its first press counts.
@@ -562,15 +399,15 @@ impl Model {
         };
         self.post_edit(id, op);
     }
-    fn paint(&self, hwnd: HWND, column: usize) -> Result<()> {
+    fn paint(&self, hwnd: HWND) -> Result<()> {
         unsafe {
             let mut paint = PAINTSTRUCT::default();
             let dc = BeginPaint(hwnd, &mut paint);
-            let painted = self.columns[column].paint(
+            let painted = self.column.paint(
                 dc,
                 POINT::default(),
                 &self.values,
-                self.selected[column],
+                self.selected,
                 &self.view,
                 self.scale,
             );
@@ -579,7 +416,6 @@ impl Model {
         }
     }
     fn handle(&mut self, hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> Result<Option<LRESULT>> {
-        let column = usize::from(hwnd == self.sub);
         let y = (l.0 >> 16) as u16 as i16 as i32;
         let x = l.0 as u16 as i16 as i32;
         if let Some(edit) = &self.view.editing {
@@ -591,12 +427,12 @@ impl Model {
                 }
                 WM_CHAR | WM_SYSCHAR => return Ok(Some(LRESULT(0))),
                 // The rows keep still while one listens.
-                WM_MOUSEMOVE | WM_TIMER => return Ok(Some(LRESULT(0))),
+                WM_MOUSEMOVE => return Ok(Some(LRESULT(0))),
                 _ => {}
             }
         }
         match msg {
-            WM_PAINT => self.paint(hwnd, column)?,
+            WM_PAINT => self.paint(hwnd)?,
             WM_MOUSEMOVE => {
                 unsafe {
                     let _ = TrackMouseEvent(&mut TRACKMOUSEEVENT {
@@ -606,14 +442,13 @@ impl Model {
                         ..Default::default()
                     });
                 }
-                self.hover(column, self.columns[column].at(y));
-                self.point(column, x, y)?;
+                self.hover(self.column.at(y));
+                self.point(x, y)?;
             }
-            WM_MOUSELEAVE => self.left(column),
+            WM_MOUSELEAVE => self.left(),
             // Released, as in a native menu, with either button.
-            WM_LBUTTONUP | WM_RBUTTONUP => self.released(column, x, y)?,
-            WM_KEYDOWN => self.key(VIRTUAL_KEY(w.0 as u16))?,
-            WM_TIMER if w.0 == SHOW_TIMER => self.rested()?,
+            WM_LBUTTONUP | WM_RBUTTONUP => self.released(x, y)?,
+            WM_KEYDOWN => self.key(VIRTUAL_KEY(w.0 as u16)),
             WM_ACTIVATE if w.0 & 0xffff == WA_INACTIVE as usize => {
                 let mut pointer = POINT::default();
                 let pressed = unsafe {
@@ -634,7 +469,7 @@ unsafe extern "system" fn popup_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM)
     // those find it borrowed and get the default handling.
     let result = std::panic::catch_unwind(|| unsafe {
         match msg {
-            // The root keeps the foreground; clicking the submenu must not take it.
+            // A click must not activate anew: the menu keeps the foreground it was given.
             WM_MOUSEACTIVATE => return LRESULT(MA_NOACTIVATE as isize),
             WM_ERASEBKGND => return LRESULT(1),
             _ => {}
@@ -643,7 +478,7 @@ unsafe extern "system" fn popup_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM)
         if !model.is_null()
             && let Ok(mut model) = (*model).try_borrow_mut()
         {
-            // Best effort: a failed paint or submenu leaves the menu usable.
+            // Best effort: a failed paint leaves the menu usable.
             if let Ok(Some(result)) = model.handle(hwnd, msg, w, l) {
                 return result;
             }
@@ -683,73 +518,57 @@ impl Popup {
             {
                 return Err(Error::from_thread());
             }
-            let create = |style: WINDOW_EX_STYLE, parent: Option<HWND>| {
-                CreateWindowExW(
-                    WS_EX_TOOLWINDOW | WS_EX_TOPMOST | style,
-                    CLASS,
-                    w!("Shotoshot menu"),
-                    WS_POPUP,
-                    at.x,
-                    at.y,
-                    1,
-                    1,
-                    parent,
-                    None,
-                    Some(instance.into()),
-                    None,
-                )
-            };
-            let root = crate::resources::OwnedWindow(create(WINDOW_EX_STYLE(0), None)?);
-            // Owned by the root: it stays above it and dies with it.
-            let sub = create(WS_EX_NOACTIVATE, Some(root.0))?;
+            let root = crate::resources::OwnedWindow(CreateWindowExW(
+                WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+                CLASS,
+                w!("Shotoshot menu"),
+                WS_POPUP,
+                at.x,
+                at.y,
+                1,
+                1,
+                None,
+                None,
+                Some(instance.into()),
+                None,
+            )?);
             let scale = GetDpiForWindow(root.0).max(96) as f64 / 96.;
-            for window in [root.0, sub] {
-                let corners = DWMWCP_ROUNDSMALL;
-                let _ = DwmSetWindowAttribute(
-                    window,
-                    DWMWA_WINDOW_CORNER_PREFERENCE,
-                    (&corners as *const DWM_WINDOW_CORNER_PREFERENCE).cast(),
-                    std::mem::size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32,
-                );
-                let border = notice::color(0x494949);
-                let _ = DwmSetWindowAttribute(
-                    window,
-                    DWMWA_BORDER_COLOR,
-                    (&border as *const COLORREF).cast(),
-                    std::mem::size_of::<COLORREF>() as u32,
-                );
-            }
+            let corners = DWMWCP_ROUNDSMALL;
+            let _ = DwmSetWindowAttribute(
+                root.0,
+                DWMWA_WINDOW_CORNER_PREFERENCE,
+                (&corners as *const DWM_WINDOW_CORNER_PREFERENCE).cast(),
+                std::mem::size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32,
+            );
+            let border = notice::color(0x494949);
+            let _ = DwmSetWindowAttribute(
+                root.0,
+                DWMWA_BORDER_COLOR,
+                (&border as *const COLORREF).cast(),
+                std::mem::size_of::<COLORREF>() as u32,
+            );
             let model = Box::new(RefCell::new(Model {
                 owner,
                 root: root.0,
-                sub,
                 icon,
-                columns: [
-                    Column::new(ROOT, &values, scale)?,
-                    Column::new(&[], &values, scale)?,
-                ],
+                column: Column::new(ROOT, &values, scale)?,
                 values,
                 scale,
-                open: None,
-                selected: [None; 2],
-                in_sub: false,
+                selected: None,
                 view: View::default(),
-                on_screen,
             }));
-            for window in [root.0, sub] {
-                SetWindowLongPtrW(window, GWLP_USERDATA, &*model as *const _ as isize);
-            }
+            SetWindowLongPtrW(root.0, GWLP_USERDATA, &*model as *const _ as isize);
             let popup = Self {
                 model,
                 _painter: painter,
             };
-            // The popup now destroys both windows.
+            // The popup now destroys the window.
             std::mem::forget(root);
             let size = {
                 let model = popup.model.borrow();
                 SIZE {
-                    cx: model.columns[0].width,
-                    cy: model.columns[0].height(),
+                    cx: model.column.width,
+                    cy: model.column.height(),
                 }
             };
             let mut placed = RECT {
@@ -790,7 +609,7 @@ impl Popup {
     pub(in crate::app) fn set_editing(&self, editing: Option<RowEdit>) {
         let mut model = self.model.borrow_mut();
         model.view.editing = editing;
-        model.redraw(0);
+        model.redraw();
     }
     /// The row listening, as the menu shows it.
     pub(in crate::app) fn editing(&self) -> Option<RowEdit> {
@@ -800,20 +619,15 @@ impl Popup {
     pub(in crate::app) fn set_before(&self, row: Option<ShortcutRow>) {
         let mut model = self.model.borrow_mut();
         model.view.before = row.and_then(row_id);
-        model.redraw(0);
+        model.redraw();
     }
     /// Shows `values`, after App applied a setting.
     pub(in crate::app) fn update(&self, values: Values) -> Result<()> {
         let mut model = self.model.borrow_mut();
-        let rows = model.open.map_or(&[][..], |index| choices(ROOT[index].id));
-        model.columns = [
-            Column::new(ROOT, &values, model.scale)?,
-            Column::new(rows, &values, model.scale)?,
-        ];
+        model.column = Column::new(ROOT, &values, model.scale)?;
         model.values = values;
         model.place()?;
-        model.redraw(0);
-        model.redraw(1);
+        model.redraw();
         Ok(())
     }
 }
@@ -821,11 +635,8 @@ impl Drop for Popup {
     fn drop(&mut self) {
         let model = self.model.borrow();
         unsafe {
-            // ORDER: The windows forget the model before it goes.
-            for window in [model.sub, model.root] {
-                SetWindowLongPtrW(window, GWLP_USERDATA, 0);
-            }
-            // Destroys the owned submenu too.
+            // ORDER: The window forgets the model before it goes.
+            SetWindowLongPtrW(model.root, GWLP_USERDATA, 0);
             let _ = DestroyWindow(model.root);
         }
     }

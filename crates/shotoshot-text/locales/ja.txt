@@ -111,8 +111,6 @@ menu.quit = Shotoshot を終了
 menu.press_keys = キーを押す
 menu.seconds = {n} 秒
 menu.percent = {n}%
-menu.language_auto = Windows の言語
-menu.language_system = システムの言語
 
 setup.title_capture = キャプチャのショートカット
 setup.title_instant = 即時スクリーンショットのショートカット
@@ -229,7 +227,7 @@ keycap.delete == Del
 
 # Installer
 installer.language.title = Shotoshot の言語
-installer.language.description = 後で通知領域の Shotoshot アイコンから変更できます。
+installer.language.description = 後で Shotoshot の設定から変更できます。
 installer.shoto_file = 編集可能な Shotoshot 画像
 
 # Pointer effects

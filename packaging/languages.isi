@@ -2,7 +2,7 @@
 ; crates/shotoshot-text/locales: do not edit. Included by shotoshot.iss.
 [CustomMessages]
 ; The choices of the language page: each language under its own name (never
-; translated), in the order of the application's language menu. No automatic choice:
+; translated), in the order of the application's language list. No automatic choice:
 ; the language of Windows is preselected instead (WizardTag, Mickael 2026-11-04).
 ChoiceCount=15
 ChoiceTag0=en
@@ -38,75 +38,75 @@ ChoiceName14=Čeština
 ; en
 english.WizardTag=en
 english.LanguagePageTitle=Shotoshot language
-english.LanguagePageDescription=You can change it later from the Shotoshot icon in the notification area.
+english.LanguagePageDescription=You can change it later in the Shotoshot settings.
 english.ShotoFile=Shotoshot editable image
 ; zh-Hans
 chinesesimplified.WizardTag=zh-Hans
 chinesesimplified.LanguagePageTitle=Shotoshot 语言
-chinesesimplified.LanguagePageDescription=以后可以通过通知区域中的 Shotoshot 图标更改。
+chinesesimplified.LanguagePageDescription=以后可以在 Shotoshot 设置中更改。
 chinesesimplified.ShotoFile=可编辑的 Shotoshot 图像
 ; ru
 russian.WizardTag=ru
 russian.LanguagePageTitle=Язык Shotoshot
-russian.LanguagePageDescription=Его можно изменить позже через значок Shotoshot в области уведомлений.
+russian.LanguagePageDescription=Его можно изменить позже в настройках Shotoshot.
 russian.ShotoFile=Редактируемое изображение Shotoshot
 ; es
 spanish.WizardTag=es
 spanish.LanguagePageTitle=Idioma de Shotoshot
-spanish.LanguagePageDescription=Puedes cambiarlo más tarde desde el icono de Shotoshot en el área de notificación.
+spanish.LanguagePageDescription=Puedes cambiarlo más tarde en la configuración de Shotoshot.
 spanish.ShotoFile=Imagen editable de Shotoshot
 ; pt-BR
 brazilianportuguese.WizardTag=pt-BR
 brazilianportuguese.LanguagePageTitle=Idioma do Shotoshot
-brazilianportuguese.LanguagePageDescription=Você pode alterá-lo depois pelo ícone do Shotoshot na área de notificação.
+brazilianportuguese.LanguagePageDescription=Você pode alterá-lo depois nas configurações do Shotoshot.
 brazilianportuguese.ShotoFile=Imagem editável do Shotoshot
 ; de
 german.WizardTag=de
 german.LanguagePageTitle=Sprache von Shotoshot
-german.LanguagePageDescription=Sie können sie später über das Shotoshot-Symbol im Infobereich ändern.
+german.LanguagePageDescription=Sie können sie später in den Einstellungen von Shotoshot ändern.
 german.ShotoFile=Bearbeitbares Shotoshot-Bild
 ; ja
 japanese.WizardTag=ja
 japanese.LanguagePageTitle=Shotoshot の言語
-japanese.LanguagePageDescription=後で通知領域の Shotoshot アイコンから変更できます。
+japanese.LanguagePageDescription=後で Shotoshot の設定から変更できます。
 japanese.ShotoFile=編集可能な Shotoshot 画像
 ; fr
 french.WizardTag=fr
 french.LanguagePageTitle=Langue de Shotoshot
-french.LanguagePageDescription=Vous pourrez la changer plus tard depuis l’icône de Shotoshot dans la zone de notification.
+french.LanguagePageDescription=Vous pourrez la changer plus tard dans les paramètres de Shotoshot.
 french.ShotoFile=Image Shotoshot modifiable
 ; pl
 polish.WizardTag=pl
 polish.LanguagePageTitle=Język Shotoshot
-polish.LanguagePageDescription=Możesz go później zmienić za pomocą ikony Shotoshot w obszarze powiadomień.
+polish.LanguagePageDescription=Możesz go później zmienić w ustawieniach Shotoshot.
 polish.ShotoFile=Edytowalny obraz Shotoshot
 ; ko
 korean.WizardTag=ko
 korean.LanguagePageTitle=Shotoshot 언어
-korean.LanguagePageDescription=나중에 알림 영역의 Shotoshot 아이콘에서 변경할 수 있습니다.
+korean.LanguagePageDescription=나중에 Shotoshot 설정에서 변경할 수 있습니다.
 korean.ShotoFile=편집 가능한 Shotoshot 이미지
 ; zh-Hant
 chinesetraditional.WizardTag=zh-Hant
 chinesetraditional.LanguagePageTitle=Shotoshot 語言
-chinesetraditional.LanguagePageDescription=之後可以從通知區域中的 Shotoshot 圖示變更。
+chinesetraditional.LanguagePageDescription=之後可以在 Shotoshot 設定中變更。
 chinesetraditional.ShotoFile=可編輯的 Shotoshot 影像
 ; tr
 turkish.WizardTag=tr
 turkish.LanguagePageTitle=Shotoshot dili
-turkish.LanguagePageDescription=Daha sonra bildirim alanındaki Shotoshot simgesinden değiştirebilirsiniz.
+turkish.LanguagePageDescription=Daha sonra Shotoshot ayarlarından değiştirebilirsiniz.
 turkish.ShotoFile=Düzenlenebilir Shotoshot görüntüsü
 ; uk
 ukrainian.WizardTag=uk
 ukrainian.LanguagePageTitle=Мова Shotoshot
-ukrainian.LanguagePageDescription=Її можна змінити пізніше через значок Shotoshot в області сповіщень.
+ukrainian.LanguagePageDescription=Її можна змінити пізніше в налаштуваннях Shotoshot.
 ukrainian.ShotoFile=Зображення Shotoshot для редагування
 ; it
 italian.WizardTag=it
 italian.LanguagePageTitle=Lingua di Shotoshot
-italian.LanguagePageDescription=Potrai cambiarla in seguito dall’icona di Shotoshot nell’area di notifica.
+italian.LanguagePageDescription=Potrai cambiarla in seguito nelle impostazioni di Shotoshot.
 italian.ShotoFile=Immagine Shotoshot modificabile
 ; cs
 czech.WizardTag=cs
 czech.LanguagePageTitle=Jazyk aplikace Shotoshot
-czech.LanguagePageDescription=Později ho můžete změnit pomocí ikony Shotoshot v oznamovací oblasti.
+czech.LanguagePageDescription=Později ho můžete změnit v nastavení Shotoshot.
 czech.ShotoFile=Upravitelný obrázek Shotoshot

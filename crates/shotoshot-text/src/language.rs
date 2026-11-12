@@ -165,7 +165,8 @@ impl Language {
     }
 }
 
-/// What the user chose in the settings: follow the system, or one fixed language.
+/// What the user chose in the settings: one fixed language, or `Auto` (written by the installer)
+/// until one is picked, which follows the system. No menu offers `Auto` (Mickael, 2026-11-12).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum LanguageChoice {
     #[default]
@@ -174,26 +175,6 @@ pub enum LanguageChoice {
 }
 
 impl LanguageChoice {
-    /// Every choice in the order of a language menu: the automatic one, then each language
-    /// in table order.
-    pub const ALL: [LanguageChoice; 1 + Language::ALL.len()] = {
-        let mut choices = [LanguageChoice::Auto; 1 + Language::ALL.len()];
-        let mut index = 0;
-        while index < Language::ALL.len() {
-            choices[index + 1] = LanguageChoice::Fixed(Language::ALL[index]);
-            index += 1;
-        }
-        choices
-    };
-
-    /// The place of this choice in [`LanguageChoice::ALL`].
-    pub fn position(self) -> usize {
-        match self {
-            LanguageChoice::Auto => 0,
-            LanguageChoice::Fixed(language) => 1 + language as usize,
-        }
-    }
-
     /// The value stored in the settings: `auto` or a language tag.
     pub fn encode(self) -> &'static str {
         match self {
@@ -279,17 +260,6 @@ mod tests {
         for language in Language::ALL {
             let choice = LanguageChoice::Fixed(language);
             assert_eq!(LanguageChoice::decode(choice.encode()), choice);
-        }
-    }
-
-    #[test]
-    fn menu_choices_start_with_auto_then_follow_the_table() {
-        assert_eq!(LanguageChoice::ALL[0], LanguageChoice::Auto);
-        for (index, choice) in LanguageChoice::ALL.into_iter().enumerate() {
-            assert_eq!(choice.position(), index);
-        }
-        for (language, choice) in Language::ALL.into_iter().zip(&LanguageChoice::ALL[1..]) {
-            assert_eq!(*choice, LanguageChoice::Fixed(language));
         }
     }
 

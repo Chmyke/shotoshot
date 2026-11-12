@@ -111,8 +111,6 @@ menu.quit = Ukončit Shotoshot
 menu.press_keys = Stiskni klávesy
 menu.seconds = {n} s
 menu.percent = {n} %
-menu.language_auto = Jazyk Windows
-menu.language_system = Jazyk systému
 
 setup.title_capture = Zkratka pro snímání
 setup.title_instant = Zkratka pro okamžitý snímek obrazovky
@@ -229,7 +227,7 @@ keycap.delete == Del
 
 # Installer
 installer.language.title = Jazyk aplikace Shotoshot
-installer.language.description = Později ho můžete změnit pomocí ikony Shotoshot v oznamovací oblasti.
+installer.language.description = Později ho můžete změnit v nastavení Shotoshot.
 installer.shoto_file = Upravitelný obrázek Shotoshot
 
 # Pointer effects

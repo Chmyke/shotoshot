@@ -646,3 +646,71 @@ fn a_row_being_changed_answers_its_buttons_and_a_click_elsewhere_cancels() {
     on(&mut panel, Page::General);
     assert_eq!(panel.before, None);
 }
+
+/// The language is chosen on the General page, no longer in the notification menu: its control
+/// names the language shown and opens the list of the fifteen (Mickael, 2026-11-12).
+#[test]
+fn the_general_page_names_the_language_and_opens_its_list() {
+    let mut panel = panel_in(Language::De);
+    let language = zone(&panel, Item::Language);
+    assert_eq!(Item::Language.icon(), Icon::Globe);
+    assert_eq!(panel.label(Item::Language), "Sprache · Language");
+    assert_eq!(panel.language_name(), "Deutsch");
+    let name = measure("Deutsch", LABEL_SIZE, TextStyle::Body).unwrap();
+    assert!(language.control.size().x >= name + 2. * SEGMENT_PAD + CHEVRON);
+    // A click opens the list, the language shown lit; a click outside closes it.
+    assert_eq!(panel.language_list_rects(), None);
+    assert_eq!(panel.press(language.control.center()), Action::Repaint);
+    let (frame, rows) = panel.language_list_rects().expect("the list opens");
+    assert_eq!(rows.len(), Language::ALL.len(), "no system language row");
+    assert_eq!(panel.language_list, Some(Language::De as usize));
+    let window = area(0., 0., panel.layout.size.x, panel.layout.size.y);
+    assert!(window.contains_rect(frame));
+    assert_eq!(panel.press(Point { x: 1., y: 1. }), Action::Repaint);
+    assert_eq!(panel.language_list, None, "a click outside closes it");
+    assert_eq!(panel.page, Page::General, "and does nothing else");
+    // The keyboard opens it too, and Escape closes it without closing the window.
+    panel.focus = Item::Language;
+    assert_eq!(panel.key(KeyInput::Activate), Action::Repaint);
+    assert!(panel.language_list.is_some());
+    assert_eq!(panel.key(KeyInput::Escape), Action::Repaint);
+    assert_eq!(panel.language_list, None);
+    assert_eq!(panel.key(KeyInput::Escape), Action::Close);
+}
+
+#[test]
+fn a_language_chosen_from_the_list_is_that_language() {
+    let mut panel = panel();
+    let control = zone(&panel, Item::Language).control;
+    panel.press(control.center());
+    let (_, rows) = panel.language_list_rects().unwrap();
+    // The pointer lights the row under it, a click chooses it and closes the list.
+    let japanese = rows[Language::Ja as usize].center();
+    assert_eq!(panel.hover(japanese), Action::Repaint);
+    assert_eq!(panel.language_list, Some(Language::Ja as usize));
+    assert_eq!(panel.hover(japanese), Action::None, "already lit");
+    assert_eq!(
+        panel.press(japanese),
+        Action::Command(Command::Language(Language::Ja))
+    );
+    assert_eq!(panel.language_list, None);
+    // From the keyboard: down from English to the next language, then Enter.
+    panel.focus = Item::Language;
+    panel.key(KeyInput::Activate);
+    panel.key(KeyInput::Down);
+    assert_eq!(
+        panel.key(KeyInput::Activate),
+        Action::Command(Command::Language(Language::ALL[1]))
+    );
+    // Every language of the list is offered, each once.
+    panel.press(control.center());
+    let (_, rows) = panel.language_list_rects().unwrap();
+    for (index, row) in rows.iter().enumerate() {
+        panel.language_list = Some(0);
+        assert_eq!(
+            panel.press(row.center()),
+            Action::Command(Command::Language(Language::ALL[index]))
+        );
+        panel.press(control.center());
+    }
+}

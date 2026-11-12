@@ -81,7 +81,7 @@ fn an_edit_survives_its_message() {
 fn a_click_on_the_keys_changes_them_and_on_the_label_runs_the_command() {
     let owner = owner();
     let popup = hidden(owner.0);
-    let (width, root) = (popup.model.borrow().columns[0].width, popup.root());
+    let (width, root) = (popup.model.borrow().column.width, popup.root());
     let column = |popup: &Popup| Column::new(ROOT, &popup.model.borrow().values, 1.).unwrap();
     unsafe { click_at(root, &column(&popup), index(1), width - 20) };
     assert_eq!(posted(owner.0), [edit(1, EditOp::Begin)]);
@@ -99,7 +99,7 @@ fn a_click_on_the_keys_changes_them_and_on_the_label_runs_the_command() {
 fn the_pointer_lights_the_label_or_the_keys_of_a_shortcut_row() {
     let owner = owner();
     let popup = hidden(owner.0);
-    let (width, root) = (popup.model.borrow().columns[0].width, popup.root());
+    let (width, root) = (popup.model.borrow().column.width, popup.root());
     let column = Column::new(ROOT, &popup.model.borrow().values, 1.).unwrap();
     let rest = |id: u32, x: i32| {
         let y = (column.top(index(id)) + column.top(index(id) + 1)) / 2;
@@ -112,7 +112,7 @@ fn the_pointer_lights_the_label_or_the_keys_of_a_shortcut_row() {
             );
         }
         let model = popup.model.borrow();
-        (model.selected[0], model.view.pointer)
+        (model.selected, model.view.pointer)
     };
     assert_eq!(rest(1, 20), (Some(index(1)), Some((1, false))));
     assert_eq!(rest(1, width - 20), (Some(index(1)), Some((1, true))));
@@ -172,7 +172,7 @@ fn a_listening_row_takes_every_key_and_escape_keeps_the_menu() {
         ],
         "nothing closes the menu"
     );
-    assert_eq!(popup.model.borrow().selected, [None; 2]);
+    assert_eq!(popup.model.borrow().selected, None);
     // A click on another row leaves the listening one as it was, and runs nothing.
     let column = Column::new(ROOT, &popup.model.borrow().values, 1.).unwrap();
     unsafe { click(root, &column, index(3)) };
@@ -182,7 +182,7 @@ fn a_listening_row_takes_every_key_and_escape_keeps_the_menu() {
     popup.set_editing(None);
     key(WM_KEYDOWN, VK_DOWN, false);
     assert!(posted(owner.0).is_empty());
-    assert!(popup.model.borrow().selected[0].is_some());
+    assert!(popup.model.borrow().selected.is_some());
 }
 
 #[test]
@@ -191,22 +191,11 @@ fn settings_stay_open_and_commands_close() {
         let expected = match row.id {
             // Switches: the menu stays open to set several in a row.
             101..=104 | 107 | 9 => Effect::Apply(row.id),
-            // It opens a submenu, which stays open on its choices too.
-            150 => Effect::Open,
             // Each opens or runs something else; a shape row records its shortcut.
             1 | 3 | 7 | 8 | 10 | 170..=173 => Effect::Run(row.id),
             _ => Effect::None,
         };
         assert_eq!(effect(row), expected, "{}", label_in(row, Language::En));
-    }
-    // A language is a setting too: the menu shows it at once.
-    for choice in &LANGUAGES {
-        assert_eq!(
-            effect(choice),
-            Effect::Apply(choice.id),
-            "{}",
-            label_in(choice, Language::En)
-        );
     }
 }
 
@@ -220,7 +209,7 @@ fn arrow_keys_skip_titles_and_wrap() {
     // Through the shape shortcuts, then to the settings over the separator, and around.
     assert_eq!(step(ROOT, Some(index(102)), true), Some(index(171)));
     assert_eq!(step(ROOT, Some(index(173)), true), Some(index(170)));
-    assert_eq!(step(ROOT, Some(index(150)), true), Some(index(3)));
+    assert_eq!(step(ROOT, Some(index(170)), true), Some(index(3)));
     assert_eq!(step(ROOT, Some(index(3)), true), Some(0));
     assert_eq!(step(&[], None, true), None);
     let all_inert = &ROOT[index(90)..=index(90)];
@@ -272,7 +261,7 @@ fn a_setting_keeps_the_menu_open_and_a_command_closes_it() {
     let popup = hidden(owner.0);
     unsafe {
         let _ = ShowWindow(popup.root(), SW_SHOWNOACTIVATE);
-        let root = popup.model.borrow().columns[0].tops.clone();
+        let root = popup.model.borrow().column.tops.clone();
         let column = Column {
             rows: ROOT,
             tops: root,
@@ -290,82 +279,6 @@ fn a_setting_keeps_the_menu_open_and_a_command_closes_it() {
 }
 
 #[test]
-fn a_submenu_stays_on_the_screen_of_its_menu() {
-    let rect = |left, top, right, bottom| RECT {
-        left,
-        top,
-        right,
-        bottom,
-    };
-    let size = SIZE { cx: 200, cy: 300 };
-    // The left screen of two, the menu against its right edge: the submenu flips left
-    // instead of opening on the right screen.
-    let work = rect(0, 0, 1920, 1040);
-    let root = rect(1620, 500, 1920, 900);
-    assert_eq!(
-        submenu_origin(root, 600, size, work),
-        POINT { x: 1420, y: 600 }
-    );
-    // Room on the right: beside the menu, pulled up above the taskbar.
-    let root = rect(100, 700, 400, 1000);
-    assert_eq!(
-        submenu_origin(root, 900, size, work),
-        POINT { x: 400, y: 740 }
-    );
-    // The same on the right screen, whose coordinates start at 1920.
-    let work = rect(1920, 0, 3840, 1040);
-    let root = rect(3540, 100, 3840, 400);
-    assert_eq!(
-        submenu_origin(root, 150, size, work),
-        POINT { x: 3340, y: 150 }
-    );
-}
-
-#[test]
-fn a_submenu_choice_keeps_both_open() {
-    let owner = owner();
-    let popup = hidden(owner.0);
-    unsafe {
-        let _ = ShowWindow(popup.root(), SW_SHOWNOACTIVATE);
-        let tops = popup.model.borrow().columns[0].tops.clone();
-        click(
-            popup.root(),
-            &Column {
-                rows: ROOT,
-                tops,
-                width: 0,
-            },
-            index(150),
-        );
-        let (sub, tops) = {
-            let model = popup.model.borrow();
-            assert_eq!(model.open, Some(index(150)));
-            (model.sub, model.columns[1].tops.clone())
-        };
-        assert!(IsWindowVisible(sub).as_bool());
-        click(
-            sub,
-            &Column {
-                rows: &LANGUAGES,
-                tops,
-                width: 0,
-            },
-            6,
-        );
-        assert_eq!(posted(owner.0), [(COMMAND, 157, 1)]);
-        assert!(IsWindowVisible(sub).as_bool() && IsWindowVisible(popup.root()).as_bool());
-        // The shown choice follows the setting App applied.
-        popup
-            .update(Values {
-                language: LanguageChoice::Fixed(Language::De),
-                ..Default::default()
-            })
-            .unwrap();
-        assert!(popup.model.borrow().values.checked(157));
-    }
-}
-
-#[test]
 fn the_keyboard_walks_the_menu_and_escape_closes_it() {
     let owner = owner();
     let popup = hidden(owner.0);
@@ -376,22 +289,16 @@ fn the_keyboard_walks_the_menu_and_escape_closes_it() {
     for _ in 0..6 {
         key(VK_DOWN);
     }
-    assert_eq!(popup.model.borrow().selected[0], Some(index(101)));
+    assert_eq!(popup.model.borrow().selected, Some(index(101)));
     key(VK_SPACE);
     assert_eq!(posted(owner.0), [(COMMAND, 101, 1)]);
-    // Past the other switches, the shape shortcuts and the settings, into the languages.
-    for _ in 0..9 {
+    // Past the other switches and the shape shortcuts, to the settings: Enter opens them.
+    for _ in 0..8 {
         key(VK_DOWN);
     }
-    assert_eq!(popup.model.borrow().selected[0], Some(index(150)));
-    key(VK_RIGHT);
-    key(VK_DOWN);
+    assert_eq!(popup.model.borrow().selected, Some(index(170)));
     key(VK_RETURN);
-    assert_eq!(posted(owner.0), [(COMMAND, 152, 1)]);
-    // Escape closes the submenu first, then the menu.
-    key(VK_ESCAPE);
-    assert_eq!(popup.model.borrow().open, None);
-    assert_eq!(posted(owner.0), []);
+    assert_eq!(posted(owner.0), [(COMMAND, 170, 0)]);
     key(VK_ESCAPE);
     assert_eq!(posted(owner.0), [(CLOSED, 0, popup.root().0 as isize)]);
 }
@@ -484,7 +391,7 @@ fn real_desktop_the_menu_keeps_the_foreground_through_a_setting_and_closes_when_
     assert_eq!((bounds.left, bounds.top), (at.x, at.y));
     let row = {
         let model = popup.model.borrow();
-        let column = &model.columns[0];
+        let column = &model.column;
         (column.top(index(101)) + column.top(index(101) + 1)) / 2
     };
     unsafe { SetCursorPos(bounds.left + 30, bounds.top + row).unwrap() };

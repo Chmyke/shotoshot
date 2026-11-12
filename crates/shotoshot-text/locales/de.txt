@@ -111,8 +111,6 @@ menu.quit = Shotoshot beenden
 menu.press_keys = Tasten drücken
 menu.seconds = {n} s
 menu.percent = {n} %
-menu.language_auto = Windows-Sprache
-menu.language_system = Systemsprache
 
 setup.title_capture = Tastenkürzel für Aufnahme
 setup.title_instant = Tastenkürzel für Sofort-Screenshot
@@ -229,7 +227,7 @@ keycap.delete = Entf
 
 # Installer
 installer.language.title = Sprache von Shotoshot
-installer.language.description = Sie können sie später über das Shotoshot-Symbol im Infobereich ändern.
+installer.language.description = Sie können sie später in den Einstellungen von Shotoshot ändern.
 installer.shoto_file = Bearbeitbares Shotoshot-Bild
 
 # Pointer effects

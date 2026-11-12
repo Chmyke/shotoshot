@@ -5,7 +5,7 @@ use super::*;
 use crate::render::{D2dCanvas, Renderer};
 use crate::settings::Shortcut;
 use shotoshot_core::{Rect, Tool};
-use shotoshot_text::{Key, Language, LanguageChoice, language, tr_in};
+use shotoshot_text::{Key, Language, language, tr_in};
 pub(super) use shotoshot_ui::icon::Icon;
 pub(super) use shotoshot_ui::icon::draw as draw_icon;
 use shotoshot_ui::settings_panel::{RowEdit, ShortcutRow};
@@ -21,20 +21,12 @@ enum Kind {
     /// Runs or opens something; shows its shortcut when it has one.
     Command,
     Toggle,
-    /// Opens a submenu of choices and shows the current one.
-    Submenu,
-    /// One value of a submenu; the current one is ticked.
-    Choice,
 }
 
 /// What a row shows as its name.
 #[derive(Clone, Copy)]
 enum Label {
     Text(Key),
-    /// The language submenu: its word in the interface language, then the English one.
-    Languages,
-    /// A language under its own name, whatever the interface language.
-    Native(Language),
     Blank,
 }
 
@@ -65,15 +57,6 @@ const fn noted(row: Row, note: Key) -> Row {
     Row {
         note: Some(note),
         ..row
-    }
-}
-const fn choice(id: u32, label: Label) -> Row {
-    Row {
-        id,
-        label,
-        icon: Icon::None,
-        kind: Kind::Choice,
-        note: None,
     }
 }
 
@@ -131,49 +114,18 @@ const ROOT: &[Row] = &[
         kind: Kind::Separator,
         note: None,
     },
+    // The language is chosen there too, no longer here (Mickael, 2026-11-12).
     row(170, Key::SettingsTitle, Icon::Gear, Kind::Command),
-    // Right above Quit: a fixed place, found without reading the menu.
-    Row {
-        id: 150,
-        label: Label::Languages,
-        icon: Icon::Globe,
-        kind: Kind::Submenu,
-        note: None,
-    },
     row(3, Key::MenuQuit, Icon::Power, Kind::Command),
 ];
-/// The automatic choice (151), then every language in table order (152..=166).
-const LANGUAGES: [Row; 1 + Language::ALL.len()] = {
-    let mut rows = [choice(151, Label::Text(Key::MenuLanguageAuto)); 1 + Language::ALL.len()];
-    let mut index = 0;
-    while index < Language::ALL.len() {
-        rows[index + 1] = choice(152 + index as u32, Label::Native(Language::ALL[index]));
-        index += 1;
-    }
-    rows
-};
-/// The values a submenu row opens.
-fn choices(id: u32) -> &'static [Row] {
-    match id {
-        150 => &LANGUAGES,
-        _ => &[],
-    }
-}
 #[cfg(test)]
 fn find(id: u32) -> Option<&'static Row> {
-    ROOT.iter().chain(&LANGUAGES).find(|row| row.id == id)
-}
-/// The language a choice of the language submenu selects, None for any other command.
-pub(super) fn on_language_choice(id: u32) -> Option<LanguageChoice> {
-    let index = id.checked_sub(151)?;
-    LanguageChoice::ALL.get(index as usize).copied()
+    ROOT.iter().find(|row| row.id == id)
 }
 /// The name of a row in `language`.
 fn label_in(row: &Row, language: Language) -> Cow<'static, str> {
     match row.label {
         Label::Text(key) => tr_in(language, key).into(),
-        Label::Languages => shotoshot_text::language_menu_label_in(language),
-        Label::Native(name) => name.native_name().into(),
         Label::Blank => "".into(),
     }
 }
@@ -217,13 +169,9 @@ pub(super) struct Values {
     pub board: bool,
     /// Packed with `shortcut`.
     pub board_shortcut: usize,
-    pub language: LanguageChoice,
 }
 impl Values {
     fn checked(&self, id: u32) -> bool {
-        if let Some(choice) = on_language_choice(id) {
-            return choice == self.language;
-        }
         match id {
             101 => self.halo,
             107 => self.loupe,
@@ -240,11 +188,6 @@ impl Values {
             7 => self.instant,
             8 => self.board_shortcut,
             171..=173 => self.shapes[id as usize - 171],
-            // The position of the current choice in its submenu.
-            150 => LANGUAGES
-                .iter()
-                .position(|row| on_language_choice(row.id) == Some(self.language))
-                .unwrap_or(0),
             _ => 0,
         }
     }
@@ -269,15 +212,6 @@ fn caps_in(data: usize, language: Language) -> (Vec<String>, bool) {
         .map(str::to_string)
         .collect();
     (caps, data & (1 << 31) != 0)
-}
-/// The current choice a submenu row names on its right, in `language`.
-fn detail_in(row: &Row, data: usize, language: Language) -> String {
-    match row.kind {
-        Kind::Submenu => choices(row.id)
-            .get(data)
-            .map_or(String::new(), |current| label_in(current, language).into()),
-        _ => String::new(),
-    }
 }
 
 const BACKGROUND: [u8; 3] = [0x2b, 0x2b, 0x2b];
@@ -304,8 +238,6 @@ const EDIT_GAP: f64 = 4.;
 const EDIT_SPACE: f64 = 8.;
 /// Between the undo button and the keys.
 const UNDO_GAP: f64 = 6.;
-/// Room for the submenu arrow.
-const ARROW: f64 = 14.;
 
 /// The size of a row's note and the room it adds under the label.
 const NOTE_SIZE: f64 = 12.;
@@ -362,7 +294,6 @@ fn width_in(renderer: &Renderer, row: &Row, data: usize, language: Language) -> 
         Kind::Separator => 0.,
         Kind::Title => ICON_X + measure(&name, TITLE_SIZE)? + MARGIN,
         Kind::Toggle => LABEL_X + measure(&name, TEXT_SIZE)? + 2. * MARGIN + SWITCH.x + MARGIN,
-        Kind::Choice => LABEL_X + measure(&name, TEXT_SIZE)? + 2. * MARGIN,
         Kind::Command => {
             let caps = caps_width_in(renderer, data, language)?;
             let mut right = if caps == 0. { 0. } else { 2. * MARGIN + caps };
@@ -377,15 +308,6 @@ fn width_in(renderer: &Renderer, row: &Row, data: usize, language: Language) -> 
                     .max(EDIT_SPACE + edit_width(slot_width(placeholder)));
             }
             LABEL_X + measure(&name, TEXT_SIZE)? + right + MARGIN
-        }
-        Kind::Submenu => {
-            let detail = detail_in(row, data, language);
-            let right = if detail.is_empty() {
-                0.
-            } else {
-                2. * MARGIN + measure(&detail, TEXT_SIZE)?
-            };
-            LABEL_X + measure(&name, TEXT_SIZE)? + right + ARROW + MARGIN
         }
     }))
 }
@@ -748,38 +670,19 @@ fn paint_row<C: Canvas>(
         x: u(ICON_X),
         y: middle - u(10. * ICON_SCALE),
     };
-    if row.kind == Kind::Choice {
-        if state.checked {
-            draw_icon(canvas, Icon::Check, icon_origin, u(ICON_SCALE), TEXT)?;
-        }
-    } else {
-        draw_icon(
-            canvas,
-            shown_icon(row, state),
-            icon_origin,
-            u(ICON_SCALE),
-            SECONDARY,
-        )?;
-    }
+    draw_icon(
+        canvas,
+        shown_icon(row, state),
+        icon_origin,
+        u(ICON_SCALE),
+        SECONDARY,
+    )?;
     let line = canvas
         .measure_styled_text("X", u(TEXT_SIZE), TextStyle::Body)?
         .y;
     let bottom = middle + line / 2.;
     text(canvas, &name, u(LABEL_X), size.x, bottom, TEXT_SIZE, TEXT)?;
-    let mut right = size.x - u(MARGIN);
-    if row.kind == Kind::Submenu {
-        draw_icon(
-            canvas,
-            Icon::Chevron,
-            Point {
-                x: right - u(8.),
-                y: middle - u(6.),
-            },
-            u(0.6),
-            SECONDARY,
-        )?;
-        right -= u(ARROW);
-    }
+    let right = size.x - u(MARGIN);
     if row.kind == Kind::Toggle {
         let track = Rect {
             min: Point {
@@ -837,22 +740,6 @@ fn paint_row<C: Canvas>(
         }
         return settings_panel::keycaps(canvas, &caps, right, middle, 9., scale, in_use);
     }
-    let detail = detail_in(row, state.data, language());
-    if !detail.is_empty() {
-        let extent = canvas
-            .measure_styled_text(&detail, u(TEXT_SIZE), TextStyle::Body)?
-            .x;
-        text(
-            canvas,
-            &detail,
-            right - extent,
-            // Measuring and drawing round differently: never clip the last glyph.
-            size.x,
-            bottom,
-            TEXT_SIZE,
-            SECONDARY,
-        )?;
-    }
     Ok(())
 }
 
@@ -909,46 +796,15 @@ fn draw_row(
     }
 }
 
-/// Paints the whole menu, with the submenu of row `open` beside it, at `scale`.
-/// `view` is a shortcut row changing in place.
-fn render(
-    values: &Values,
-    selected: u32,
-    open: u32,
-    view: &popup::View,
-    scale: f64,
-) -> Result<Image> {
+/// Paints the whole menu at `scale`, with row `selected` lit. `view` is a shortcut row
+/// changing in place.
+fn render(values: &Values, selected: u32, view: &popup::View, scale: f64) -> Result<Image> {
     let _open = Open;
     let root = popup::Column::new(ROOT, values, scale)?;
-    let beside = popup::Column::new(choices(open), values, scale)?;
-    let position = |id: u32| ROOT.iter().position(|row| row.id == id);
-    // The submenu's first row lines up with the row that opens it, as on screen.
-    let hang = position(open).map_or(0, |index| root.top(index) - beside.top(0));
-    paint_image(
-        (root.width + beside.width) as u32,
-        root.height().max(hang + beside.height()) as u32,
-        |dc| {
-            root.paint(
-                dc,
-                POINT::default(),
-                values,
-                position(selected),
-                view,
-                scale,
-            )?;
-            beside.paint(
-                dc,
-                POINT {
-                    x: root.width,
-                    y: hang,
-                },
-                values,
-                None,
-                &popup::View::default(),
-                scale,
-            )
-        },
-    )
+    let position = ROOT.iter().position(|row| row.id == selected);
+    paint_image(root.width as u32, root.height() as u32, |dc| {
+        root.paint(dc, POINT::default(), values, position, view, scale)
+    })
 }
 fn sample() -> Values {
     let defaults = Settings::default();
@@ -972,12 +828,11 @@ fn sample() -> Values {
         mouse: false,
         board: defaults.board_visible,
         board_shortcut: shortcut(defaults.board_shortcut, false),
-        language: defaults.language,
     }
 }
 pub(super) fn preview() -> Result<()> {
     save_png(
-        &render(&sample(), 170, 0, &popup::View::default(), 1.)?,
+        &render(&sample(), 170, &popup::View::default(), 1.)?,
         std::path::Path::new("target/shotoshot-menu.png"),
     )?;
     // The arrow row listening with Ctrl held; the rectangle row offers its keys from before.
@@ -990,7 +845,7 @@ pub(super) fn preview() -> Result<()> {
         ..Default::default()
     };
     save_png(
-        &render(&sample(), 0, 0, &editing, 1.)?,
+        &render(&sample(), 0, &editing, 1.)?,
         std::path::Path::new("target/shotoshot-menu-editing.png"),
     )?;
     let saved = popup::View {
@@ -1003,17 +858,17 @@ pub(super) fn preview() -> Result<()> {
         ..Default::default()
     };
     save_png(
-        &render(&sample(), 8, 0, &keys, 1.)?,
+        &render(&sample(), 8, &keys, 1.)?,
         std::path::Path::new("target/shotoshot-menu-hover-keys.png"),
     )?;
     save_png(
-        &render(&sample(), 0, 0, &saved, 1.)?,
+        &render(&sample(), 0, &saved, 1.)?,
         std::path::Path::new("target/shotoshot-menu-saved.png"),
     )
 }
 /// Opens and closes the menu's renderer the way a real menu does, for the resident diagnostic.
 pub(super) fn probe() -> Result<()> {
-    render(&sample(), 0, 150, &popup::View::default(), 1.).map(|_| ())
+    render(&sample(), 0, &popup::View::default(), 1.).map(|_| ())
 }
 
 #[cfg(test)]

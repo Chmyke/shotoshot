@@ -79,7 +79,7 @@ impl App {
         invalidate(hwnd);
         Ok(())
     }
-    /// Saves the language chosen in the menu and shows it at once: the resident's own texts,
+    /// Saves the language chosen in the Settings window and shows it at once: the resident's own texts,
     /// its icon's hint, and an editor prepared again, since a prepared one keeps its texts.
     pub(super) fn choose_language(
         &mut self,
@@ -139,7 +139,6 @@ impl App {
                 self.settings.board_shortcut,
                 !self.board_hotkey.active(),
             ),
-            language: self.settings.language,
         })
     }
     /// A click on the notification icon: opens the menu, or closes the open one.
@@ -309,11 +308,7 @@ impl App {
                     }
                 }
                 3 => PostQuitMessage(0),
-                _ => {
-                    if let Some(choice) = tray_menu::on_language_choice(chosen) {
-                        self.choose_language(hwnd, choice)?;
-                    }
-                }
+                _ => {}
             }
             Ok(())
         }
