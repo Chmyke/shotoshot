@@ -1,7 +1,10 @@
 //! ROLE: Linux resident: notification-area icon and its menu. Each capture runs in its own
 //! short-lived process (`--capture`, `--instant`), so the resident stays small at rest.
 //! INVARIANTS: One resident per user session (lock in XDG_RUNTIME_DIR).
+use crate::update::Checked;
+use shotoshot_core::update::Outcome;
 use shotoshot_text::{Key, Language, LanguageChoice, Text, language, tr_in};
+use shotoshot_ui::settings_panel::{UpdateState, running_version};
 use std::{
     error::Error,
     process::Command,
@@ -13,6 +16,11 @@ enum Request {
     Instant,
     Language(LanguageChoice),
     Magnifier,
+    /// The menu's "Check for updates": the one request to the site, on this click only.
+    CheckUpdates,
+    /// What that request found, from its thread.
+    Checked(Checked),
+    OpenDownloadPage,
     Quit,
 }
 
@@ -21,6 +29,8 @@ struct Tray {
     icons: Vec<ksni::Icon>,
     /// Whether labwc's magnifier is on; None outside labwc, where the menu has no such line.
     magnifier: Option<bool>,
+    /// Where "Check for updates" stands: its line says it.
+    update: UpdateState,
 }
 impl Tray {
     fn send(&self, request: Request) {
@@ -41,7 +51,7 @@ impl ksni::Tray for Tray {
         self.send(Request::Capture);
     }
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
-        menu_in(language(), self.magnifier)
+        menu_in(language(), self.magnifier, self.update)
     }
 }
 
@@ -52,8 +62,13 @@ fn label(text: &str) -> String {
 
 /// The menu in `language`, that language marked in the language submenu, and the magnifier's
 /// line when `magnifier` says whether it is on. Linux has no Settings window: the language
-/// stays here, without a "system language" row (Mickael, 2026-11-12).
-fn menu_in(language: Language, magnifier: Option<bool>) -> Vec<ksni::MenuItem<Tray>> {
+/// stays here, without a "system language" row (Mickael, 2026-11-12), and so does "Check for
+/// updates", whose line becomes "Download version X" once a newer one was found (2026-11-13).
+fn menu_in(
+    language: Language,
+    magnifier: Option<bool>,
+    update: UpdateState,
+) -> Vec<ksni::MenuItem<Tray>> {
     let item = |key: Key, request: fn() -> Request| {
         ksni::menu::StandardItem {
             label: label(tr_in(language, key)),
@@ -104,10 +119,82 @@ fn menu_in(language: Language, magnifier: Option<bool>) -> Vec<ksni::MenuItem<Tr
             ..Default::default()
         }
         .into(),
+        update_item(language, update),
         ksni::MenuItem::Separator,
         item(Key::MenuQuit, || Request::Quit),
     ]);
     menu
+}
+
+/// The "Check for updates" line: greyed while the site is asked, "Download version X" once a
+/// newer version was found.
+fn update_item(language: Language, update: UpdateState) -> ksni::MenuItem<Tray> {
+    let (text, request): (String, Option<fn() -> Request>) = match update {
+        UpdateState::Available(version) => (
+            Text::with_in(
+                language,
+                Key::MenuDownloadUpdate,
+                &[("version", &version.to_string())],
+            )
+            .to_string(),
+            Some(|| Request::OpenDownloadPage),
+        ),
+        UpdateState::Checking => (tr_in(language, Key::SettingsUpdatesChecking).into(), None),
+        _ => (
+            tr_in(language, Key::MenuCheckUpdates).into(),
+            Some(|| Request::CheckUpdates),
+        ),
+    };
+    ksni::menu::StandardItem {
+        label: label(&text),
+        enabled: request.is_some(),
+        activate: Box::new(move |tray: &mut Tray| {
+            if let Some(request) = request {
+                tray.send(request());
+            }
+        }),
+        ..Default::default()
+    }
+    .into()
+}
+
+/// Shows what the check found: a brief word when up to date, a longer one for a newer version
+/// (the menu line now downloads it) or a failure. Without curl, the download page opens.
+fn show_checked(handle: &ksni::blocking::Handle<Tray>, checked: Checked) {
+    let running = running_version().to_string();
+    let state = match checked {
+        Checked::Found(Outcome::UpToDate) => {
+            let text = Text::with(Key::SettingsUpdatesLatest, &[("version", &running)]);
+            crate::notice::confirm(&format!("Shotoshot: {text}"));
+            UpdateState::UpToDate
+        }
+        Checked::Found(Outcome::Available(version)) => {
+            let text = Text::with(
+                Key::SettingsUpdatesAvailable,
+                &[("version", &version.to_string())],
+            );
+            crate::notice::report(&format!("Shotoshot: {text}"));
+            UpdateState::Available(version)
+        }
+        Checked::Failed => {
+            let text = shotoshot_text::tr(Key::SettingsUpdatesFailed);
+            crate::notice::report(&format!("Shotoshot: {text}"));
+            UpdateState::Failed
+        }
+        Checked::NoCurl => {
+            open_download_page();
+            UpdateState::Idle
+        }
+    };
+    handle.update(|tray| tray.update = state);
+}
+
+/// The download page in the browser; a failure is reported.
+fn open_download_page() {
+    if let Err(error) = crate::update::open_download_page() {
+        let message = Text::with(Key::ErrorUnexpected, &[("detail", &error.to_string())]);
+        crate::notice::report(&format!("Shotoshot: {message}"));
+    }
 }
 
 /// Switches labwc's magnifier, at the size and zoom of the pointer settings shared with
@@ -178,6 +265,8 @@ pub fn run() -> Result<bool, Box<dyn Error>> {
     let settings = crate::settings::load().unwrap_or_default();
     crate::language::apply(&settings);
     let (requests, received) = channel();
+    // The update check answers through the same channel, from its own thread.
+    let replies = requests.clone();
     // Blocks left by a resident that did not quit (a crash, a logout): the magnifier starts off.
     let labwc = crate::magnifier::available();
     if labwc {
@@ -187,6 +276,7 @@ pub fn run() -> Result<bool, Box<dyn Error>> {
         requests,
         icons: icons(),
         magnifier: labwc.then_some(false),
+        update: UpdateState::Idle,
     };
     use ksni::blocking::TrayMethods;
     let handle = tray.spawn()?;
@@ -202,6 +292,30 @@ pub fn run() -> Result<bool, Box<dyn Error>> {
             Request::Magnifier => {
                 let on = handle.update(|tray| tray.magnifier) == Some(Some(true));
                 switch_magnifier(&handle, !on);
+                continue;
+            }
+            Request::CheckUpdates => {
+                // One check at a time: the greyed line refuses a second click anyway.
+                let idle = handle.update(|tray| {
+                    let idle = tray.update != UpdateState::Checking;
+                    tray.update = UpdateState::Checking;
+                    idle
+                });
+                if idle == Some(true) {
+                    let replies = replies.clone();
+                    std::thread::spawn(move || {
+                        let checked = crate::update::check(running_version());
+                        let _ = replies.send(Request::Checked(checked));
+                    });
+                }
+                continue;
+            }
+            Request::Checked(checked) => {
+                show_checked(&handle, checked);
+                continue;
+            }
+            Request::OpenDownloadPage => {
+                open_download_page();
                 continue;
             }
             Request::Quit => break,
@@ -247,22 +361,25 @@ mod tests {
 
     #[test]
     fn tray_labels_follow_the_language() {
-        let english = labels(&menu_in(Language::En, None));
+        let idle = UpdateState::Idle;
+        let english = labels(&menu_in(Language::En, None, idle));
         assert_eq!(
             english,
             [
                 "Capture",
                 "Instant screenshot",
                 "Language",
+                "Check for updates",
                 "Quit Shotoshot"
             ]
         );
-        let french = labels(&menu_in(Language::Fr, None));
-        assert_eq!(french[3], "Quitter Shotoshot");
+        let french = labels(&menu_in(Language::Fr, None, idle));
+        assert_eq!(french[4], "Quitter Shotoshot");
+        assert_eq!(french[3], "Rechercher des mises à jour");
         assert_eq!(french[2], "Langue · Language");
         for language in Language::ALL.into_iter().skip(1) {
-            let translated = labels(&menu_in(language, None));
-            assert_ne!(translated[3], english[3], "{}", language.tag());
+            let translated = labels(&menu_in(language, None, idle));
+            assert_ne!(translated[4], english[4], "{}", language.tag());
             assert!(translated[2].ends_with(" · Language"), "{}", language.tag());
         }
     }
@@ -275,10 +392,11 @@ mod tests {
                 _ => None,
             })
         };
-        assert_eq!(checked(&menu_in(Language::En, None)), None);
-        let on = menu_in(Language::En, Some(true));
+        let idle = UpdateState::Idle;
+        assert_eq!(checked(&menu_in(Language::En, None, idle)), None);
+        let on = menu_in(Language::En, Some(true), idle);
         assert_eq!(checked(&on), Some(("Magnifier".into(), true)));
-        let off = menu_in(Language::Fr, Some(false));
+        let off = menu_in(Language::Fr, Some(false), idle);
         assert_eq!(checked(&off).map(|(_, c)| c), Some(false));
         // Right under the captures, as the switch of the Windows menu sits among its effects.
         assert!(matches!(off[2], ksni::MenuItem::Checkmark(_)));
@@ -288,10 +406,41 @@ mod tests {
     fn language_radio_lists_the_languages_and_marks_the_one_shown() {
         let natives: Vec<&str> = Language::ALL.iter().map(|l| l.native_name()).collect();
         for language in Language::ALL {
-            let (selected, names) = radio(&menu_in(language, None));
+            let (selected, names) = radio(&menu_in(language, None, UpdateState::Idle));
             // No "system language" row: only the languages, under their own names.
             assert_eq!(names, natives, "{}", language.tag());
             assert_eq!(Language::ALL[selected], language);
         }
+    }
+
+    /// The line checks on click, greys while the site is asked, then downloads a newer version.
+    #[test]
+    fn the_update_line_checks_then_offers_the_download() {
+        let line = |update| {
+            menu_in(Language::En, None, update)
+                .into_iter()
+                .find_map(|item| match item {
+                    ksni::MenuItem::Standard(item)
+                        if item.label != "Capture"
+                            && item.label != "Instant screenshot"
+                            && item.label != "Quit Shotoshot" =>
+                    {
+                        Some((item.label, item.enabled))
+                    }
+                    _ => None,
+                })
+                .expect("an update line")
+        };
+        assert_eq!(line(UpdateState::Idle), ("Check for updates".into(), true));
+        assert_eq!(line(UpdateState::Checking), ("Checking…".into(), false));
+        assert_eq!(
+            line(UpdateState::Failed),
+            ("Check for updates".into(), true)
+        );
+        let newer = shotoshot_core::update::Version::parse("0.4.0").unwrap();
+        assert_eq!(
+            line(UpdateState::Available(newer)),
+            ("Download version 0.4.0".into(), true)
+        );
     }
 }

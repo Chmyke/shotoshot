@@ -18,6 +18,7 @@ use notice::Notice;
 mod runtime;
 mod setup;
 mod tray_menu;
+mod update_check;
 use crate::{
     session::{Saved, Session, control, modifiers},
     settings::{Settings, Store},
@@ -215,6 +216,10 @@ unsafe extern "system" fn window_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM
             // Menus dispatch messages reentrantly while borrowing App. Retry after that borrow,
             // rather than losing the one completion event and leaving the worker busy forever.
             SetTimer(Some(hwnd), instant::RETRY_TIMER, 30, None);
+            return LRESULT(0);
+        } else if !pointer.is_null() && msg == update_check::CHECKED {
+            // The same for a finished update check: its row would stay "Checking".
+            SetTimer(Some(hwnd), update_check::RETRY_TIMER, 30, None);
             return LRESULT(0);
         }
         DefWindowProcW(hwnd, msg, w, l)

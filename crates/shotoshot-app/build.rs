@@ -7,6 +7,10 @@ fn main() {
     println!("cargo:rerun-if-changed=app.manifest");
     println!("cargo:rustc-link-arg-bin=shotoshot=/MANIFEST:EMBED");
     println!("cargo:rustc-link-arg-bin=shotoshot=/MANIFESTINPUT:{root}/app.manifest");
+    // WinHTTP serves only the "Check for updates" click: loaded then, never at rest (law 2).
+    // `pe_imports` in the crate's tests keeps it out of the load-time imports.
+    println!("cargo:rustc-link-arg-bin=shotoshot=/DELAYLOAD:winhttp.dll");
+    println!("cargo:rustc-link-arg-bin=shotoshot=delayimp.lib");
     println!("cargo:rerun-if-changed=assets/shotoshot.ico");
     println!("cargo:rerun-if-env-changed=WindowsSdkDir");
     println!("cargo:rerun-if-env-changed=WindowsSDKVersion");

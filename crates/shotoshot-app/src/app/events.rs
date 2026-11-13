@@ -47,6 +47,13 @@ impl App {
                 PostQuitMessage(0);
             },
             instant::FINISHED => self.finish_instant_capture(),
+            update_check::CHECKED => self.finish_update_check()?,
+            WM_TIMER if w.0 == update_check::RETRY_TIMER => {
+                unsafe {
+                    let _ = KillTimer(Some(hwnd), update_check::RETRY_TIMER);
+                }
+                self.finish_update_check()?;
+            }
             WM_TIMER if w.0 == instant::RETRY_TIMER => {
                 unsafe {
                     let _ = KillTimer(Some(hwnd), instant::RETRY_TIMER);

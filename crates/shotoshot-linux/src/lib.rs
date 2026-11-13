@@ -15,6 +15,7 @@ mod portal;
 mod resident;
 mod settings;
 mod timing;
+mod update;
 mod x11;
 use std::{error::Error, path::PathBuf, time::Instant};
 

@@ -323,6 +323,21 @@ impl Panel {
                     scale,
                 )?;
             }
+            Item::Updates => {
+                // A newer version is what is new here; a failed check warns, as a held shortcut.
+                let ink = match self.update {
+                    UpdateState::Available(_) => ACCENT,
+                    UpdateState::Failed => WARN,
+                    _ => SECONDARY,
+                };
+                two_lines(
+                    canvas,
+                    (&label, LABEL_SIZE, TEXT),
+                    (&self.update_note(), NOTE_SIZE, ink),
+                    label_area,
+                    scale,
+                )?;
+            }
             item if item.note().is_some() => {
                 let note = item.note().map_or("", |key| self.text(key));
                 two_lines(
@@ -406,6 +421,40 @@ impl Panel {
                     scale,
                 )?;
                 switch(canvas, control, self.card_on(card), scale)
+            }
+            Item::Updates => {
+                // The Add button's look; its text dims while the check runs.
+                let middle = control.center().y;
+                let button = Rect {
+                    min: Point {
+                        x: control.min.x,
+                        y: middle - u(BUTTON_HEIGHT / 2.),
+                    },
+                    max: Point {
+                        x: control.max.x,
+                        y: middle + u(BUTTON_HEIGHT / 2.),
+                    },
+                };
+                canvas.fill_round_rect(button, u(5.), Ink::solid(BUTTON))?;
+                canvas.stroke_round_rect(
+                    button.expanded(-u(0.5)),
+                    u(5.),
+                    Ink::solid(BUTTON_EDGE),
+                    u(1.),
+                )?;
+                let ink = if self.update == UpdateState::Checking {
+                    MUTED
+                } else {
+                    TEXT
+                };
+                centered(
+                    canvas,
+                    self.update_button(),
+                    button,
+                    u(LABEL_SIZE),
+                    TextStyle::Body,
+                    ink,
+                )
             }
             Item::Field(field) => self.paint_field(canvas, field, control, scale),
             Item::Nav(_) | Item::Reset => Ok(()),

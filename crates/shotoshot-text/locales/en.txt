@@ -132,6 +132,8 @@ menu.quit = Quit Shotoshot
 menu.press_keys = Press keys
 menu.seconds = {n} s
 menu.percent = {n}%
+menu.check_updates = Check for updates
+menu.download_update = Download version {version}
 
 # Shortcut window. It keeps its English size and grows only for a longer text, up to 640×400 px
 # (`setup_layout_fits_every_language`): titles at 16 px, buttons at 13 px, the hint wrapped
@@ -342,4 +344,12 @@ settings.mini_toolbar = Mini toolbar
 settings.mini_toolbar_note = Captures show only the pen, copy and save. ⋯ shows the rest.
 settings.obs_mirror = OBS mirror
 settings.obs_mirror_note = A hidden window that OBS can capture, with the pointer effects, the keyboard, the mouse and the shapes.
+settings.updates = Updates
+settings.updates_version = Version {version}
+settings.updates_checking = Checking…
+settings.updates_latest = Up to date: version {version}
+settings.updates_available = Version {version} is available
+settings.updates_failed = Could not reach shotoshot.com
+settings.updates_check = Check now
+settings.updates_download = Download
 settings.shape_duration_note = How long temporary shapes stay on screen.

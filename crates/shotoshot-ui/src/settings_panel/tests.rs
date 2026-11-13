@@ -714,3 +714,82 @@ fn a_language_chosen_from_the_list_is_that_language() {
         panel.press(control.center());
     }
 }
+
+/// "Check for updates" sits on the General page under the language, checks on click only, and
+/// once a newer version is found its button opens the download page (Mickael, 2026-11-13, A1).
+#[test]
+fn the_updates_row_checks_on_click_then_offers_the_download() {
+    let mut panel = panel();
+    assert_eq!(
+        panel.update,
+        UpdateState::Idle,
+        "nothing is asked on its own"
+    );
+    let updates = zone(&panel, Item::Updates);
+    let language = zone(&panel, Item::Language);
+    assert!(updates.row.min.y > language.row.min.y, "under the language");
+    assert_eq!(Item::Updates.icon(), Icon::Update);
+    assert_eq!(panel.label(Item::Updates), "Updates");
+    assert_eq!(panel.running, running_version());
+    let running = panel.running.to_string();
+    assert_eq!(panel.update_note(), format!("Version {running}"));
+    assert_eq!(panel.update_button(), "Check now");
+    assert_eq!(
+        panel.press(updates.control.center()),
+        Action::Command(Command::CheckForUpdates)
+    );
+    // While the site is asked, another click asks nothing more.
+    panel.update = UpdateState::Checking;
+    assert_eq!(panel.press(updates.control.center()), Action::None);
+    assert_eq!(panel.update_note(), "Checking…");
+    panel.update = UpdateState::UpToDate;
+    assert_eq!(
+        panel.update_note(),
+        format!("Up to date: version {running}")
+    );
+    assert_eq!(
+        panel.press(updates.control.center()),
+        Action::Command(Command::CheckForUpdates),
+        "checked again"
+    );
+    panel.update = UpdateState::Failed;
+    assert_eq!(panel.update_note(), "Could not reach shotoshot.com");
+    let newer = Version::parse("0.4.0").unwrap();
+    panel.update = UpdateState::Available(newer);
+    assert_eq!(panel.update_note(), "Version 0.4.0 is available");
+    assert_eq!(panel.update_button(), "Download");
+    assert_eq!(
+        panel.press(updates.control.center()),
+        Action::Command(Command::OpenDownloadPage)
+    );
+    // The keyboard does the same.
+    panel.focus = Item::Updates;
+    assert_eq!(
+        panel.key(KeyInput::Activate),
+        Action::Command(Command::OpenDownloadPage)
+    );
+}
+
+/// The window is sized for every note the row may show: switching state never cuts a text nor
+/// resizes the window, in any language.
+#[test]
+fn every_updates_note_fits_without_resizing() {
+    for language in Language::ALL {
+        let mut panel = panel_in(language);
+        let size = panel.layout.size;
+        let widest = Version::parse(WIDEST_VERSION).unwrap();
+        for state in [
+            UpdateState::Idle,
+            UpdateState::Checking,
+            UpdateState::UpToDate,
+            UpdateState::Available(widest),
+            UpdateState::Failed,
+        ] {
+            panel.update = state;
+            panel.arrange();
+            assert_eq!(panel.layout.size, size, "{}", language.tag());
+            let cut = panel.overflows(measure).unwrap();
+            assert!(cut.is_empty(), "{}: {cut:?}", language.tag());
+        }
+    }
+}

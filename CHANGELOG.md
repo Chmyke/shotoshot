@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.46 · 2026-11-13
+
+- Settings, General now has a Check for updates button. It only asks when you click it, and if a newer version is out, Download opens the page in your browser. No sneaky background checks, ever.
+
 ## 0.3.45 · 2026-11-12
 
 - The language picker moved into Settings, General, where settings belong. It no longer offers a vague "system language" option: the language Windows speaks is simply ticked until you pick another.

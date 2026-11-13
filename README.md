@@ -9,7 +9,8 @@ on-screen keyboard always follows the active keyboard layout.
 - **Light.** A small resident process starts one editor process per capture. That process ends
   with the session, which returns its memory to Windows, graphics caches included.
 - **Private.** No telemetry and no network request of its own. Google Lens receives a capture only
-  when you click its button, sent by your browser.
+  when you click its button, sent by your browser. Check for updates, in Settings, asks
+  shotoshot.com for the latest version number only when you click it.
 - **Open.** GPL-3.0, written in Rust on Direct2D, with no web engine.
 
 ![Shotoshot at work: an area is selected and widened, an arrow points at a chart legend, a note is typed, enlarged and rotated, a square is drawn then moved, then the arrow is re-aimed by its tip alone, recoloured with the eyedropper and thickened with the wheel.](https://shotoshot.com/assets/capture.gif)
@@ -51,7 +52,9 @@ holds it.
 **Settings** opens one window for what you set once, on the screen of the pointer:
 
 - **General**: **Start with Windows** (on by default), **Live capture by default** and the
-  **Language** (the 15 languages, each under its own name).
+  **Language** (the 15 languages, each under its own name), then **Updates**: **Check now** asks
+  shotoshot.com for the latest version, and a newer one turns the button into **Download**,
+  which opens the download page in your browser.
 - **Shortcuts**: every Shotoshot shortcut in one place; click the keys to change one. A shortcut
   another program holds turns orange, with a note under its name. The three pointer shortcuts
   can be left unset (**Add**) or cleared with their cross.
@@ -443,7 +446,9 @@ delay until the first pixel shown on screen.
 ## Data and limits
 
 - No implicit network and no telemetry. Google Lens receives the capture only after a click on its
-  button. Build dependencies are downloaded by Cargo.
+  button. Check for updates (Settings, General; the tray menu on Linux) reads the latest version
+  number from shotoshot.com only when clicked, and never downloads or runs anything: a newer
+  version opens the download page in your browser. Build dependencies are downloaded by Cargo.
 - Preferences: `%LOCALAPPDATA%/Shotoshot/settings.txt`, versioned format. An unreadable file is
   reported and preserved; renaming it starts again with fresh settings.
 - SDR capture through GDI; HDR fidelity is not guaranteed. Protected content may stay black.

@@ -17,6 +17,7 @@ use shotoshot_core::{
         SpotlightShape, TrailLength, TrailStyle, Volume,
     },
     settings::INPUT_SCALES,
+    update::Version,
 };
 use shotoshot_text::{Key, Language, Text, tr_in};
 use std::collections::HashMap;
@@ -365,7 +366,34 @@ pub enum Command {
     Show(Shown),
     /// Speaks this language from now on, as chosen in the language list.
     Language(Language),
+    /// Asks the site which version is published: the one request of "Check for updates".
+    CheckForUpdates,
+    /// Opens the download page in the browser, once a newer version was found.
+    OpenDownloadPage,
 }
+
+/// Where "Check for updates" stands. Nothing is asked before its button is clicked.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum UpdateState {
+    #[default]
+    Idle,
+    Checking,
+    UpToDate,
+    Available(Version),
+    /// The site did not answer, or not with a version.
+    Failed,
+}
+
+/// The version running, as the Updates row names it.
+pub fn running_version() -> Version {
+    Version::parse(env!("CARGO_PKG_VERSION")).unwrap_or(Version {
+        major: 0,
+        minor: 0,
+        patch: 0,
+    })
+}
+/// The widest version an answer may name, to reserve its room.
+const WIDEST_VERSION: &str = "88.88.888";
 
 /// What the platform does after an input.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -624,6 +652,9 @@ pub enum Item {
     Shown(Shown),
     /// The language of the interface: its control opens the list of languages.
     Language,
+    /// "Check for updates": its note says where the check stands, its button checks or, once a
+    /// newer version was found, opens the download page.
+    Updates,
     Card(Card),
     Field(Field),
     Reset,
@@ -645,6 +676,7 @@ impl Item {
             Self::MoveInput => Icon::Move,
             Self::Shown(shown) => shown.icon(),
             Self::Language => Icon::Globe,
+            Self::Updates => Icon::Update,
             Self::Card(card) => card.icon(),
             Self::Field(_) | Self::Reset => Icon::None,
         }
@@ -668,7 +700,11 @@ impl Item {
         }
     }
     fn height(self) -> f64 {
-        if self.note().is_some() { NOTE_ROW } else { ROW }
+        if self.note().is_some() || self == Self::Updates {
+            NOTE_ROW
+        } else {
+            ROW
+        }
     }
 }
 
@@ -730,6 +766,11 @@ pub struct Panel {
     pub editing: Option<RowEdit>,
     /// The open language list and its lit row, an index of `Language::ALL`; None when closed.
     pub language_list: Option<usize>,
+    /// Where "Check for updates" stands; the platform sets it.
+    pub update: UpdateState,
+    /// The version the Updates row names: the one running, fixed by the demo images so that
+    /// they do not change with each release.
+    pub running: Version,
     /// The last shortcut changed and its keys before: its row offers them back until the page
     /// changes.
     pub before: Option<(ShortcutRow, Vec<String>)>,
@@ -774,6 +815,8 @@ impl Panel {
             layout: Layout::default(),
             editing: None,
             language_list: None,
+            update: UpdateState::Idle,
+            running: running_version(),
             before: None,
             preview: Effects::default(),
             last_click: 0,
@@ -861,6 +904,7 @@ impl Panel {
             Item::Shown(shown) => self.text(shown.label()).into(),
             // In the language shown, then in English: the way back for who cannot read it.
             Item::Language => shotoshot_text::language_menu_label_in(self.language).into_owned(),
+            Item::Updates => self.text(Key::SettingsUpdates).into(),
             Item::Card(card) => self.text(card.title()).into(),
             Item::Field(field) => self.text(field.label()).into(),
             Item::Reset => self.text(Key::PointerReset).into(),
@@ -919,6 +963,7 @@ impl Panel {
             Item::Duration,
             Item::MoveInput,
             Item::Language,
+            Item::Updates,
             Item::Reset,
         ]
         .into_iter()
@@ -951,6 +996,12 @@ impl Panel {
             texts.push((language.native_name().into(), LABEL_SIZE, Body));
         }
         texts.push((self.text(Key::SettingsAdd).into(), LABEL_SIZE, Body));
+        for note in self.update_notes() {
+            texts.push((note, NOTE_SIZE, Caption));
+        }
+        for key in [Key::SettingsUpdatesCheck, Key::SettingsUpdatesDownload] {
+            texts.push((self.text(key).into(), LABEL_SIZE, Body));
+        }
         texts.push((self.text(Key::SettingsInUse).into(), NOTE_SIZE, Caption));
         texts.push((self.text(Key::PointerOff).into(), NOTE_SIZE, Caption));
         for card in CARDS {
@@ -1064,6 +1115,7 @@ impl Panel {
             }
             Item::InputScale | Item::Duration => self.segments_width(item),
             Item::Language => self.names_width() + 2. * SEGMENT_PAD + CHEVRON,
+            Item::Updates => self.update_button_width(),
             Item::Card(_) => SWITCH.x + CHEVRON + 12.,
             Item::Field(field) => match field.control() {
                 Control::Segments => self.segments_width(item),
@@ -1127,6 +1179,64 @@ impl Panel {
     fn add_width(&self) -> f64 {
         self.width(self.text(Key::SettingsAdd), LABEL_SIZE, TextStyle::Body) + 2. * BUTTON_PAD
     }
+    /// The note under "Updates" for `state`.
+    fn update_note_for(&self, state: UpdateState) -> String {
+        let version = |key: Key, version: &str| {
+            Text::with_in(self.language, key, &[("version", version)]).to_string()
+        };
+        let running = self.running.to_string();
+        match state {
+            UpdateState::Idle => version(Key::SettingsUpdatesVersion, &running),
+            UpdateState::Checking => self.text(Key::SettingsUpdatesChecking).into(),
+            UpdateState::UpToDate => version(Key::SettingsUpdatesLatest, &running),
+            UpdateState::Available(newer) => {
+                version(Key::SettingsUpdatesAvailable, &newer.to_string())
+            }
+            UpdateState::Failed => self.text(Key::SettingsUpdatesFailed).into(),
+        }
+    }
+    /// The note under "Updates" now.
+    pub fn update_note(&self) -> String {
+        self.update_note_for(self.update)
+    }
+    /// Every note "Updates" may show, a newer version at its widest: the window is sized for all.
+    fn update_notes(&self) -> Vec<String> {
+        let widest = Version::parse(WIDEST_VERSION).unwrap_or(self.running);
+        [
+            UpdateState::Idle,
+            UpdateState::Checking,
+            UpdateState::UpToDate,
+            UpdateState::Available(widest),
+            UpdateState::Failed,
+        ]
+        .into_iter()
+        .map(|state| self.update_note_for(state))
+        .collect()
+    }
+    /// What the Updates button says: Download once a newer version was found, else Check now.
+    pub fn update_button(&self) -> &'static str {
+        match self.update {
+            UpdateState::Available(_) => self.text(Key::SettingsUpdatesDownload),
+            _ => self.text(Key::SettingsUpdatesCheck),
+        }
+    }
+    /// The Updates button keeps one width, that of its longer text.
+    fn update_button_width(&self) -> f64 {
+        [Key::SettingsUpdatesCheck, Key::SettingsUpdatesDownload]
+            .iter()
+            .map(|key| self.width(self.text(*key), LABEL_SIZE, TextStyle::Body))
+            .fold(0., f64::max)
+            + 2. * BUTTON_PAD
+    }
+    /// The Updates button pressed: checks, or opens the download page once a newer version was
+    /// found; nothing while a check runs.
+    fn press_updates(&self) -> Action {
+        match self.update {
+            UpdateState::Checking => Action::None,
+            UpdateState::Available(_) => Action::Command(Command::OpenDownloadPage),
+            _ => Action::Command(Command::CheckForUpdates),
+        }
+    }
     fn segments_width(&self, item: Item) -> f64 {
         self.segment_widths(item).iter().sum::<f64>() + 4.
     }
@@ -1151,6 +1261,11 @@ impl Panel {
                 }
                 if let Some(key) = item.note() {
                     width = width.max(note(key));
+                }
+                if *item == Item::Updates {
+                    for text in self.update_notes() {
+                        width = width.max(self.width(&text, NOTE_SIZE, TextStyle::Caption));
+                    }
                 }
                 item.label_left() - ROW_PAD + width
             })
@@ -1196,7 +1311,8 @@ impl Panel {
                             Item::Shown(Shown::Board),
                         ],
                         // Chosen here, no longer in the notification menu (Mickael, 2026-11-12).
-                        vec![Item::Language],
+                        // Updates: checked on click only, never on its own (Mickael, 2026-11-13).
+                        vec![Item::Language, Item::Updates],
                     ]
                 } else {
                     vec![
@@ -1412,6 +1528,21 @@ impl Panel {
                 let note = self.text(key);
                 if measure(note, NOTE_SIZE, TextStyle::Caption)? > room + 0.5 {
                     cut.push(note.into());
+                }
+            }
+            if zone.item == Item::Updates {
+                for note in self.update_notes() {
+                    if measure(&note, NOTE_SIZE, TextStyle::Caption)? > room + 0.5 {
+                        cut.push(note);
+                    }
+                }
+                for key in [Key::SettingsUpdatesCheck, Key::SettingsUpdatesDownload] {
+                    let text = self.text(key);
+                    if measure(text, LABEL_SIZE, TextStyle::Body)?
+                        > zone.control.size().x - 2. * BUTTON_PAD + 0.5
+                    {
+                        cut.push(text.into());
+                    }
                 }
             }
             let names = self.segment_names(zone.item);
@@ -1905,6 +2036,7 @@ impl Panel {
             Item::MoveInput => Action::Command(Command::MoveInput),
             Item::Shown(shown) => Action::Command(Command::Show(shown)),
             Item::Language => self.open_language_list(),
+            Item::Updates => self.press_updates(),
             Item::Card(card) => {
                 if r.expanded(4.).contains(p) && p.x >= r.max.x - SWITCH.x - 4. {
                     self.toggle_card(card)
@@ -2097,6 +2229,7 @@ impl Panel {
                 Item::MoveInput => Action::Command(Command::MoveInput),
                 Item::Shown(shown) => Action::Command(Command::Show(shown)),
                 Item::Language => self.open_language_list(),
+                Item::Updates => self.press_updates(),
                 Item::Card(card) => {
                     self.open_card(card);
                     Action::Repaint

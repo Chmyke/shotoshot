@@ -27,6 +27,8 @@ pub enum Icon {
     Globe,
     /// Quitting Shotoshot: the power symbol.
     Power,
+    /// Checking for updates: a circling arrow.
+    Update,
     /// Starting with Windows: an arrow entering, the moment of signing in.
     SignIn,
     /// The General page: two sliders.
@@ -213,6 +215,11 @@ pub fn draw<C: Canvas>(
             )?;
             path(canvas, &[(2., 10.), (18., 10.)], false)?;
         }
+        Icon::Update => {
+            // Nearly a full turn, open at the right, its head going on clockwise.
+            arc(&mut path, canvas, ((10., 10.), 7.), (30., 300.))?;
+            path(canvas, &[(9.6, 4.3), (13.5, 3.9), (11.9, 0.4)], false)?;
+        }
         Icon::Power => {
             arc(&mut path, canvas, ((10., 10.5), 7.5), (-55., 235.))?;
             path(canvas, &[(10., 2.), (10., 10.)], false)?;
@@ -370,7 +377,7 @@ mod tests {
     use shotoshot_core::Tool;
 
     /// Every glyph the menu and Settings draw, each with its own look.
-    pub(crate) const ALL: [Icon; 26] = [
+    pub(crate) const ALL: [Icon; 27] = [
         Icon::Check,
         Icon::Chevron,
         Icon::Capture,
@@ -385,6 +392,7 @@ mod tests {
         Icon::Gear,
         Icon::Globe,
         Icon::Power,
+        Icon::Update,
         Icon::SignIn,
         Icon::Sliders,
         Icon::Presentation,

@@ -111,6 +111,8 @@ menu.quit = Quitter Shotoshot
 menu.press_keys = Appuyez sur des touches
 menu.seconds = {n} s
 menu.percent = {n} %
+menu.check_updates = Rechercher des mises à jour
+menu.download_update = Télécharger la version {version}
 
 setup.title_capture = Raccourci de capture
 setup.title_instant = Raccourci de capture instantanée
@@ -297,4 +299,12 @@ settings.mini_toolbar = Mini barre d’outils
 settings.mini_toolbar_note = Les captures n’affichent que le crayon, la copie et l’enregistrement. ⋯ montre le reste.
 settings.obs_mirror = Miroir OBS
 settings.obs_mirror_note = Une fenêtre cachée qu’OBS peut capturer, avec les effets du pointeur, le clavier, la souris et les formes.
+settings.updates = Mises à jour
+settings.updates_version == Version {version}
+settings.updates_checking = Vérification…
+settings.updates_latest = À jour : version {version}
+settings.updates_available = La version {version} est disponible
+settings.updates_failed = Impossible de joindre shotoshot.com
+settings.updates_check = Vérifier
+settings.updates_download = Télécharger
 settings.shape_duration_note = Combien de temps les formes temporaires restent à l'écran.

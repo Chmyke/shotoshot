@@ -28,6 +28,8 @@ pub(super) struct SettingsUi {
     page: Page,
     /// The last shortcut changed in its row and its keys before, offered back by the row.
     pub(super) before: Option<Before>,
+    /// "Check for updates": where it stands, kept while the window is closed.
+    pub(super) update: super::update_check::UpdateCheck,
 }
 impl Default for SettingsUi {
     fn default() -> Self {
@@ -35,6 +37,7 @@ impl Default for SettingsUi {
             window: None,
             page: Page::General,
             before: None,
+            update: Default::default(),
         }
     }
 }
@@ -282,6 +285,7 @@ impl App {
             language,
         );
         panel.loupe_on = self.enabled().loupe;
+        panel.update = self.settings_ui.update.state;
         panel.page = self.settings_ui.page;
         panel.focus = shotoshot_ui::settings_panel::Item::Nav(panel.page);
         unsafe {
@@ -477,9 +481,11 @@ impl App {
         let language = shotoshot_text::language();
         let values = self.settings_values(language)?;
         let pointer = self.settings.presentation.pointer.clone();
+        let update = self.settings_ui.update.state;
         let Some(window) = &mut self.settings_ui.window else {
             return Ok(());
         };
+        window.panel.update = update;
         let relabel = window.panel.language != language;
         // The pointer shortcuts live in the settings, recorded by the shortcut window.
         window.panel.settings.click_shortcut = pointer.click_shortcut;
@@ -636,6 +642,9 @@ impl App {
             Command::Language(language) => {
                 self.choose_language(owner, shotoshot_text::LanguageChoice::Fixed(language))?;
             }
+            // On this click only: the site is never asked otherwise (law 4).
+            Command::CheckForUpdates => self.check_for_updates(owner),
+            Command::OpenDownloadPage => super::update_check::open_download_page(owner)?,
         }
         if let Some(menu) = &self.menu {
             menu.update(self.menu_values()?)?;
@@ -919,6 +928,12 @@ pub(super) fn preview() -> Result<()> {
         panel.editing = edit;
         panel.before = back;
         panel.language_list = list;
+        // A fixed version: the images do not change with each release.
+        panel.running = shotoshot_core::update::Version {
+            major: 1,
+            minor: 0,
+            patch: 0,
+        };
         // A fixed moment of the preview animation: the same picture on every run.
         for now in (0..2100).step_by(16) {
             panel.tick(now);
