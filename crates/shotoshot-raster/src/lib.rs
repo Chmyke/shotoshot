@@ -141,6 +141,19 @@ impl Raster {
             .map(|line| text[line].trim_end())
             .collect()
     }
+    /// Interface `text` broken into lines `width` wide, one per line of the result: what
+    /// `Canvas::text`, which never breaks a line itself, draws as a paragraph.
+    pub fn wrapped_text(&mut self, text: &str, size: f64, width: f64) -> String {
+        let mut measure = |s: &str| self.measure_text(s, size).x;
+        text_lines(text, Some(width), &mut measure)
+            .into_iter()
+            .map(|line| text[line].trim_end())
+            .collect::<Vec<_>>()
+            .join(
+                "
+",
+            )
+    }
     /// `text` broken into the lines a label `width` wide draws, one per line of the result.
     pub(crate) fn wrapped_annotation_text(&mut self, text: &str, size: f64, width: f64) -> String {
         self.label_lines(text, size, Some(width)).join("\n")

@@ -26,6 +26,7 @@ mod scale_tests;
 pub mod settings_panel;
 mod shortcut_label;
 pub(crate) use shortcut_label::shortcut_label_in;
+pub mod shortcut_window;
 #[cfg(test)]
 mod test_host;
 mod text_field;

@@ -4,6 +4,8 @@ set -eu
 data="${XDG_DATA_HOME:-$HOME/.local/share}"
 # The magnifier's blocks in labwc's files, the rest of them untouched.
 if [ -x "$HOME/.local/bin/shotoshot" ]; then "$HOME/.local/bin/shotoshot" --linux-magnifier-off || true; fi
+# The capture key given back to the desktop's own screenshot tool.
+if [ -x "$HOME/.local/bin/shotoshot" ]; then "$HOME/.local/bin/shotoshot" --linux-shortcut-off || true; fi
 rm -f "$HOME/.local/bin/shotoshot" "$data/applications/shotoshot.desktop" \
     "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/shotoshot.desktop"
 for size in 32 48 256; do rm -f "$data/icons/hicolor/${size}x${size}/apps/shotoshot.png"; done

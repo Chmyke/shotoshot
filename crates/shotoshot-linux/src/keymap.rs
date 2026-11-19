@@ -36,6 +36,67 @@ pub fn virtual_key(logical: &Key, physical: PhysicalKey) -> Option<u32> {
     }
 }
 
+/// The virtual key a shortcut records: the keys every desktop can bind by name, after the
+/// physical key for those a layout never changes (Print Screen with Alt is `Sys_Req`).
+pub fn shortcut_key(logical: &Key, physical: PhysicalKey) -> Option<u32> {
+    if let PhysicalKey::Code(code) = physical {
+        let function = [
+            KeyCode::F1,
+            KeyCode::F2,
+            KeyCode::F3,
+            KeyCode::F4,
+            KeyCode::F5,
+            KeyCode::F6,
+            KeyCode::F7,
+            KeyCode::F8,
+            KeyCode::F9,
+            KeyCode::F10,
+            KeyCode::F11,
+            KeyCode::F12,
+            KeyCode::F13,
+            KeyCode::F14,
+            KeyCode::F15,
+            KeyCode::F16,
+            KeyCode::F17,
+            KeyCode::F18,
+            KeyCode::F19,
+            KeyCode::F20,
+            KeyCode::F21,
+            KeyCode::F22,
+            KeyCode::F23,
+            KeyCode::F24,
+        ];
+        if let Some(n) = function.iter().position(|f| *f == code) {
+            return Some(112 + n as u32);
+        }
+        let named = match code {
+            KeyCode::PrintScreen => Some(44),
+            KeyCode::Pause => Some(19),
+            KeyCode::ScrollLock => Some(145),
+            KeyCode::Insert => Some(45),
+            KeyCode::Delete => Some(46),
+            KeyCode::Home => Some(36),
+            KeyCode::End => Some(35),
+            KeyCode::PageUp => Some(33),
+            KeyCode::PageDown => Some(34),
+            KeyCode::ArrowLeft => Some(37),
+            KeyCode::ArrowUp => Some(38),
+            KeyCode::ArrowRight => Some(39),
+            KeyCode::ArrowDown => Some(40),
+            KeyCode::Backspace => Some(8),
+            KeyCode::Tab => Some(9),
+            KeyCode::Enter => Some(13),
+            KeyCode::Space => Some(32),
+            KeyCode::Escape => Some(27),
+            _ => None,
+        };
+        if named.is_some() {
+            return named;
+        }
+    }
+    virtual_key(logical, physical)
+}
+
 fn digit(code: KeyCode) -> Option<u32> {
     Some(match code {
         KeyCode::Digit0 => 0,
@@ -89,6 +150,25 @@ mod tests {
                 PhysicalKey::Code(KeyCode::PageDown)
             ),
             Some(34)
+        );
+    }
+    #[test]
+    fn shortcut_keys_follow_the_physical_key_for_named_keys() {
+        let sys_req = Key::Named(NamedKey::Print);
+        assert_eq!(
+            shortcut_key(&sys_req, PhysicalKey::Code(KeyCode::PrintScreen)),
+            Some(44)
+        );
+        assert_eq!(
+            shortcut_key(&Key::Named(NamedKey::F5), PhysicalKey::Code(KeyCode::F5)),
+            Some(116)
+        );
+        assert_eq!(
+            shortcut_key(
+                &Key::Character(SmolStr::new("a")),
+                PhysicalKey::Code(KeyCode::KeyQ)
+            ),
+            Some(65)
         );
     }
 }

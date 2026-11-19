@@ -18,7 +18,7 @@ const THEME_BEGIN: &str = "# shotoshot-magnifier begin";
 const THEME_END: &str = "# shotoshot-magnifier end\n";
 /// Said by the opening marker when Shotoshot created the file, so removing the block may delete
 /// the file it leaves as it was created.
-const CREATED: &str = " (file created by Shotoshot)";
+pub(crate) const CREATED: &str = " (file created by Shotoshot)";
 
 /// The `rc.xml` labwc reads when the user has none: an empty configuration when labwc merges
 /// it over the system one (`labwc -m`), else the system file itself.
@@ -62,7 +62,7 @@ fn theme_block(created: bool) -> String {
 }
 
 /// Where a block starts and ends in `text`, and whether Shotoshot created the file.
-fn find(text: &str, begin: &str, end: &str) -> Option<(usize, usize, bool)> {
+pub(crate) fn find(text: &str, begin: &str, end: &str) -> Option<(usize, usize, bool)> {
     let start = text.find(begin)?;
     let stop = start + text[start..].find(end)? + end.len();
     Some((
@@ -73,7 +73,7 @@ fn find(text: &str, begin: &str, end: &str) -> Option<(usize, usize, bool)> {
 }
 
 /// `text` without its block, and whether Shotoshot created the file. Unchanged without a block.
-fn take_out(text: &str, begin: &str, end: &str) -> (String, bool) {
+pub(crate) fn take_out(text: &str, begin: &str, end: &str) -> (String, bool) {
     match find(text, begin, end) {
         Some((start, stop, created)) => (format!("{}{}", &text[..start], &text[stop..]), created),
         None => (text.to_owned(), false),
@@ -82,7 +82,7 @@ fn take_out(text: &str, begin: &str, end: &str) -> (String, bool) {
 
 /// What a file becomes once its block is removed: None to delete it, when Shotoshot created it
 /// and nothing else changed since (`base` is what it was created from).
-fn without(text: &str, begin: &str, end: &str, base: &str) -> Option<String> {
+pub(crate) fn without(text: &str, begin: &str, end: &str, base: &str) -> Option<String> {
     let (rest, created) = take_out(text, begin, end);
     (!created || rest != base).then_some(rest)
 }

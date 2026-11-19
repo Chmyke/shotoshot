@@ -50,9 +50,20 @@ function Get-RunScript([string]$Dir, [string[]]$Tests, [switch]$Diagnostic) {
             'elif [ -e "$c/$f" ]; then changed=1; rm -f "$c/$f"; fi; done; ' +
             'if [ -n "$changed" ]; then status=1; echo "FAILED: magnifier left labwc files changed (put back)"; LABWC_PID=$pid labwc --reconfigure; fi; ' +
             'else echo "magnifier: no labwc session"; fi; ' +
+            # The first-install window for a moment (its frame kept), then Print Screen bound
+            # in labwc as Save does and given back: rc.xml must come back byte for byte.
+            'if [ -n "$pid" ]; then [ ! -e "$c/rc.xml" ] || cp -p "$c/rc.xml" "$d/labwc/rc.setup"; ' +
+            'LABWC_PID=$pid XDG_CURRENT_DESKTOP=labwc:wlroots nice -n 10 ./shotoshot --linux-setup-probe "$d/out" || { status=1; echo "FAILED: setup"; }; ' +
+            '[ -s "$d/out/setup.png" ] || { status=1; echo "FAILED: setup window not drawn"; }; ' +
+            'if [ -e "$d/labwc/rc.setup" ]; then cmp -s "$d/labwc/rc.setup" "$c/rc.xml" || { status=1; echo "FAILED: setup left rc.xml changed (put back)"; cp -p "$d/labwc/rc.setup" "$c/rc.xml"; LABWC_PID=$pid labwc --reconfigure; }; ' +
+            'elif [ -e "$c/rc.xml" ]; then status=1; echo "FAILED: setup left an rc.xml (removed)"; rm -f "$c/rc.xml"; LABWC_PID=$pid labwc --reconfigure; fi; fi; ' +
             # The resident must publish its notification-area icon, then stop.
             # Own lock directory: an installed resident may already hold the session lock.
-            'mkdir -p "$d/xdg"; XDG_RUNTIME_DIR="$d/xdg" DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus ' +
+            # Own settings too, with the capture key already answered: no first-install window.
+            'mkdir -p "$d/xdg" "$d/cfg/shotoshot"; printf "shotoshot-desktop-shortcut-1
+desktop none
+" >"$d/cfg/shotoshot/shortcut.txt"; ' +
+            'XDG_CONFIG_HOME="$d/cfg" XDG_RUNTIME_DIR="$d/xdg" DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus ' +
             'nice -n 10 ./shotoshot & pid=$!; sleep 3; ' +
             'if busctl --user list 2>/dev/null | grep -q "StatusNotifierItem-$pid"; then echo "resident: tray icon registered"; ' +
             'else status=1; echo "FAILED: resident tray icon"; fi; kill $pid; wait $pid 2>/dev/null; '

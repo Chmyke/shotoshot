@@ -3,6 +3,7 @@
 mod bend;
 pub mod blur;
 pub mod board;
+pub mod desktop_shortcut;
 mod document;
 mod editor;
 mod elbow;

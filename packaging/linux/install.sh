@@ -16,6 +16,9 @@ exec_bin="\"$exec_bin\""
 # Versions before 0.2.0 were named "shotshot": stop and remove that install.
 former=false
 if [ -e "$bin/shotshot" ]; then former=true; fi
+# Over an install, nothing is asked and the capture key stays as it is.
+updating=$former
+if [ -e "$bin/shotoshot" ]; then updating=true; fi
 if command -v pkill >/dev/null 2>&1; then pkill -x -u "$(id -u)" shotshot 2>/dev/null || true; fi
 rm -f "$bin/shotshot" "$apps/shotshot.desktop" "$autostart/shotshot.desktop"
 for size in 32 48 256; do rm -f "$icons/${size}x${size}/apps/shotshot.png"; done
@@ -73,7 +76,14 @@ if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "$apps" >/dev/null 2>&1 || true
 fi
 echo "Shotoshot installed in $bin."
-echo "Bind a keyboard shortcut to: $bin/shotoshot --capture"
+if $updating; then
+    # A version that never asked leaves the key to the user, as before.
+    "$bin/shotoshot" --linux-shortcut-keep || true
+    echo "Bind a keyboard shortcut to: $bin/shotoshot --capture"
+elif [ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]; then
+    # A first install starts Shotoshot now: it asks for its capture key in its own window.
+    nohup "$bin/shotoshot" >/dev/null 2>&1 &
+fi
 echo "(instant capture to the Desktop: $bin/shotoshot --instant)"
 if $former; then
     echo "Replaced the former Shotshot install: rebind any shortcut that ran $bin/shotshot."

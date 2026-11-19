@@ -156,6 +156,9 @@ setup.any_key_hint = Any key works, alone or with Ctrl, Shift, Alt or Windows.
 setup.board_hint = A key with Ctrl or Alt. Shift or Windows can also be added.
 setup.shape_hint = A letter with Ctrl or Alt. Shift can also be added.
 setup.print_screen_hint = Print Screen will open Shotoshot instead of the Windows Snipping Tool. Click the key to choose another one.
+setup.linux_print_screen_hint = Print Screen will open Shotoshot instead of the desktop's screenshot tool. Click the key to choose another one.
+setup.linux_any_key_hint = Any key works, alone or with Ctrl, Shift or Alt.
+setup.linux_refused = The desktop refused this shortcut: {detail}
 setup.change_hint = Click the keys to change them.
 setup.used_for_instant = This shortcut is already used for instant screenshots.
 setup.used_for_capture = This combination is already used for capture.
@@ -194,6 +197,8 @@ notice.shape_armed = Draw it with the mouse. Esc to cancel.
 notice.instant_unavailable = Instant screenshot shortcut unavailable. Change it in Shotoshot settings.
 notice.board_unavailable = Board shortcut unavailable. Change it in Shotoshot settings.
 notice.shortcuts_unavailable = Shortcut unavailable: {names}
+notice.linux_bind_by_hand = Shotoshot cannot set a shortcut on this desktop. In its keyboard settings, bind a key to: {command}
+notice.linux_shortcut_set = {shortcut} now opens Shotoshot.
 # How the names of a list are joined, two at a time: what stands between `{before}` and
 # `{after}` (a separator alone would lose its space).
 notice.names_separator = {before}, {after}

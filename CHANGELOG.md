@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.48 · 2026-11-19
+
+- On Linux, the first install now offers a capture key (Print Screen by default) and sets it up in the desktop itself. The desktop's own screenshot tool keeps its other shortcuts, no hard feelings.
+
 ## 0.3.47 · 2026-11-19
 
 - The live magnifier now behaves like a real one: the middle stays flat and sharp, and the edge curves gently back into the screen. No more hard ring where the zoom stops, just glass.

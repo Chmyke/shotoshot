@@ -117,8 +117,8 @@ pub fn probe() -> Result<()> {
     Ok(())
 }
 
-struct Files {
-    rc: PathBuf,
+pub(crate) struct Files {
+    pub(crate) rc: PathBuf,
     theme: PathBuf,
     /// The system configuration folders, most important first.
     system: Vec<PathBuf>,
@@ -126,7 +126,7 @@ struct Files {
     merge: bool,
 }
 impl Files {
-    fn locate() -> Self {
+    pub(crate) fn locate() -> Self {
         let config = std::env::var_os("XDG_CONFIG_HOME")
             .filter(|v| !v.is_empty())
             .map(PathBuf::from)
@@ -154,7 +154,7 @@ impl Files {
             merge,
         }
     }
-    fn read(&self, path: &Path) -> Result<Option<String>> {
+    pub(crate) fn read(&self, path: &Path) -> Result<Option<String>> {
         match fs::read_to_string(path) {
             Ok(text) => Ok(Some(text)),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -162,21 +162,21 @@ impl Files {
         }
     }
     /// The system rc.xml labwc reads when the user has none.
-    fn system(&self) -> String {
+    pub(crate) fn system(&self) -> String {
         self.system
             .iter()
             .find_map(|path| fs::read_to_string(path).ok())
             .unwrap_or_default()
     }
     /// What a created rc.xml starts from.
-    fn base(&self) -> String {
+    pub(crate) fn base(&self) -> String {
         match self.system() {
             system if !self.merge && !system.is_empty() => system,
             _ => RC_SKELETON.into(),
         }
     }
     /// The whole configuration labwc reads, to know whether it binds the mouse.
-    fn bindings(&self, user: Option<&str>) -> String {
+    pub(crate) fn bindings(&self, user: Option<&str>) -> String {
         let system = || -> String {
             if self.merge {
                 self.system
@@ -197,13 +197,13 @@ impl Files {
 
 /// Writes `text` in place of `path` at once (a reader never sees half a file), keeping its
 /// permissions; None deletes it.
-fn put(path: &Path, text: Option<&str>) -> Result<()> {
+pub(crate) fn put(path: &Path, text: Option<&str>) -> Result<()> {
     match text {
         Some(text) => write(path, text),
         None => Ok(fs::remove_file(path)?),
     }
 }
-fn write(path: &Path, text: &str) -> Result<()> {
+pub(crate) fn write(path: &Path, text: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -216,7 +216,7 @@ fn write(path: &Path, text: &str) -> Result<()> {
 }
 
 /// Has labwc read its files again (SIGHUP to `LABWC_PID`).
-fn reconfigure() -> Result<()> {
+pub(crate) fn reconfigure() -> Result<()> {
     let status = Command::new("labwc").arg("--reconfigure").status()?;
     if !status.success() {
         return Err(format!("labwc --reconfigure: {status}").into());

@@ -48,7 +48,8 @@ expect_launch() {
     [ "$(launched "$1")" = "$2" ] || fail "$1 launches $(launched "$1" | tr '\n' ' ')"
 }
 
-sh "$package/install.sh" >/dev/null
+# No display: the first install must not start Shotoshot on the test machine.
+WAYLAND_DISPLAY='' DISPLAY='' sh "$package/install.sh" >/dev/null
 [ -x "$home/.local/bin/shotoshot" ] || fail "the program is not installed"
 [ -f "$data/mime/packages/shotoshot.xml" ] || fail "the file type is not declared"
 grep -q '^MimeType=image/x-shotoshot;$' "$entry" || fail "no entry opens the file type"
@@ -69,7 +70,14 @@ else
     queried="files only: no gio here"
 fi
 
+# A first install asks (no record yet); installing again is an update that never asks.
+record="$home/.config/shotoshot/shortcut.txt"
+[ ! -e "$record" ] || fail "a first install already answered the capture key question"
+WAYLAND_DISPLAY='' DISPLAY='' sh "$package/install.sh" >/dev/null
+grep -q '^desktop none$' "$record" || fail "an update would ask for the capture key"
+
 sh "$package/uninstall.sh" >/dev/null
+[ ! -e "$record" ] || fail "the capture key record outlives the removal"
 [ ! -e "$home/.local/bin/shotoshot" ] || fail "the program outlives the removal"
 [ ! -e "$entry" ] && [ ! -e "$data/mime/packages/shotoshot.xml" ] ||
     fail "the file type outlives the removal"

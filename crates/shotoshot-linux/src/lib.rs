@@ -2,6 +2,7 @@
 //! OWNER: The `shotoshot` binary on Linux.
 #![cfg(target_os = "linux")]
 mod clipboard;
+mod desktop_shortcut;
 mod editor;
 mod failure;
 mod files;
@@ -14,6 +15,7 @@ mod png_io;
 mod portal;
 mod resident;
 mod settings;
+mod shortcut_setup;
 mod timing;
 mod update;
 mod x11;
@@ -90,6 +92,27 @@ fn dispatch(args: &[String]) -> Result<(), Box<dyn Error>> {
     if args.iter().any(|a| a == "--linux-magnifier-off") {
         // Uninstall: labwc's files without Shotoshot's magnifier.
         return magnifier::forget();
+    }
+    if let Some(i) = args.iter().position(|a| a == "--linux-setup-probe") {
+        // Diagnostic: the window drawn for a moment (its frame saved), then Print Screen
+        // bound in the desktop and given back.
+        let out = args
+            .get(i + 1)
+            .map(PathBuf::from)
+            .ok_or("--linux-setup-probe needs an output folder")?;
+        shortcut_setup::run(Some(out))?;
+        return desktop_shortcut::probe();
+    }
+    if args.iter().any(|a| a == "--linux-shortcut-off") {
+        // Uninstall: the desktop's own shortcuts as they were.
+        return desktop_shortcut::restore();
+    }
+    if args.iter().any(|a| a == "--linux-shortcut-keep") {
+        // Update over a version that never asked: no window, the key stays as it is.
+        return desktop_shortcut::keep();
+    }
+    if args.iter().any(|a| a == shortcut_setup::ARG) {
+        return shortcut_setup::run(None);
     }
     if args.iter().any(|a| a == "--instant") {
         return instant();

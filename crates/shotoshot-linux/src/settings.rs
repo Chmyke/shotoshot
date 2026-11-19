@@ -6,7 +6,7 @@ use shotoshot_core::settings::{Settings, rename};
 use shotoshot_text::LanguageChoice;
 use std::path::{Path, PathBuf};
 
-fn folder() -> PathBuf {
+pub(crate) fn folder() -> PathBuf {
     config_home().join("shotoshot")
 }
 fn config_home() -> PathBuf {

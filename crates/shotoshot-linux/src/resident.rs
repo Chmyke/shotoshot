@@ -253,6 +253,26 @@ fn icons() -> Vec<ksni::Icon> {
 }
 
 /// Returns false when another resident already runs in this session.
+/// The first start after an install asks for the capture key in its window, or, on a desktop
+/// Shotoshot cannot set, says which command to bind; then the question is never asked again.
+fn first_run(exe: &std::path::Path) {
+    if !crate::desktop_shortcut::needs_setup() {
+        return;
+    }
+    if crate::desktop_shortcut::desktop().is_some() {
+        if let Ok(mut child) = Command::new(exe).arg(crate::shortcut_setup::ARG).spawn() {
+            std::thread::spawn(move || child.wait());
+        }
+        return;
+    }
+    if let Ok(command) = crate::desktop_shortcut::command() {
+        let message = Text::with(Key::NoticeLinuxBindByHand, &[("command", &command)]);
+        if crate::notice::spawn(crate::notice::ARG, &message.to_string()).is_ok() {
+            let _ = crate::desktop_shortcut::keep();
+        }
+    }
+}
+
 pub fn run() -> Result<bool, Box<dyn Error>> {
     let runtime = std::env::var_os("XDG_RUNTIME_DIR").ok_or("XDG_RUNTIME_DIR is not set")?;
     let lock = std::fs::File::create(std::path::Path::new(&runtime).join("shotoshot.lock"))?;
@@ -281,6 +301,7 @@ pub fn run() -> Result<bool, Box<dyn Error>> {
     use ksni::blocking::TrayMethods;
     let handle = tray.spawn()?;
     let exe = std::env::current_exe()?;
+    first_run(&exe);
     for request in received {
         let argument = match request {
             Request::Capture => "--capture",

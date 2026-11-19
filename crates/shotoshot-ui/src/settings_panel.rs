@@ -163,26 +163,20 @@ pub const SHORTCUT_ROWS: [ShortcutRow; 9] = [
     ShortcutRow::Spotlight,
     ShortcutRow::Loupe,
 ];
+/// The groups take the section titles of the notification-area menu, so a shortcut sits under
+/// the name the menu gives its feature (Mickaël, 2026-11-19, A1).
 const SHORTCUT_GROUPS: [(Key, &[ShortcutRow]); 3] = [
     (
         Key::MenuCapture,
-        &[
-            ShortcutRow::Capture,
-            ShortcutRow::Instant,
-            ShortcutRow::Board,
-        ],
+        &[ShortcutRow::Capture, ShortcutRow::Instant],
     ),
+    (Key::MenuBoard, &[ShortcutRow::Board]),
     (
-        Key::MenuTemporaryShapes,
+        Key::MenuPresentation,
         &[
             ShortcutRow::Arrow,
             ShortcutRow::Rectangle,
             ShortcutRow::Ellipse,
-        ],
-    ),
-    (
-        Key::MenuPointerEffects,
-        &[
             ShortcutRow::ShowClick,
             ShortcutRow::Spotlight,
             ShortcutRow::Loupe,

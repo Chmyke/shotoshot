@@ -4,176 +4,44 @@
 //! clicks read the same `SetupLayout`; English keeps the sizes the window had before translation.
 use super::*;
 use crate::render::{D2dCanvas, Renderer};
-use shotoshot_core::Rect;
 use shotoshot_text::{Key, Language, Text, tr_in};
-use shotoshot_ui::{Canvas, Ink};
-use tray_menu::{ACCENT, MUTED, RULE, SECONDARY, TEXT};
 
-const fn area(left: f64, top: f64, right: f64, bottom: f64) -> Rect {
-    Rect {
-        min: Point { x: left, y: top },
-        max: Point {
-            x: right,
-            y: bottom,
-        },
-    }
+use shotoshot_ui::shortcut_window::{self as window, Piece};
+// Names the tests and the rest of the app use; the definitions are shared with Linux.
+#[cfg(test)]
+use shotoshot_core::Rect;
+#[cfg(test)]
+use window::{
+    ACCENT, BACKGROUND, BUTTON_PADDING, CAP_HEIGHT, FIELD_MARGIN, HINT_SIZE, ICON, KEYCAP, MARGIN,
+    SURFACE, TEXT_SIZE, TITLE_SIZE, TITLE_X, Widths, area,
+};
+/// The widest content of the field in `language`, as `renderer` measures it.
+#[cfg(test)]
+fn keys_width(renderer: &Renderer, language: Language) -> Result<f64> {
+    window::keys_width(language, &windows_name, &mut |text, size| {
+        Ok(renderer.measure_text_in(text, size as f32, language)?.x)
+    })
 }
-const ICON: Point = Point { x: 20., y: 22. };
-const TITLE_X: f64 = 46.;
-/// Between the window's edges and its field, hint and buttons.
-const MARGIN: f64 = 20.;
-/// The English window: every other language keeps at least this size.
-const MIN_WIDTH: f64 = 420.;
-const FIELD_TOP: f64 = 58.;
-const FIELD_HEIGHT: f64 = 64.;
-const HINT_GAP: f64 = 10.;
-const MIN_HINT_HEIGHT: f64 = 52.;
-const BUTTONS_GAP: f64 = 12.;
-const BUTTON_HEIGHT: f64 = 32.;
-const MIN_BUTTON_WIDTH: f64 = 88.;
-/// Room kept between a button's edge and its label.
-const BUTTON_PADDING: f64 = 16.;
-const BUTTON_SPACING: f64 = 8.;
-
-/// Where the field, the hint and the buttons sit, in logical pixels at scale 1.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct SetupLayout {
-    /// Client area, in whole pixels.
-    pub size: Point,
-    field: Rect,
-    hint: Rect,
-    cancel: Rect,
-    save: Rect,
-}
-impl SetupLayout {
-    /// The window as English draws it, and every language with texts no longer than English.
-    const ENGLISH: Self = Self {
-        size: Point { x: 420., y: 248. },
-        field: area(20., 58., 400., 122.),
-        hint: area(20., 132., 400., 184.),
-        cancel: area(216., 196., 304., 228.),
-        save: area(312., 196., 400., 228.),
-    };
-    /// The window for texts of `widths`, whose tallest hint is `hint` high once wrapped at the
-    /// hint width of `widths.window()`. Each zone keeps its English size unless a text needs more.
-    fn fit(widths: Widths, hint: f64) -> Self {
-        let width = widths.window();
-        let right = width - MARGIN;
-        let field = area(MARGIN, FIELD_TOP, right, FIELD_TOP + FIELD_HEIGHT);
-        let hint_top = field.max.y + HINT_GAP;
-        let hint = area(
-            MARGIN,
-            hint_top,
-            right,
-            hint_top + hint.ceil().max(MIN_HINT_HEIGHT),
-        );
-        let (top, button) = (hint.max.y + BUTTONS_GAP, button_width(widths.button));
-        let save = area(right - button, top, right, top + BUTTON_HEIGHT);
-        let cancel_right = save.min.x - BUTTON_SPACING;
-        let cancel = area(cancel_right - button, top, cancel_right, save.max.y);
-        Self {
-            size: Point {
-                x: width,
-                y: save.max.y + MARGIN,
-            },
-            field,
-            hint,
-            cancel,
-            save,
-        }
-    }
-    /// The action under a logical point: 0 the shortcut field, 1 Cancel, 2 Save.
-    pub fn hit(&self, x: f64, y: f64) -> Option<usize> {
-        [self.field, self.cancel, self.save]
-            .iter()
-            .position(|zone| zone.contains(Point { x, y }))
-    }
-}
-impl Default for SetupLayout {
-    fn default() -> Self {
-        Self::ENGLISH
-    }
-}
-
-/// The widest texts of one language, in logical pixels at scale 1: a title, a full row of
-/// keycaps or a prompt of the field, a button label.
-#[derive(Clone, Copy, Default)]
-struct Widths {
-    title: f64,
-    keys: f64,
-    button: f64,
-}
-impl Widths {
-    /// The window width these texts need, never below the English one.
-    fn window(self) -> f64 {
-        [
-            MIN_WIDTH,
-            TITLE_X + self.title + MARGIN,
-            2. * (MARGIN + FIELD_MARGIN) + self.keys,
-            2. * MARGIN + 2. * button_width(self.button) + BUTTON_SPACING,
-        ]
-        .into_iter()
-        .fold(0., f64::max)
-        .ceil()
-    }
-}
-fn button_width(label: f64) -> f64 {
-    (label + 2. * BUTTON_PADDING).ceil().max(MIN_BUTTON_WIDTH)
-}
+pub(super) use window::{Layout as SetupLayout, modifier_labels_in};
 
 /// The window sized for the texts of `language`, as `renderer` measures them.
 pub(super) fn layout(renderer: &Renderer, language: Language) -> Result<SetupLayout> {
-    let width = |key, size: f64| -> Result<f64> {
-        Ok(renderer
-            .measure_text_in(tr_in(language, key), size as f32, language)?
-            .x)
-    };
-    let mut widths = Widths {
-        keys: keys_width(renderer, language)?,
-        ..Default::default()
-    };
-    for target in TARGETS {
-        widths.title = widths.title.max(width(target.title(), TITLE_SIZE)?);
-    }
-    for key in [Key::SetupCancel, Key::SetupSave] {
-        widths.button = widths.button.max(width(key, TEXT_SIZE)?);
-    }
-    let wrap = (widths.window() - 2. * MARGIN) as f32;
-    let mut hint: f64 = 0.;
-    for text in hints_in(language) {
-        let wrapped = renderer.measure_wrapped_text_in(&text, HINT_SIZE as f32, wrap, language)?;
-        hint = hint.max(wrapped.y);
-    }
-    Ok(SetupLayout::fit(widths, hint))
-}
-
-/// The widest content of the field in `language`: every modifier with the longest key name the
-/// interface writes, or a prompt.
-fn keys_width(renderer: &Renderer, language: Language) -> Result<f64> {
-    let width = |text: &str| {
-        Ok::<_, Error>(
-            renderer
-                .measure_text_in(text, TEXT_SIZE as f32, language)?
-                .x,
-        )
-    };
-    let mut longest_key: f64 = 0.;
-    let fallback = code_name(0xFF, language);
-    for name in (0..=255)
-        .filter_map(|key| table_name(key, language))
-        .chain([fallback])
-    {
-        longest_key = longest_key.max(cap_width(width(&name)?, 1.));
-    }
-    let mut keys = longest_key;
-    for modifier in modifier_labels_in(15, language) {
-        keys += cap_width(width(modifier)?, 1.) + GAP;
-    }
-    let mut widest = keys;
-    for prompt in [Key::SetupPress, Key::SetupChoose] {
-        widest = widest.max(width(tr_in(language, prompt))?.ceil());
-    }
-    Ok(widest)
+    let titles: Vec<&str> = TARGETS
+        .iter()
+        .map(|target| tr_in(language, target.title()))
+        .collect();
+    SetupLayout::measured(
+        language,
+        &titles,
+        &hints_in(language),
+        &windows_name,
+        &mut |text, size| Ok(renderer.measure_text_in(text, size as f32, language)?.x),
+        &mut |text, size, wrap| {
+            Ok(renderer
+                .measure_wrapped_text_in(text, size as f32, wrap as f32, language)?
+                .y)
+        },
+    )
 }
 
 #[derive(Clone, Copy, Default, PartialEq)]
@@ -409,62 +277,9 @@ fn hints_in(language: Language) -> Vec<String> {
     texts
 }
 
-pub(super) fn modifier_labels_in(
-    mods: u32,
-    language: Language,
-) -> impl Iterator<Item = &'static str> {
-    [
-        (2, Key::KeyCtrl),
-        (4, Key::KeyShift),
-        (1, Key::KeyAlt),
-        (8, Key::KeyWin),
-    ]
-    .into_iter()
-    .filter(move |(mask, _)| mods & mask != 0)
-    .map(move |(_, key)| tr_in(language, key))
-}
-/// The name the interface writes for `key` in `language`, or `None` for a key Windows names
-/// after the keyboard layout (letters, digits, punctuation).
-fn table_name(key: u32, language: Language) -> Option<String> {
-    let named = |name| Some(tr_in(language, name).to_string());
-    let numpad = |symbol: &str| {
-        Some(Text::with_in(language, Key::KeyNumpad, &[("key", symbol)]).to_string())
-    };
-    match key {
-        8 => named(Key::KeyBackspace),
-        9 => named(Key::KeyTab),
-        13 => named(Key::KeyEnter),
-        20 => named(Key::KeyCapsLock),
-        27 => named(Key::KeyEsc),
-        32 => named(Key::KeySpace),
-        33 => named(Key::KeyPageUp),
-        34 => named(Key::KeyPageDown),
-        35 => named(Key::KeyEnd),
-        36 => named(Key::KeyHome),
-        37 => named(Key::KeyLeft),
-        38 => named(Key::KeyUp),
-        39 => named(Key::KeyRight),
-        40 => named(Key::KeyDown),
-        45 => named(Key::KeyInsert),
-        46 => named(Key::KeyDelete),
-        96..=105 => numpad(&(key - 96).to_string()),
-        106 => numpad("*"),
-        107 => numpad("+"),
-        109 => numpad("-"),
-        110 => numpad("."),
-        111 => numpad("/"),
-        112..=135 => Some(format!("F{}", key - 111)),
-        144 => named(Key::KeyNumLock),
-        145 => named(Key::KeyScrollLock),
-        19 => named(Key::KeyPause),
-        3 => named(Key::KeyBreak),
-        44 => named(Key::KeyPrintScreen),
-        _ => None,
-    }
-}
-/// A key nobody names, by its virtual-key code.
-fn code_name(key: u32, language: Language) -> String {
-    Text::with_in(language, Key::KeyCode, &[("code", &format!("{key:02X}"))]).to_string()
+/// Modifiers then the key: one entry per keycap.
+fn key_parts_in(mods: u32, key: u32, language: Language) -> Vec<String> {
+    window::key_parts_in(mods, key, language, &windows_name)
 }
 /// The name Windows gives `key` on the current keyboard layout.
 fn windows_name(key: u32) -> Option<String> {
@@ -478,18 +293,6 @@ fn windows_name(key: u32) -> Option<String> {
         );
         (len > 0).then(|| String::from_utf16_lossy(&buffer[..len as usize]))
     }
-}
-/// Modifiers then the key: one entry per keycap.
-fn key_parts_in(mods: u32, key: u32, language: Language) -> Vec<String> {
-    let mut parts: Vec<String> = modifier_labels_in(mods, language)
-        .map(String::from)
-        .collect();
-    parts.push(
-        table_name(key, language)
-            .or_else(|| windows_name(key))
-            .unwrap_or_else(|| code_name(key, language)),
-    );
-    parts
 }
 /// The combination as one line, in `language`.
 pub(super) fn key_label_in(mods: u32, key: u32, language: Language) -> String {
@@ -675,219 +478,28 @@ impl App {
     }
 }
 
-const BACKGROUND: [u8; 3] = [0x20, 0x20, 0x20];
-/// The shortcut field and the Cancel button.
-const SURFACE: [u8; 3] = [0x2b, 0x2b, 0x2b];
-const KEYCAP: [u8; 3] = [0x3a, 0x3a, 0x3a];
-const KEYCAP_EDGE: [u8; 3] = [0x56, 0x56, 0x56];
-const DISABLED: [u8; 3] = [0x33, 0x33, 0x33];
-const ERROR: [u8; 3] = [0xf8, 0x51, 0x49];
-/// Toolbar glyphs sit on a 20 px grid; the title shows its icon at 16 px.
-const ICON_SCALE: f64 = 0.8;
-const TITLE_SIZE: f64 = 16.;
-const TEXT_SIZE: f64 = 13.;
-const HINT_SIZE: f64 = 12.;
-const CAP_HEIGHT: f64 = 28.;
-const CAP_MARGIN: f64 = 10.;
-const GAP: f64 = 6.;
-/// Room kept between the field's edge and its keys.
-const FIELD_MARGIN: f64 = 16.;
-const RADIUS: f64 = 5.;
-
-/// Width of a keycap whose label is `label` wide, at `scale`.
-fn cap_width(label: f64, scale: f64) -> f64 {
-    (label + 2. * CAP_MARGIN * scale)
-        .max(CAP_HEIGHT * scale)
-        .ceil()
-}
-
-/// What the shortcut field shows, left to right.
-enum Piece {
-    Cap(String),
-    Plus,
-    Prompt(Key),
-}
-fn caps(labels: impl Iterator<Item = String>) -> Vec<Piece> {
-    let mut pieces = Vec::new();
-    for label in labels {
-        if !pieces.is_empty() {
-            pieces.push(Piece::Plus);
-        }
-        pieces.push(Piece::Cap(label));
+/// What one frame of the window shows.
+fn view(ui: &Setup) -> window::View<'_> {
+    window::View {
+        language: ui.language,
+        layout: ui.layout,
+        icon: ui.target.icon(),
+        title: tr_in(ui.language, ui.target.title()),
+        pieces: pieces(ui),
+        hint: ui.hint(),
+        error: !ui.error.is_empty(),
+        field_framed: ui.recording || ui.focus == 0,
+        focus: ui.focus,
+        save_enabled: ui.pending.is_some() && !ui.recording,
     }
-    pieces
 }
 fn pieces(ui: &Setup) -> Vec<Piece> {
-    if ui.recording {
-        let mut held = caps(modifier_labels_in(ui.held, ui.language).map(String::from));
-        if held.is_empty() {
-            return vec![Piece::Prompt(Key::SetupPress)];
-        }
-        held.extend([Piece::Plus, Piece::Prompt(Key::SetupWaiting)]);
-        held
-    } else if let Some((mods, key)) = ui.pending {
-        caps(key_parts_in(mods, key, ui.language).into_iter())
-    } else {
-        vec![Piece::Prompt(Key::SetupChoose)]
-    }
-}
-
-/// One line of text centred in `r`.
-fn centered<C: Canvas>(
-    canvas: &mut C,
-    text: &str,
-    r: Rect,
-    size: f64,
-    rgb: [u8; 3],
-) -> std::result::Result<(), C::Error> {
-    let extent = canvas.measure_text(text, size)?;
-    let min = r.center() - extent * 0.5;
-    canvas.text(
-        text,
-        Rect {
-            min,
-            // Measuring and drawing round differently: never wrap or clip the last glyph.
-            max: min + extent + Point { x: size, y: 0. },
-        },
-        size,
-        Ink::solid(rgb),
-    )
-}
-fn button<C: Canvas>(
-    canvas: &mut C,
-    r: Rect,
-    scale: f64,
-    label: &str,
-    [fill, edge, ink]: [[u8; 3]; 3],
-) -> std::result::Result<(), C::Error> {
-    canvas.fill_round_rect(r, RADIUS * scale, Ink::solid(fill))?;
-    canvas.stroke_round_rect(
-        r.expanded(-0.5 * scale),
-        RADIUS * scale,
-        Ink::solid(edge),
-        scale,
-    )?;
-    centered(canvas, label, r, TEXT_SIZE * scale, ink)
-}
-
-/// The whole window, at `scale` device pixels per logical pixel.
-fn paint<C: Canvas>(canvas: &mut C, ui: &Setup, scale: f64) -> std::result::Result<(), C::Error> {
-    let zones = ui.layout;
-    let text = |key| tr_in(ui.language, key);
-    let u = |value: f64| value * scale;
-    let px = |r: Rect| Rect {
-        min: r.min * scale,
-        max: r.max * scale,
-    };
-    canvas.fill_rect(
-        px(area(0., 0., zones.size.x, zones.size.y)),
-        Ink::solid(BACKGROUND),
-    )?;
-    tray_menu::draw_icon(
-        canvas,
-        ui.target.icon(),
-        ICON * scale,
-        u(ICON_SCALE),
-        SECONDARY,
-    )?;
-    let title_text = text(ui.target.title());
-    let title = canvas.measure_text(title_text, u(TITLE_SIZE))?;
-    let title_top = u(ICON.y + 10. * ICON_SCALE) - title.y / 2.;
-    canvas.text(
-        title_text,
-        Rect {
-            min: Point {
-                x: u(TITLE_X),
-                y: title_top,
-            },
-            max: Point {
-                x: u(zones.size.x),
-                y: title_top + title.y,
-            },
-        },
-        u(TITLE_SIZE),
-        Ink::solid(TEXT),
-    )?;
-
-    let field = px(zones.field);
-    canvas.fill_round_rect(field, u(RADIUS + 1.), Ink::solid(SURFACE))?;
-    canvas.stroke_round_rect(
-        field.expanded(-u(0.5)),
-        u(RADIUS + 1.),
-        Ink::solid(if ui.recording || ui.focus == 0 {
-            ACCENT
-        } else {
-            RULE
-        }),
-        u(1.),
-    )?;
-    let mut slots = Vec::new();
-    for piece in pieces(ui) {
-        let width = match &piece {
-            Piece::Cap(label) => cap_width(canvas.measure_text(label, u(TEXT_SIZE))?.x, scale),
-            Piece::Plus => canvas.measure_text("+", u(TEXT_SIZE))?.x.ceil(),
-            Piece::Prompt(key) => canvas.measure_text(text(*key), u(TEXT_SIZE))?.x.ceil(),
-        };
-        slots.push((piece, width));
-    }
-    let span = |slots: &[(Piece, f64)]| {
-        slots.iter().map(|(_, width)| width).sum::<f64>()
-            + u(GAP) * slots.len().saturating_sub(1) as f64
-    };
-    if span(&slots) > field.size().x - u(2. * FIELD_MARGIN) {
-        // A shortcut too long for the field keeps its keys and gives up the separators.
-        slots.retain(|(piece, _)| !matches!(piece, Piece::Plus));
-    }
-    let total = span(&slots);
-    let middle = field.center();
-    let mut left = (middle.x - total / 2.).round();
-    for (piece, width) in slots {
-        let slot = Rect {
-            min: Point {
-                x: left,
-                y: middle.y - u(CAP_HEIGHT / 2.),
-            },
-            max: Point {
-                x: left + width,
-                y: middle.y + u(CAP_HEIGHT / 2.),
-            },
-        };
-        match piece {
-            Piece::Cap(label) => button(canvas, slot, scale, &label, [KEYCAP, KEYCAP_EDGE, TEXT])?,
-            Piece::Plus => centered(canvas, "+", slot, u(TEXT_SIZE), MUTED)?,
-            Piece::Prompt(key) => centered(canvas, text(key), slot, u(TEXT_SIZE), SECONDARY)?,
-        }
-        left += width + u(GAP);
-    }
-
-    canvas.text(
-        ui.hint(),
-        px(zones.hint),
-        u(HINT_SIZE),
-        Ink::solid(if ui.error.is_empty() { MUTED } else { ERROR }),
-    )?;
-    button(
-        canvas,
-        px(zones.cancel),
-        scale,
-        text(Key::SetupCancel),
-        [SURFACE, if ui.focus == 1 { ACCENT } else { RULE }, TEXT],
-    )?;
-    let fill = if ui.pending.is_some() && !ui.recording {
-        ACCENT
-    } else {
-        DISABLED
-    };
-    button(
-        canvas,
-        px(zones.save),
-        scale,
-        text(Key::SetupSave),
-        [
-            fill,
-            if ui.focus == 2 { TEXT } else { fill },
-            if fill == ACCENT { BACKGROUND } else { MUTED },
-        ],
+    window::pieces(
+        ui.recording,
+        ui.held,
+        ui.pending,
+        ui.language,
+        &windows_name,
     )
 }
 
@@ -911,7 +523,7 @@ impl Setup {
                     .dc
                     .SetTransform(&windows_numerics::Matrix3x2::identity());
                 let painted = D2dCanvas::new(&renderer, &renderer.dc)
-                    .and_then(|mut canvas| paint(&mut canvas, self, scale));
+                    .and_then(|mut canvas| window::paint(&mut canvas, view(self), scale));
                 let ended = renderer.dc.EndDraw(None, None);
                 painted.and(ended)
             })

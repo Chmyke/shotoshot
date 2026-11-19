@@ -793,3 +793,16 @@ fn every_updates_note_fits_without_resizing() {
         }
     }
 }
+#[test]
+fn shortcut_groups_list_every_shortcut_once_under_a_menu_section_title() {
+    let grouped: Vec<ShortcutRow> = SHORTCUT_GROUPS
+        .iter()
+        .flat_map(|(_, rows)| rows.iter().copied())
+        .collect();
+    assert_eq!(grouped, SHORTCUT_ROWS.to_vec());
+    let titles: Vec<Key> = SHORTCUT_GROUPS.iter().map(|(key, _)| *key).collect();
+    assert_eq!(
+        titles,
+        [Key::MenuCapture, Key::MenuBoard, Key::MenuPresentation]
+    );
+}
