@@ -90,13 +90,7 @@ impl Capture {
                 2,
                 size,
             )?;
-            let owner = notify.0 as isize;
-            let arrived = pool.FrameArrived(&TypedEventHandler::new(move |_, _| {
-                if !PENDING.swap(true, Ordering::SeqCst) {
-                    let _ = PostMessageW(Some(HWND(owner as *mut _)), FRAMES, WPARAM(0), LPARAM(0));
-                }
-                Ok(())
-            }))?;
+            let arrived = announced(&pool, notify)?;
             let session = pool.CreateCaptureSession(&item)?;
             let _ = session.SetIsCursorCaptureEnabled(false);
             // No yellow frame around a window nobody asked to record.
@@ -231,9 +225,21 @@ fn new_surface(
     }
 }
 
+/// Has `pool` tell `notify` about its frames, once per burst for all the loupe's captures.
+pub(super) fn announced(pool: &Direct3D11CaptureFramePool, notify: HWND) -> Result<i64> {
+    let owner = notify.0 as isize;
+    pool.FrameArrived(&TypedEventHandler::new(move |_, _| {
+        if !PENDING.swap(true, Ordering::SeqCst) {
+            let _ =
+                unsafe { PostMessageW(Some(HWND(owner as *mut _)), FRAMES, WPARAM(0), LPARAM(0)) };
+        }
+        Ok(())
+    }))
+}
+
 /// Where a window's captured frames start on screen: its visible bounds, without the invisible
 /// resizing borders Windows 11 counts in its rectangle.
-fn window_origin(window: HWND) -> Result<POINT> {
+pub(super) fn window_origin(window: HWND) -> Result<POINT> {
     let mut bounds = RECT::default();
     unsafe {
         if DwmGetWindowAttribute(

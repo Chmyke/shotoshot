@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.47 · 2026-11-19
+
+- The live magnifier now behaves like a real one: the middle stays flat and sharp, and the edge curves gently back into the screen. No more hard ring where the zoom stops, just glass.
+
 ## 0.3.46 · 2026-11-13
 
 - Settings, General now has a Check for updates button. It only asks when you click it, and if a newer version is out, Download opens the page in your browser. No sneaky background checks, ever.

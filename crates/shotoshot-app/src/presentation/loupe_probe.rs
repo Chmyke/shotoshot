@@ -10,7 +10,7 @@
 use super::loupe::{BAND_STEPS, Loupe, Renderer, WINDOWS_CHANGED, fallback_reason};
 use super::*;
 use crate::{LiveSurface, image::capture_desktop, resources::OwnedWindow};
-use shotoshot_core::loupe::{feather, frame};
+use shotoshot_core::loupe::{Lens, feather, frame};
 use windows::Win32::Graphics::Dwm::DwmFlush;
 
 /// The loupe's diameter in the probe, device pixels.
@@ -213,6 +213,33 @@ fn settle(loupe: &mut Loupe) {
     }
     loupe.windows_changed();
 }
+/// Lets the rim's captures bring their frames in, as the resident does on `FRAMES`: a capture
+/// opened for this place shows nothing until its first frame, which a loaded machine may take
+/// well over 150 ms to deliver (2026-11-19, check.ps1 under load). Then a few more for frames
+/// already on their way.
+fn settled_rim(loupe: &mut Loupe) {
+    if !loupe.rimmed() {
+        return;
+    }
+    let start = std::time::Instant::now();
+    let mut ready_at = None;
+    while start.elapsed() < std::time::Duration::from_secs(2)
+        && ready_at.is_none_or(|at: std::time::Instant| at.elapsed().as_millis() < 50)
+    {
+        if ready_at.is_none() && loupe.rim_ready() {
+            ready_at = Some(std::time::Instant::now());
+        }
+        loupe.frames();
+        unsafe {
+            let mut msg = MSG::default();
+            while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
+                DispatchMessageW(&msg);
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    loupe.frames();
+}
 fn bgr(image: &crate::Image, x: i32, y: i32) -> Option<[u8; 3]> {
     let (dx, dy) = (x - image.left, y - image.top);
     if dx < 0 || dy < 0 || dx >= image.width as i32 || dy >= image.height as i32 {
@@ -223,9 +250,14 @@ fn bgr(image: &crate::Image, x: i32, y: i32) -> Option<[u8; 3]> {
 }
 
 /// Where, around its circle, each renderer's loupe may differ from both the enlargement and
-/// the screen under it, in window pixels: inside, then outside the circle.
-fn margins(renderer: Renderer) -> (f64, f64) {
+/// the screen under it, in window pixels: inside, then outside the circle. A rimmed loupe shows
+/// the plain enlargement on its plateau only; its rim is read apart (`rim_look`).
+fn margins(renderer: Renderer, rimmed: bool) -> (f64, f64) {
     match renderer {
+        Renderer::Composed if rimmed => {
+            let radius = DIAMETER as f64 / 2.;
+            (radius * (1. - shotoshot_core::loupe::PLATEAU) + 1.5, 1.5)
+        }
         // The fading edge, 4 pixels, and a pixel of the last disc's soft border.
         Renderer::Composed => (feather(DIAMETER) as f64 + 2., 1.5),
         // Steps of the bands, half inside and half out, and a pixel of rounding.
@@ -259,11 +291,11 @@ fn look(
     after: &crate::Image,
     at: POINT,
     zoom: i32,
-    renderer: Renderer,
+    (renderer, rimmed): (Renderer, bool),
 ) -> Look {
     let frame = frame(at.x, at.y, DIAMETER, zoom);
     let window = frame.window;
-    let (inner, outer) = margins(renderer);
+    let (inner, outer) = margins(renderer, rimmed);
     let radius = window.width() as f64 / 2. - inner;
     let centre = (
         window.left as f64 + window.width() as f64 / 2.,
@@ -315,6 +347,92 @@ fn look(
                     }
                 }
             }
+        }
+    }
+    result
+}
+
+/// How the bent rim of the loupe at `at` agrees with what it must show: each pixel the average
+/// of 4 x 4 points across it, each the screen of `before` at `Lens::source`, read between its
+/// pixels' centres as the shader reads its frames.
+#[derive(Debug, Default)]
+pub(crate) struct RimLook {
+    pub zoom: i32,
+    /// Rim pixels read, and those within `RIM_LEVELS` of what they must show on every channel.
+    pub total: usize,
+    pub close: usize,
+    pub worst: u8,
+}
+impl RimLook {
+    pub fn share(&self) -> f64 {
+        self.close as f64 / self.total.max(1) as f64
+    }
+}
+/// How far a rim pixel may read from its reference: the GPU weighs neighbours with 8 bits of a
+/// pixel at least, half a level a read, and rounds once.
+const RIM_LEVELS: u8 = 4;
+/// Share of the rim's pixels that must be that close.
+const RIM_CLOSE: f64 = 0.99;
+fn rim_look(before: &crate::Image, after: &crate::Image, at: POINT, zoom: i32) -> RimLook {
+    let frame = frame(at.x, at.y, DIAMETER, zoom);
+    let lens = Lens::new(&frame);
+    let window = frame.window;
+    // Between pixel centres, as a linear sampler reads a frame.
+    let read = |x: f64, y: f64| -> Option<[f64; 3]> {
+        let (fx, fy) = (x - 0.5, y - 0.5);
+        let (x0, y0) = (fx.floor(), fy.floor());
+        let (tx, ty) = (fx - x0, fy - y0);
+        let mut sum = [0.; 3];
+        for (dx, dy, weight) in [
+            (0, 0, (1. - tx) * (1. - ty)),
+            (1, 0, tx * (1. - ty)),
+            (0, 1, (1. - tx) * ty),
+            (1, 1, tx * ty),
+        ] {
+            let pixel = bgr(before, x0 as i32 + dx, y0 as i32 + dy)?;
+            for c in 0..3 {
+                sum[c] += pixel[c] as f64 * weight;
+            }
+        }
+        Some(sum)
+    };
+    let mut result = RimLook {
+        zoom,
+        ..Default::default()
+    };
+    for y in 0..window.height() {
+        'pixel: for x in 0..window.width() {
+            let (dx, dy) = (x as f64 + 0.5 - lens.radius, y as f64 + 0.5 - lens.radius);
+            let distance = (dx * dx + dy * dy).sqrt();
+            if distance < lens.plateau + 1.5 || distance > lens.radius - 1. {
+                continue;
+            }
+            let mut sum = [0.; 3];
+            for i in 0..4 {
+                for j in 0..4 {
+                    let (px, py) = (
+                        x as f64 + (i as f64 + 0.5) / 4.,
+                        y as f64 + (j as f64 + 0.5) / 4.,
+                    );
+                    let (sx, sy) = lens.source(&frame, px, py);
+                    let Some(read) = read(sx, sy) else {
+                        continue 'pixel;
+                    };
+                    for c in 0..3 {
+                        sum[c] += read[c] / 16.;
+                    }
+                }
+            }
+            let Some(shown) = bgr(after, window.left + x, window.top + y) else {
+                continue;
+            };
+            let worst = (0..3)
+                .map(|c| (shown[c] as f64 - sum[c]).abs().round() as u8)
+                .max()
+                .unwrap_or(0);
+            result.total += 1;
+            result.close += usize::from(worst <= RIM_LEVELS);
+            result.worst = result.worst.max(worst);
         }
     }
     result
@@ -444,6 +562,9 @@ pub(crate) struct Report {
     pub renderer: Option<Renderer>,
     pub fallback: Option<String>,
     pub looks: Vec<Look>,
+    /// Whether the loupe drew its bent rim, and the rim over the pattern at each zoom.
+    pub rimmed: bool,
+    pub rims: Vec<RimLook>,
     /// The fading edge of the loupe over the pattern, and its upper left part enlarged 8x.
     pub feather: Feather,
     pub edge_zoom: Option<crate::Image>,
@@ -517,15 +638,20 @@ pub(crate) fn probe(timed: bool, renderer: Renderer) -> Result<Report> {
         Renderer::Banded => return Err(fail("the banded loupe is probed by its test".into())),
     };
     // What a renderer that fell back mid-run drew is judged by the rules of what it became.
-    let drawn = |loupe: &Loupe| loupe.renderer();
+    let drawn = |loupe: &Loupe| (loupe.renderer(), loupe.rimmed());
     for zoom in [2, 3, 4] {
-        for (at, _) in &points {
+        for (index, (at, _)) in points.iter().enumerate() {
             loupe.update(*at, DIAMETER, zoom, None, &[])?;
+            settled_rim(&mut loupe);
             composed();
             let after = capture_desktop()?;
             report
                 .looks
                 .push(look(&before, &after, *at, zoom, drawn(&loupe)));
+            // The rim away from the screen's edges, where all it shows is the pattern.
+            if index == 0 && loupe.rimmed() {
+                report.rims.push(rim_look(&before, &after, *at, zoom));
+            }
         }
     }
     // A window to leave out and one that refuses capture, both under the loupe.
@@ -543,6 +669,7 @@ pub(crate) fn probe(timed: bool, renderer: Renderer) -> Result<Report> {
     }
     settle(&mut loupe);
     loupe.update(at, DIAMETER, 2, None, &[excluded.hwnd()])?;
+    settled_rim(&mut loupe);
     composed();
     let after = capture_desktop()?;
     // What lies under both is the pattern: the loupe shows it, not a hole where they are.
@@ -565,6 +692,7 @@ pub(crate) fn probe(timed: bool, renderer: Renderer) -> Result<Report> {
     // The edge over the pattern, away from the screen's edges, once the windows left out are
     // gone: a loupe that shows the same is not restacked over windows opened since.
     loupe.update(at, DIAMETER, 2, None, &[])?;
+    settled_rim(&mut loupe);
     composed();
     let after = capture_desktop()?;
     report.feather = feathering(&before, &after, at);
@@ -603,6 +731,7 @@ pub(crate) fn probe(timed: bool, renderer: Renderer) -> Result<Report> {
         },
     ] {
         loupe.update(corner, DIAMETER, 2, None, &[])?;
+        settled_rim(&mut loupe);
         composed();
         let after = capture_desktop()?;
         report
@@ -617,6 +746,7 @@ pub(crate) fn probe(timed: bool, renderer: Renderer) -> Result<Report> {
         report.idle_cpu_percent = idle_cpu(&mut loupe, at)?;
     }
     report.renderer = Some(loupe.renderer());
+    report.rimmed = loupe.rimmed();
     report.fallback = fallback_reason().map(String::from);
     drop(loupe);
     // Only this process's: the installed resident, or another checkout's tests running at the
@@ -737,7 +867,7 @@ pub(crate) fn taskbar(timed: bool) -> Result<Option<Taskbar>> {
     let after = capture_desktop()?;
     let frame = frame(at.x, at.y, DIAMETER, 2);
     let window = frame.window;
-    let (margin, _) = margins(loupe.renderer());
+    let (margin, _) = margins(loupe.renderer(), loupe.rimmed());
     let radius = window.width() as f64 / 2. - margin;
     let centre = (
         window.left as f64 + window.width() as f64 / 2.,
@@ -901,7 +1031,21 @@ fn timed_jumps(
                         break;
                     }
                     if elapsed > 500. {
-                        return Err(fail(format!("never reached {:?}", (at.x, at.y))));
+                        let read: Vec<_> = samples
+                            .iter()
+                            .map(|(x, y, c)| {
+                                let pixel = GetPixel(screen, *x, *y).0;
+                                (
+                                    (*x, *y),
+                                    *c,
+                                    [(pixel >> 16) as u8, (pixel >> 8) as u8, pixel as u8],
+                                )
+                            })
+                            .collect();
+                        return Err(fail(format!(
+                            "never reached {:?} (jump {index}): {read:?}",
+                            (at.x, at.y)
+                        )));
                     }
                 }
                 composed();
@@ -1036,7 +1180,7 @@ fn percentile(sorted: &[f64], share: f64) -> f64 {
 pub(crate) fn verdict(report: &Report, timed: bool) -> Vec<String> {
     let mut faults = Vec::new();
     let renderer = report.renderer.unwrap_or(Renderer::Banded);
-    let (inner, _) = margins(renderer);
+    let (inner, _) = margins(renderer, report.rimmed);
     for look in &report.looks {
         let edge = (look.total as f64)
             < 0.9 * std::f64::consts::PI * (DIAMETER as f64 / 2. - inner).powi(2);
@@ -1060,7 +1204,24 @@ pub(crate) fn verdict(report: &Report, timed: bool) -> Vec<String> {
     // 1 would be a line (Mickaël wants 3 or 4 pixels, 2026-10-28). The banded one's steps are
     // bounded by its margins, checked above.
     let f = &report.feather;
-    if renderer == Renderer::Composed
+    if renderer == Renderer::Composed && report.rimmed {
+        // The rim instead of the fading edge: what it shows, at every zoom.
+        if report.rims.len() < 3 {
+            faults.push(format!("the rim read at {} zooms of 3", report.rims.len()));
+        }
+        for rim in &report.rims {
+            if rim.total < 5000 || rim.share() < RIM_CLOSE {
+                faults.push(format!(
+                    "the rim at zoom {}: {:.2} % of {} pixels within {RIM_LEVELS} levels (needs {:.0} %), at worst {} off",
+                    rim.zoom,
+                    100. * rim.share(),
+                    rim.total,
+                    100. * RIM_CLOSE,
+                    rim.worst
+                ));
+            }
+        }
+    } else if renderer == Renderer::Composed
         && (f.samples < 1000
             // A narrow edge counts more pixels where two discs' soft borders meet. Measured on
             // 2 520 samples (2026-10-28, 4 px, five discs): 103 to 132 over eleven runs, calm
@@ -1135,8 +1296,9 @@ pub(crate) fn run() -> Result<()> {
     let (floor50, floor95, _) = spread(&report.floor_ms);
     let (update50, update_max, _) = spread(&report.update_ms);
     let mut text = format!(
-        "renderer {:?}{}\nlatency p50 {p50:.1} ms, p95 {p95:.1} ms over {count} moves; plain window moved the same way {floor50:.1} and {floor95:.1} ms\nupdate p50 {update50:.2} ms, max {update_max:.2} ms ({} discs)\nidle CPU {:.3} %\nfading edge: {:?}\n",
+        "renderer {:?}{}{}\nlatency p50 {p50:.1} ms, p95 {p95:.1} ms over {count} moves; plain window moved the same way {floor50:.1} and {floor95:.1} ms\nupdate p50 {update50:.2} ms, max {update_max:.2} ms ({} discs)\nidle CPU {:.3} %\nfading edge: {:?}\n",
         report.renderer,
+        if report.rimmed { ", bent rim" } else { "" },
         report
             .fallback
             .as_deref()
@@ -1156,6 +1318,16 @@ pub(crate) fn run() -> Result<()> {
             look.worst,
             look.stray,
             look.corners
+        );
+    }
+    for rim in &report.rims {
+        text += &format!(
+            "rim zoom {}: {:.2} % of {} within {RIM_LEVELS} levels (at worst {} off)
+",
+            rim.zoom,
+            100. * rim.share(),
+            rim.total,
+            rim.worst
         );
     }
     if let Some(taskbar) = &taskbar {
@@ -1256,7 +1428,7 @@ mod tests {
         })
         .unwrap();
         let loupe = p.loupe.as_ref().expect("the loupe's switch opens it");
-        let (hwnd, renderer) = (loupe.hwnd(), loupe.renderer());
+        let (hwnd, renderer, rimmed) = (loupe.hwnd(), loupe.renderer(), loupe.rimmed());
         composed();
         let after = capture_desktop().unwrap();
         let mut placed = RECT::default();
@@ -1272,7 +1444,7 @@ mod tests {
             y: placed.top + half,
         };
         assert_eq!(frame(at.x, at.y, DIAMETER, 2).window.left, placed.left);
-        let seen = look(&before, &after, at, 2, renderer);
+        let seen = look(&before, &after, at, 2, (renderer, rimmed));
         assert!(
             seen.share() >= EXACT_AT_EDGES && seen.corners == 0,
             "{seen:?}"

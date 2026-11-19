@@ -168,6 +168,90 @@ pub fn feather(_side: i32) -> i32 {
     4
 }
 
+/// Share of the loupe's radius shown flat, at the plain enlargement in exact blocks; beyond it
+/// the lens's rim bends the enlargement back to the screen (Mickaël, 2026-11-19: 87 %, chosen
+/// on `docs/design/loupe-distortion-proposals/`).
+pub const PLATEAU: f64 = 0.87;
+
+/// The bent rim of the loupe, between the flat plateau and the edge, where the enlargement
+/// falls smoothly back to the screen as it is: at the edge a point shows the screen under it,
+/// with nothing to join, so the rim needs no fading.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Lens {
+    /// The loupe's radius and the plateau's, in window pixels.
+    pub radius: f64,
+    pub plateau: f64,
+    pub zoom: f64,
+    /// Across the rim, `t` from 0 at the plateau to 1 at the edge: the distance from the centre
+    /// on screen is `cubic[0] + cubic[1] t + cubic[2] t² + cubic[3] t³`. It leaves the plateau
+    /// at its distance and slope, and lands on the edge at the edge's distance with slope 1.
+    pub cubic: [f64; 4],
+}
+impl Lens {
+    pub fn new(frame: &Frame) -> Self {
+        let radius = frame.window.width() as f64 / 2.;
+        let zoom = frame.zoom as f64;
+        let plateau = radius * PLATEAU;
+        let h = radius - plateau;
+        // Hermite ends: value and slope (per unit of t) at the plateau, then at the edge.
+        let (y0, m0, y1, m1) = (plateau / zoom, h / zoom, radius, h);
+        Self {
+            radius,
+            plateau,
+            zoom,
+            cubic: [
+                y0,
+                m0,
+                -3. * y0 + 3. * y1 - 2. * m0 - m1,
+                2. * y0 - 2. * y1 + m0 + m1,
+            ],
+        }
+    }
+    /// How far across the rim a distance from the centre lies: 0 at the plateau, 1 at the edge.
+    pub fn across(&self, distance: f64) -> f64 {
+        ((distance - self.plateau) / (self.radius - self.plateau)).clamp(0., 1.)
+    }
+    /// The distance from the centre, on screen, of what the loupe shows at `distance`.
+    pub fn source_distance(&self, distance: f64) -> f64 {
+        if distance <= self.plateau {
+            return distance / self.zoom;
+        }
+        let t = self.across(distance);
+        let [a, b, c, d] = self.cubic;
+        a + t * (b + t * (c + t * d))
+    }
+    /// The screen point, in device pixels, the loupe of `frame` shows at the window point
+    /// (`x`, `y`), from its top-left corner. The plateau's blocks map as `stack` places them;
+    /// the edge maps on the screen under it. Their centres differ by up to half a block (an odd
+    /// number of source pixels across): the rim moves from one to the other as it bends.
+    pub fn source(&self, frame: &Frame, x: f64, y: f64) -> (f64, f64) {
+        let centre = self.radius;
+        let (dx, dy) = (x - centre, y - centre);
+        let plateau_centre = (
+            frame.source.left as f64 + centre / self.zoom,
+            frame.source.top as f64 + centre / self.zoom,
+        );
+        let distance = (dx * dx + dy * dy).sqrt();
+        if distance <= self.plateau {
+            return (
+                plateau_centre.0 + dx / self.zoom,
+                plateau_centre.1 + dy / self.zoom,
+            );
+        }
+        let edge_centre = (
+            frame.window.left as f64 + centre,
+            frame.window.top as f64 + centre,
+        );
+        let scale = self.source_distance(distance) / distance;
+        let t = self.across(distance);
+        let shift = t * t * (3. - 2. * t);
+        (
+            plateau_centre.0 + dx * scale + (edge_centre.0 - plateau_centre.0) * shift,
+            plateau_centre.1 + dy * scale + (edge_centre.1 - plateau_centre.1) * shift,
+        )
+    }
+}
+
 /// One disc of the fading edge: its radius in device pixels and its opacity.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Ring {
@@ -251,6 +335,76 @@ mod tests {
                 assert!(now <= last + 1e-12, "{steps}: rises at {tenth}");
                 assert!(last - now <= 1.6 / steps as f64, "{steps}: drop at {tenth}");
                 last = now;
+            }
+        }
+    }
+
+    #[test]
+    fn the_rim_leaves_the_plateau_smoothly_and_lands_on_the_screen() {
+        for size in [160, 240, 400] {
+            for zoom in [2, 3, 4, 6] {
+                let frame = frame(500, 400, size, zoom);
+                let lens = Lens::new(&frame);
+                let (p, r, z) = (lens.plateau, lens.radius, lens.zoom);
+                assert!((p - r * PLATEAU).abs() < 1e-9);
+                let slope = |at: f64| {
+                    (lens.source_distance(at + 1e-4) - lens.source_distance(at - 1e-4)) / 2e-4
+                };
+                // Joins the plateau with its distance and its slope.
+                assert!((lens.source_distance(p) - p / z).abs() < 1e-9);
+                assert!((lens.source_distance(p + 1e-9) - p / z).abs() < 1e-6);
+                assert!((slope(p + 1e-3) - 1. / z).abs() < 1e-2, "{size} {zoom}");
+                // Lands on the screen under it, with no step and no kink.
+                assert!((lens.source_distance(r) - r).abs() < 1e-9);
+                assert!((slope(r - 1e-3) - 1.).abs() < 1e-2, "{size} {zoom}");
+                // Always moving outwards: no part of the screen shown twice.
+                let mut last = lens.source_distance(p);
+                for step in 1..=1000 {
+                    let now = lens.source_distance(p + (r - p) * step as f64 / 1000.);
+                    assert!(now > last, "{size} {zoom}: folds at step {step}");
+                    last = now;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_plateau_shows_the_blocks_and_the_edge_shows_the_screen_under_it() {
+        for (size, zoom) in [(240, 2), (240, 3), (241, 3), (200, 4)] {
+            let frame = frame(500, 400, size, zoom);
+            let lens = Lens::new(&frame);
+            let side = frame.window.width();
+            // Every pixel of the plateau, at its middle, shows the source pixel of its block.
+            for y in 0..side {
+                for x in 0..side {
+                    let (cx, cy) = (x as f64 + 0.5, y as f64 + 0.5);
+                    let (dx, dy) = (cx - lens.radius, cy - lens.radius);
+                    if (dx * dx + dy * dy).sqrt() > lens.plateau {
+                        continue;
+                    }
+                    let (sx, sy) = lens.source(&frame, cx, cy);
+                    assert_eq!(
+                        sx.floor() as i32,
+                        frame.source.left + x / zoom,
+                        "{size} {zoom}"
+                    );
+                    assert_eq!(
+                        sy.floor() as i32,
+                        frame.source.top + y / zoom,
+                        "{size} {zoom}"
+                    );
+                }
+            }
+            // On the edge, every direction shows the screen point under it.
+            for tenth in 0..3600 {
+                let angle = (tenth as f64 / 10.).to_radians();
+                let (x, y) = (
+                    lens.radius * (1. + angle.cos()),
+                    lens.radius * (1. + angle.sin()),
+                );
+                let (sx, sy) = lens.source(&frame, x, y);
+                assert!((sx - (frame.window.left as f64 + x)).abs() < 1e-9);
+                assert!((sy - (frame.window.top as f64 + y)).abs() < 1e-9);
             }
         }
     }

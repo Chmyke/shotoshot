@@ -9,12 +9,14 @@
 //!
 //! Two renderers (`docs/recherche/2026-10-28-loupe-essai/`):
 //! - Composed, preferred: DWM shared thumbnail visuals of the windows (dwmapi's undocumented
-//!   export 147, as VLC loads it) in a DirectComposition tree, in nested round discs whose
-//!   opacities fade the edge over 4 pixels. Pixel for pixel at 2x inside the fading
-//!   edge, seen by every capture API.
+//!   export 147, as VLC loads it) in a DirectComposition tree, in a round disc: the flat
+//!   plateau, pixel for pixel, seen by every capture API. Around it the bent rim
+//!   (`loupe_rim`), drawn from captures, brings the enlargement back to the screen. Where the
+//!   rim cannot be had, nested discs whose opacities fade the edge over 4 pixels instead.
 //! - Banded, the fallback: classic thumbnails in round bands inside a round window region. Its
 //!   edge is stepped, a few pixels at most, with no ring to hide the steps.
 use super::loupe_capture::{self, Capture};
+use super::loupe_rim::Rim;
 use super::*;
 use crate::resources::OwnedWindow;
 use shotoshot_core::loupe::{self as geometry, PixelRect};
@@ -70,8 +72,14 @@ enum Draw {
     /// Registered thumbnails, bottom first and band by band, with the window each shows.
     Banded(Vec<(HWND, isize)>),
 }
-/// The frame, the window above and the windows under the loupe.
-type Shown = (geometry::Frame, Option<HWND>, Vec<(HWND, PixelRect)>);
+/// The frame, the window above, the windows under the plateau's source and those under the
+/// loupe's window (the rim's, empty without it).
+type Shown = (
+    geometry::Frame,
+    Option<HWND>,
+    Vec<(HWND, PixelRect)>,
+    Vec<(HWND, PixelRect)>,
+);
 impl Loupe {
     /// The composed loupe where this Windows offers it, the banded one otherwise.
     pub fn new(owner: HWND) -> Result<Self> {
@@ -83,6 +91,8 @@ impl Loupe {
         Self::with(owner, Renderer::Banded)
     }
     fn with(owner: HWND, wanted: Renderer) -> Result<Self> {
+        // Before the renderer: the rim's captures announce their frames to the owner.
+        NOTIFY.store(owner.0 as isize, Ordering::SeqCst);
         let composed = (wanted == Renderer::Composed)
             .then(shared_visuals)
             .flatten();
@@ -147,6 +157,17 @@ impl Loupe {
             Draw::Banded(_) => 0,
         }
     }
+    /// Whether the composed loupe draws its bent rim (`loupe_rim`) rather than a fading edge.
+    pub fn rimmed(&self) -> bool {
+        matches!(&self.draw, Draw::Composed(composed) if composed.rim.is_some())
+    }
+    /// Whether the rim, if drawn, has a frame of every window under it.
+    pub fn rim_ready(&self) -> bool {
+        match &self.draw {
+            Draw::Composed(composed) => composed.rim.as_ref().is_none_or(|rim| rim.ready()),
+            Draw::Banded(_) => true,
+        }
+    }
     pub fn renderer(&self) -> Renderer {
         match self.draw {
             Draw::Composed(_) => Renderer::Composed,
@@ -166,13 +187,19 @@ impl Loupe {
         let frame = geometry::frame(at.x, at.y, diameter, zoom);
         let mut skip = excluded.to_vec();
         skip.push(self.hwnd());
+        let rimmed = self.rimmed();
         let all = self.windows.get_or_insert_with(top_level_windows);
         let under = windows_under(all, &frame.source, &skip);
-        let seen = (frame, above, under);
+        let around = if rimmed {
+            windows_under(all, &frame.window, &skip)
+        } else {
+            Vec::new()
+        };
+        let seen = (frame, above, under, around);
         if self.shown && self.last.as_ref() == Some(&seen) {
             return Ok(());
         }
-        if let Err(error) = self.draw(&frame, &seen.2) {
+        if let Err(error) = self.draw(&frame, &seen.2, &seen.3) {
             if self.renderer() == Renderer::Banded {
                 return Err(error);
             }
@@ -182,7 +209,7 @@ impl Loupe {
             self.window = loupe_window(false)?;
             self.side = 0;
             self.shown = false;
-            self.draw(&frame, &seen.2)?;
+            self.draw(&frame, &seen.2, &seen.3)?;
         }
         self.last = Some(seen);
         // Shown with its content in the same composition: never empty for a frame.
@@ -216,12 +243,18 @@ impl Loupe {
             left_out(&error);
         }
     }
-    /// Puts in the loupe's window the windows `under` it, enlarged as `frame` says.
-    fn draw(&mut self, frame: &geometry::Frame, under: &[(HWND, PixelRect)]) -> Result<()> {
+    /// Puts in the loupe's window the windows `under` it, enlarged as `frame` says, and in its
+    /// rim those `around` it.
+    fn draw(
+        &mut self,
+        frame: &geometry::Frame,
+        under: &[(HWND, PixelRect)],
+        around: &[(HWND, PixelRect)],
+    ) -> Result<()> {
         let hwnd = self.hwnd();
         let side = frame.window.width();
         match &mut self.draw {
-            Draw::Composed(composed) => composed.place(frame, under)?,
+            Draw::Composed(composed) => composed.place(frame, under, around)?,
             Draw::Banded(thumbnails) => {
                 if side != self.side {
                     // The region belongs to the window once set: no handle to free.
@@ -416,6 +449,9 @@ struct Composed {
     _root: IDCompositionVisual2,
     /// The opaque disc first.
     discs: Vec<Disc>,
+    /// The bent rim around the plateau, when this machine can draw it: then `discs` holds the
+    /// plateau's opaque disc alone.
+    rim: Option<Box<Rim>>,
     /// Windows under the loupe shown by capture, and those export 147 refused.
     captures: Vec<Capture>,
     refused: Vec<HWND>,
@@ -486,9 +522,31 @@ impl Composed {
                 DCOMPOSITION_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
             )?;
             root.SetBorderMode(DCOMPOSITION_BORDER_MODE_SOFT)?;
+            let rim = match Rim::new(
+                &d3d,
+                &context,
+                &device,
+                HWND(NOTIFY.load(Ordering::SeqCst) as *mut _),
+            ) {
+                Ok(rim) => Some(Box::new(rim)),
+                Err(error) => {
+                    eprintln!("Loupe: no bent rim ({error}); its edge fades instead");
+                    None
+                }
+            };
+            // The rim under everything: the plateau covers its inner pixel and a half.
+            if let Some(rim) = &rim {
+                root.AddVisual(&rim.visual, false, None::<&IDCompositionVisual>)?;
+            }
             // The opacities hang on the number of discs only; their radii on the loupe's size.
             let mut discs = Vec::new();
-            for ring in geometry::feathered(1., 1., FEATHER_STEPS) {
+            let rings = geometry::feathered(1., 1., FEATHER_STEPS);
+            let rings = if rim.is_some() {
+                &rings[..1]
+            } else {
+                &rings[..]
+            };
+            for ring in rings {
                 let visual = device.CreateVisual()?;
                 // The clip hangs on a visual of its own, around the disc's windows rendered
                 // into one surface by an effect: clipped as they are, each window is cut apart,
@@ -497,7 +555,10 @@ impl Composed {
                 // (2026-10-30: a dark window under the probe's pattern left 460 pixels of 2 520
                 // in the fading edge no blend of the enlargement and the screen; none since).
                 let rounded = device.CreateVisual()?;
-                if ring.opacity < 1. {
+                if ring.opacity < 1. || rim.is_some() {
+                    // With the rim, the plateau too is one surface: its windows drawn one by
+                    // one over the rim read a level off on 0.75 % of its pixels (2026-11-19),
+                    // through the effect on none.
                     visual
                         .cast::<IDCompositionVisual3>()?
                         .SetEffect(&faded(&device, ring.opacity as f32)?)?;
@@ -537,6 +598,7 @@ impl Composed {
                 _target: target,
                 _root: root,
                 discs,
+                rim,
                 captures: Vec::new(),
                 refused: Vec::new(),
                 hwnd,
@@ -563,7 +625,12 @@ impl Composed {
                     &self.d3d,
                     &self.context,
                     &self.device,
-                    FEATHER_STEPS + 1,
+                    // The discs are out of `self` while placed: counted from what they are.
+                    if self.rim.is_some() {
+                        1
+                    } else {
+                        FEATHER_STEPS + 1
+                    },
                     HWND(NOTIFY.load(Ordering::SeqCst) as *mut _),
                 )
                 .map_err(|error| {
@@ -584,12 +651,20 @@ impl Composed {
         for capture in &mut self.captures {
             any |= capture.refresh(&self.device, &self.context)?;
         }
+        if let Some(rim) = &mut self.rim {
+            any |= rim.refresh()?;
+        }
         if any {
             unsafe { self.device.Commit()? };
         }
         Ok(any)
     }
-    fn place(&mut self, frame: &geometry::Frame, under: &[(HWND, PixelRect)]) -> Result<()> {
+    fn place(
+        &mut self,
+        frame: &geometry::Frame,
+        under: &[(HWND, PixelRect)],
+        around: &[(HWND, PixelRect)],
+    ) -> Result<()> {
         // The discs round the loupe: each window is one rectangle, cut to the source.
         let placed = geometry::stack(frame, &[frame.source], under);
         // Captures and refusals of windows no longer under the loupe are forgotten.
@@ -684,6 +759,11 @@ impl Composed {
         for capture in &self.captures {
             capture.place(frame)?;
         }
+        if let Some(rim) = &mut self.rim
+            && let Err(error) = rim.place(frame, around)
+        {
+            left_out(&error);
+        }
         if let Some(error) = missing {
             if shown == 0 && !SHARED_WORKED.load(Ordering::SeqCst) {
                 return Err(error);
@@ -697,8 +777,15 @@ impl Composed {
         unsafe {
             if side != self.side {
                 let radius = side as f64 / 2.;
-                let rings =
-                    geometry::feathered(radius, geometry::feather(side) as f64, FEATHER_STEPS);
+                let rings = if self.rim.is_some() {
+                    // The plateau alone; the rim beyond it.
+                    vec![geometry::Ring {
+                        radius: geometry::Lens::new(frame).plateau,
+                        opacity: 1.,
+                    }]
+                } else {
+                    geometry::feathered(radius, geometry::feather(side) as f64, FEATHER_STEPS)
+                };
                 for (disc, ring) in self.discs.iter().zip(rings) {
                     // A disc centred on the window, of the ring's radius.
                     let (near, far, r) = (

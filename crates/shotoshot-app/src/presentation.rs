@@ -16,6 +16,7 @@ mod layout;
 mod loupe;
 mod loupe_capture;
 pub(crate) mod loupe_probe;
+mod loupe_rim;
 mod manipulation;
 pub(crate) mod menu;
 pub(crate) mod model;

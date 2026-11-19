@@ -36,7 +36,9 @@ windows = { workspace = true, features = [
     "Win32_UI_Accessibility",
     # The loupe captures the windows DWM thumbnails get wrong (the taskbar).
     "Foundation", "Graphics", "Graphics_Capture", "Graphics_DirectX", "Graphics_DirectX_Direct3D11",
-    "Win32_System_WinRT", "Win32_System_WinRT_Direct3D11", "Win32_System_WinRT_Graphics_Capture"
+    "Win32_System_WinRT", "Win32_System_WinRT_Direct3D11", "Win32_System_WinRT_Graphics_Capture",
+    # The loupe's bent rim is a pixel shader, compiled at its first use by the system's compiler.
+    "Win32_Graphics_Direct3D_Fxc"
 ] }
 windows-numerics = "0.3.1"
 # The `implement` macro of `windows` expands to paths in this crate (already in the tree through
