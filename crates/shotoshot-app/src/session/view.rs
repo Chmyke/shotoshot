@@ -1,4 +1,5 @@
 use super::*;
+use shotoshot_ui::Canvas;
 
 impl Session {
     pub(super) fn paint_contents(&self) -> Result<()> {
@@ -13,7 +14,7 @@ impl Session {
                     |mut canvas| {
                         let smooth = view.zoomed();
                         renderer.paint_backdrop(smooth);
-                        self.paint_scene(&mut canvas, capture.ui_scale() / view.zoom, smooth)
+                        self.paint_scene(&mut canvas, capture.ui_scale() / view.zoom, Some(smooth))
                     },
                 );
                 renderer.pop_view();
@@ -21,19 +22,42 @@ impl Session {
             }
         } else {
             let mut canvas = crate::render::D2dCanvas::new(renderer, &renderer.dc)?;
-            self.paint_scene(&mut canvas, capture.ui_scale(), false)?;
+            self.paint_scene(&mut canvas, capture.ui_scale(), Some(false))?;
         }
         let mut canvas = crate::render::D2dCanvas::direct(renderer, &renderer.dc)?;
-        self.paint_chrome(&mut canvas)
+        self.paint_chrome(&mut canvas, true)
+    }
+    /// The fingerprint of the frame `paint_contents` would paint now
+    /// (`shotoshot_ui::fingerprint`), or `None` when part of it escapes the canvas: zoomed
+    /// views, the live eyedropper (its loupe reads the desktop again at each move), native
+    /// text fields, or a gesture editing the pile, which the fingerprint only summarises.
+    /// Live capture otherwise qualifies: the desktop shows through, it is never painted.
+    pub(crate) fn frame_fingerprint(&self) -> Result<Option<u64>> {
+        let capture = &self.capture;
+        if capture.zoomed()
+            || (capture.live && capture.eyedropper)
+            || self.native.text.is_some()
+            || self.native.dimensions.is_some()
+            || capture.editor.is_drawing()
+        {
+            return Ok(None);
+        }
+        let renderer = &self.native.renderer;
+        let mut measure = crate::render::D2dCanvas::direct(renderer, &renderer.dc)?;
+        let mut canvas = shotoshot_ui::fingerprint::Fingerprint::new(&mut measure);
+        self.paint_scene(&mut canvas, capture.ui_scale(), None)?;
+        self.paint_chrome(&mut canvas, false)?;
+        Ok(Some(canvas.finish()))
     }
     /// What a view transforms: shade, background, notes, the icons over them, the text being
     /// typed, then the selection chrome at `scale`. `begin` painted the backdrop at 1:1; a
-    /// zoomed pass paints its own, `smooth`.
-    fn paint_scene(
+    /// zoomed pass paints its own, `smooth`. `native: None` draws only what goes through the
+    /// canvas (a fingerprint); `Some(smooth)` adds the renderer's own layers.
+    fn paint_scene<C: Canvas<Error = Error>>(
         &self,
-        canvas: &mut crate::render::D2dCanvas,
+        canvas: &mut C,
         scale: f64,
-        smooth: bool,
+        native: Option<bool>,
     ) -> Result<()> {
         let capture = &self.capture;
         capture.draw_underlay(canvas)?;
@@ -43,14 +67,17 @@ impl Session {
             // What the desktop lays over the notes (a board's icons) goes over them here too,
             // under the editor's own chrome; the text being typed stays above, readable
             // (blind test of 2026-11-05: icons crossed it).
-            self.native.renderer.paint_overlay(smooth);
-            self.native.draw_text_input(scale)?;
+            if let Some(smooth) = native {
+                self.native.renderer.paint_overlay(smooth);
+                self.native.draw_text_input(scale)?;
+            }
             capture.draw_frame_scaled(canvas, self.native.text.is_none(), scale)?;
         }
         Ok(())
     }
     /// What stays in screen coordinates: toolbar, pointer feedback, picker, fields, hints.
-    fn paint_chrome(&self, canvas: &mut crate::render::D2dCanvas) -> Result<()> {
+    /// `native` adds the native fields, which bypass the canvas.
+    fn paint_chrome<C: Canvas<Error = Error>>(&self, canvas: &mut C, native: bool) -> Result<()> {
         let capture = &self.capture;
         if capture.region.is_some() {
             if !capture.selecting {
@@ -65,7 +92,7 @@ impl Session {
                     picker.draw(canvas)?;
                 }
             }
-            self.native.draw_dimensions(&self.capture, canvas)?;
+            self.native.draw_dimensions(&self.capture, canvas, native)?;
             capture.draw_hover_hint(
                 canvas,
                 std::time::Instant::now(),
@@ -85,7 +112,7 @@ impl Session {
             .toolbar_color(self.native.text.as_ref().map(|t| t.color))
     }
 
-    fn draw_pointer_feedback(&self, canvas: &mut crate::render::D2dCanvas) -> Result<()> {
+    fn draw_pointer_feedback<C: Canvas<Error = Error>>(&self, canvas: &mut C) -> Result<()> {
         let capture = &self.capture;
         if self.capture.picker.is_some()
             || (self.native.text.is_some() && !capture.eyedropper)

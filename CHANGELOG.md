@@ -2,6 +2,10 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.49 · 2026-11-19
+
+Nothing you would notice in this version: the work is under the hood.
+
 ## 0.3.48 · 2026-11-19
 
 - On Linux, the first install now offers a capture key (Print Screen by default) and sets it up in the desktop itself. The desktop's own screenshot tool keeps its other shortcuts, no hard feelings.

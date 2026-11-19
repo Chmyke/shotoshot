@@ -77,6 +77,7 @@ impl Session {
                 accelerate_after_paint: false,
                 caret: Default::default(),
                 cross_ink: Default::default(),
+                shown: None,
             },
             document: None,
             board: Some(BoardSession { screens, folder }),

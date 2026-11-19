@@ -274,15 +274,17 @@ impl Native {
         }
         true
     }
-    /// The portable badge, then the native fields over it.
-    pub(super) fn draw_dimensions(
+    /// The portable badge, then, when `native`, the native fields over it.
+    pub(super) fn draw_dimensions<C: shotoshot_ui::Canvas<Error = Error>>(
         &self,
         capture: &Capture,
-        canvas: &mut crate::render::D2dCanvas,
+        canvas: &mut C,
+        native: bool,
     ) -> Result<()> {
         let error = self.dimensions.as_ref().and_then(|d| d.error);
         capture.draw_dimensions(canvas, self.dimensions.is_some(), error)?;
-        let (Some(areas), Some(fields)) = (capture.dimension_field_bounds(), &self.dimensions)
+        let (true, Some(areas), Some(fields)) =
+            (native, capture.dimension_field_bounds(), &self.dimensions)
         else {
             return Ok(());
         };

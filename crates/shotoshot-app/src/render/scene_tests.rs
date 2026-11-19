@@ -6,6 +6,11 @@ use std::cell::Cell;
 thread_local! {
     static FILLS: Cell<usize> = const { Cell::new(0) };
     static COMBINES: Cell<usize> = const { Cell::new(0) };
+    static DRAWN: Cell<usize> = const { Cell::new(0) };
+}
+
+pub(super) fn record_drawn() {
+    DRAWN.set(DRAWN.get() + 1);
 }
 
 pub(super) fn record_fill() {
@@ -578,6 +583,24 @@ fn a_blur_shows_its_patch_under_the_ink_and_a_moved_blur_never_shows_a_stale_che
         "a checkpoint kept the old blur"
     );
     assert!(warm.pixels != shown.pixels);
+    // Drawn away from the stroke, a blur leaves its checkpoint alone.
+    let far = |at: f64| Object {
+        shape: Shape::Blur(Rect {
+            min: p(180., at),
+            max: p(230., at + 30.),
+        }),
+        ..blur.clone()
+    };
+    capture.editor = shotoshot_core::Editor::restore(vec![far(120.), stroke(2)], 2, vec![]);
+    draw(&renderer, &capture);
+    capture.editor = shotoshot_core::Editor::restore(vec![far(140.), stroke(2)], 2, vec![]);
+    DRAWN.set(0);
+    let warm = draw(&renderer, &capture);
+    assert_eq!(DRAWN.get(), 0, "the stroke came back from its checkpoint");
+    assert!(
+        warm.pixels == draw(&self::renderer(), &capture).pixels,
+        "with the blur where it now is"
+    );
 }
 
 #[test]
@@ -596,5 +619,45 @@ fn cached_prefix_retains_unchanged_outlines_when_an_earlier_object_is_edited() {
         stroke_tests::builds(),
         4,
         "an unchanged prefix outline was discarded"
+    );
+}
+
+#[test]
+fn an_erase_sweep_restores_the_pile_below_the_first_faded_object() {
+    let _com = crate::ComApartment::new().unwrap();
+    let renderer = renderer();
+    let objects: Vec<Object> = (1..=20).map(stroke).collect();
+    let fading = |renderer: &Renderer, objects: &[Object], faded: &[u64]| {
+        crate::paint_image(240, 180, |dc| {
+            renderer.begin(dc, 240, 180)?;
+            let mut canvas = D2dCanvas::new(renderer, &renderer.dc)?;
+            canvas.annotations_fading(objects, None, faded)?;
+            renderer.end()
+        })
+        .unwrap()
+    };
+    paint(&renderer, &objects, 0., None);
+    let first = fading(&renderer, &objects, &[20]);
+    DRAWN.set(0);
+    let warm = fading(&renderer, &objects, &[20]);
+    assert_eq!(DRAWN.get(), 1, "only the faded stroke is drawn again");
+    assert!(warm.pixels == first.pixels);
+    assert!(
+        warm.pixels == fading(&self::renderer(), &objects, &[20]).pixels,
+        "the restored pile equals a fresh render"
+    );
+    // A fill spared by walls depends on what follows: the cache stops before it.
+    let mut walled = objects.clone();
+    walled[4].fill = vec![shotoshot_core::Paint {
+        color: [1, 2, 3],
+        walls: vec![7],
+    }];
+    let _ = fading(&renderer, &walled, &[20]);
+    DRAWN.set(0);
+    let _ = fading(&renderer, &walled, &[20]);
+    assert_eq!(
+        DRAWN.get(),
+        16,
+        "from the walled fill on, everything is drawn"
     );
 }

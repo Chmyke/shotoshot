@@ -657,6 +657,8 @@ impl Renderer {
                 if Some(o.id) == skip || o.is_blur() {
                     continue;
                 }
+                #[cfg(test)]
+                scene_tests::record_drawn();
                 if let Shape::Text {
                     position,
                     text,
@@ -934,8 +936,8 @@ pub struct D2dCanvas<'a> {
     // annotations. Other drawing before annotations opts out: unknown pixels must never
     // enter a reusable checkpoint.
     underlay: Option<Vec<Underlay>>,
-    // The blurs drawn under the annotations, by id and version: a checkpoint holds them too.
-    blurs: Vec<(u64, u64)>,
+    // The blurs drawn under the annotations, bottom first: a checkpoint holds them too.
+    blurs: Vec<BlurPatch>,
 }
 impl<'a> D2dCanvas<'a> {
     pub fn new(renderer: &'a Renderer, target: &'a ID2D1RenderTarget) -> Result<Self> {
@@ -968,6 +970,29 @@ impl<'a> D2dCanvas<'a> {
         let mut canvas = Self::new(renderer, target)?;
         canvas.underlay = None;
         Ok(canvas)
+    }
+    /// `objects` through the scene cache, when this frame's pixels so far are known (only
+    /// shade and coats under them) and nothing transforms them; `None` otherwise. The caller
+    /// retains the outline cache for the whole pile.
+    fn scene(&mut self, objects: &[Object], skip: Option<u64>) -> Option<Result<()>> {
+        let underlay = self.underlay.take()?;
+        if self.target.as_raw() != self.renderer.dc.as_raw() {
+            return None;
+        }
+        let context = self.target.cast::<ID2D1DeviceContext>().ok()?;
+        let mut transform = Matrix3x2::identity();
+        unsafe { self.target.GetTransform(&mut transform) };
+        if transform != Matrix3x2::identity() {
+            return None;
+        }
+        Some(self.renderer.scene.borrow_mut().draw(
+            self.renderer,
+            self.target,
+            &context,
+            objects,
+            skip,
+            (&underlay, &self.blurs),
+        ))
     }
     fn ink(&self, ink: Ink) -> &ID2D1SolidColorBrush {
         unsafe { self.brush.SetColor(&color(ink.rgb, ink.alpha)) };
@@ -1212,7 +1237,7 @@ impl Canvas for D2dCanvas<'_> {
         self.blurs.clear();
         for (i, patch) in patches.iter().enumerate() {
             let version = patch.version();
-            self.blurs.push((patch.id, version));
+            self.blurs.push(*patch);
             let zone = patch.zone;
             let index = match cache.iter().position(|(id, _, _)| *id == patch.id) {
                 Some(at) if cache[at].1 == version => at,
@@ -1277,8 +1302,21 @@ impl Canvas for D2dCanvas<'_> {
     ) -> Result<()> {
         // One retention for the whole pile: a run drawn apart must not evict the others.
         self.renderer.strokes.borrow_mut().retain_present(objects);
-        let parameters = layer(FADING);
+        // Below the first faded object the pile holds still during a sweep: the scene cache
+        // restores it instead of redrawing the whole document every frame. The prefix stops
+        // at an attached arrow or a walled fill too, so it never depends on what follows.
+        let stable = objects
+            .iter()
+            .position(|o| fading.contains(&o.id) || o.depends_on_others())
+            .unwrap_or(objects.len());
         let mut start = 0;
+        if stable > 0
+            && let Some(result) = self.scene(&objects[..stable], skip)
+        {
+            result?;
+            start = stable;
+        }
+        let parameters = layer(FADING);
         while start < objects.len() {
             let fades = fading.contains(&objects[start].id);
             let mut end = start + 1;
@@ -1300,25 +1338,13 @@ impl Canvas for D2dCanvas<'_> {
         Ok(())
     }
     fn annotations(&mut self, objects: &[Object], skip: Option<u64>) -> Result<()> {
-        if let Some(underlay) = self.underlay.take()
-            && self.target.as_raw() == self.renderer.dc.as_raw()
-            && let Ok(context) = self.target.cast::<ID2D1DeviceContext>()
-        {
-            let mut transform = Matrix3x2::identity();
-            unsafe { self.target.GetTransform(&mut transform) };
-            if transform == Matrix3x2::identity() {
-                self.renderer.strokes.borrow_mut().retain_present(objects);
-                return self.renderer.scene.borrow_mut().draw(
-                    self.renderer,
-                    self.target,
-                    &context,
-                    objects,
-                    skip,
-                    (&underlay, &self.blurs),
-                );
-            }
+        self.renderer.strokes.borrow_mut().retain_present(objects);
+        match self.scene(objects, skip) {
+            Some(result) => result,
+            None => self
+                .renderer
+                .annotation_range(self.target, objects, skip, 0..objects.len()),
         }
-        self.renderer.annotations_except(self.target, objects, skip)
     }
     fn glyph(&mut self, object: &Object) -> Result<()> {
         self.underlay = None;

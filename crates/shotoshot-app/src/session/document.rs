@@ -67,6 +67,7 @@ impl Session {
                 accelerate_after_paint: false,
                 caret: Default::default(),
                 cross_ink: Default::default(),
+                shown: None,
             },
             document: Some(path.into()),
             board: None,

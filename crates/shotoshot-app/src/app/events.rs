@@ -252,7 +252,10 @@ impl App {
                         };
                         let _ = TrackMouseEvent(&mut tracking);
                     }
-                    invalidate(hwnd);
+                    // Hovering over nothing changes no pixel: repaint only what differs.
+                    if s.frame_changed() {
+                        invalidate(hwnd);
+                    }
                 }
             }
             WM_LBUTTONUP => {

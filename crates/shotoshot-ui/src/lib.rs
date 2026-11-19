@@ -9,6 +9,7 @@ pub mod crop;
 pub mod cursor_image;
 mod dimension_fields;
 mod document;
+pub mod fingerprint;
 mod host;
 pub mod icon;
 mod image;

@@ -75,6 +75,9 @@ pub struct Native {
     pub caret: text::CaretBlink,
     // The ink the cross last showed: it changes only past a band, see `CrossInk::against`.
     cross_ink: std::cell::Cell<shotoshot_ui::cursor_image::CrossInk>,
+    // The fingerprint of the frame on screen, when its paint had one: a pointer move that
+    // keeps it repaints nothing (`Session::frame_fingerprint`).
+    shown: Option<u64>,
 }
 pub struct Session {
     pub capture: Capture,
@@ -111,6 +114,7 @@ impl Session {
                 accelerate_after_paint: false,
                 caret: Default::default(),
                 cross_ink: Default::default(),
+                shown: None,
             },
             document: None,
             board: None,

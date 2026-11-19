@@ -180,7 +180,7 @@ impl Editor {
                 i += 1;
                 continue;
             };
-            let original = self.objects.remove(i);
+            let mut original = self.objects.remove(i);
             let highlight = matches!(
                 original.shape,
                 Shape::Stroke {
@@ -188,6 +188,12 @@ impl Editor {
                     ..
                 }
             );
+            // Each piece copies the rest of the object, not the points it replaces.
+            original.shape = Shape::Stroke {
+                points: Vec::new(),
+                widths: Vec::new(),
+                highlight,
+            };
             let count = pieces.len();
             for (k, (points, widths)) in pieces.into_iter().enumerate() {
                 let id = if k == 0 {

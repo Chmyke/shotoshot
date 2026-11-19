@@ -88,6 +88,20 @@ impl Object {
             _ => false,
         }
     }
+    /// Drawn from other objects of the pile: an arrow attached to a shape, or a fill spared
+    /// by walls. Its pixels can change while it does not.
+    pub fn depends_on_others(&self) -> bool {
+        matches!(
+            self.shape,
+            Shape::Arrow {
+                start_attach: Some(_),
+                ..
+            } | Shape::Arrow {
+                end_attach: Some(_),
+                ..
+            }
+        ) || self.fill.iter().any(|coat| !coat.walls.is_empty())
+    }
     /// A blur: it changes the capture, not what is drawn, so colours and the bucket pass it by.
     pub fn is_blur(&self) -> bool {
         matches!(self.shape, Shape::Blur(_))

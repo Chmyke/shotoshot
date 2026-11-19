@@ -2,6 +2,7 @@
 //! A stable prefix lets the last stroke change without rerasterizing earlier objects.
 //! Export targets stay on the geometry path; their bitmaps are a different resource domain.
 use super::*;
+use shotoshot_core::blur::Zone;
 
 #[derive(Default)]
 pub(super) struct SceneCache {
@@ -15,8 +16,8 @@ struct Context {
     size: (u32, u32),
     skip: Option<u64>,
     underlay: Vec<Underlay>,
-    /// The blurs under the objects, by id and version: a checkpoint holds their pixels.
-    blurs: Vec<(u64, u64)>,
+    /// The blurs under the objects, bottom first: a checkpoint holds their pixels.
+    blurs: Vec<BlurPatch>,
 }
 
 struct Checkpoint {
@@ -37,29 +38,47 @@ impl SceneCache {
         device: &ID2D1DeviceContext,
         objects: &[Object],
         skip: Option<u64>,
-        (underlay, blurs): (&[Underlay], &[(u64, u64)]),
+        (underlay, blurs): (&[Underlay], &[BlurPatch]),
     ) -> Result<()> {
         let size = unsafe { target.GetPixelSize() };
-        if !self.context.as_ref().is_some_and(|c| {
-            c.size == (size.width, size.height)
-                && c.skip == skip
-                && c.underlay == underlay
-                && c.blurs == blurs
-        }) {
-            self.invalidate();
-            self.context = Some(Context {
-                size: (size.width, size.height),
-                skip,
-                underlay: underlay.to_vec(),
-                blurs: blurs.to_vec(),
-            });
+        match &mut self.context {
+            Some(c)
+                if c.size == (size.width, size.height)
+                    && c.skip == skip
+                    && c.underlay == underlay =>
+            {
+                if c.blurs != blurs {
+                    // A blur being drawn or moved changes its zones only: a checkpoint
+                    // elsewhere still holds the right pixels.
+                    let changed = changed_zones(&c.blurs, blurs);
+                    c.blurs = blurs.to_vec();
+                    for slot in [&mut self.prefix, &mut self.full] {
+                        if slot.as_ref().is_some_and(|checkpoint| {
+                            changed
+                                .iter()
+                                .any(|zone| overlaps(checkpoint.bounds, *zone))
+                        }) {
+                            *slot = None;
+                        }
+                    }
+                }
+            }
+            _ => {
+                self.invalidate();
+                self.context = Some(Context {
+                    size: (size.width, size.height),
+                    skip,
+                    underlay: underlay.to_vec(),
+                    blurs: blurs.to_vec(),
+                });
+            }
         }
         if objects.is_empty() {
             self.invalidate();
             return renderer.annotations_except(target, objects, skip);
         }
         if let Some(full) = &self.full
-            && full.objects == objects
+            && same_pile(&full.objects, objects)
         {
             return full.restore(target, device);
         }
@@ -67,24 +86,13 @@ impl SceneCache {
             full.objects
                 .iter()
                 .zip(objects)
-                .take_while(|(a, b)| a == b)
+                .take_while(|(a, b)| same(a, b))
                 .count()
         });
         // An unchanged arrow or fill can depend on a later shape: its target, or a shape
         // it spares. Conservatively redraw from the first of them when anything changes,
         // without quadratic lookups.
-        if let Some(index) = objects[..common].iter().position(|object| {
-            matches!(
-                object.shape,
-                Shape::Arrow {
-                    start_attach: Some(_),
-                    ..
-                } | Shape::Arrow {
-                    end_attach: Some(_),
-                    ..
-                }
-            ) || object.fill.iter().any(|coat| !coat.walls.is_empty())
-        }) {
+        if let Some(index) = objects[..common].iter().position(Object::depends_on_others) {
             common = index;
         }
         if self
@@ -97,7 +105,7 @@ impl SceneCache {
         let restored = match &self.prefix {
             Some(prefix)
                 if prefix.objects.len() <= common
-                    && prefix.objects == objects[..prefix.objects.len()] =>
+                    && same_pile(&prefix.objects, &objects[..prefix.objects.len()]) =>
             {
                 prefix.restore(target, device)?;
                 prefix.objects.len()
@@ -215,6 +223,33 @@ impl Checkpoint {
         checkpoint.objects.extend_from_slice(&prefix[kept..]);
         Ok(())
     }
+}
+
+/// Equal as a checkpoint sees them: a blur draws nothing there, its zone is the context's.
+fn same(a: &Object, b: &Object) -> bool {
+    a == b || (a.is_blur() && b.is_blur() && a.id == b.id)
+}
+
+fn same_pile(a: &[Object], b: &[Object]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(a, b)| same(a, b))
+}
+
+/// The zones whose pixels differ between two piles of blurs: those of every place where
+/// they differ, in either pile, so a reordering counts as well as a move.
+fn changed_zones(old: &[BlurPatch], new: &[BlurPatch]) -> Vec<Zone> {
+    (0..old.len().max(new.len()))
+        .filter(|&i| old.get(i) != new.get(i))
+        .flat_map(|i| [old.get(i), new.get(i)])
+        .flatten()
+        .map(|patch| patch.zone)
+        .collect()
+}
+
+fn overlaps(bounds: D2D_RECT_U, zone: Zone) -> bool {
+    zone.x < bounds.right
+        && bounds.left < zone.x + zone.width
+        && zone.y < bounds.bottom
+        && bounds.top < zone.y + zone.height
 }
 
 fn bounds(

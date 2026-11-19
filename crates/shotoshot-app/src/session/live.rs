@@ -83,8 +83,18 @@ impl Session {
         self.capture
             .observe_toolbar(current, field_ink, std::time::Instant::now());
         let painted = self.paint_window_once(hwnd, hdc);
+        // After the paint, which lays the size badge out: the state it showed.
+        self.native.shown = match painted {
+            Ok(()) => self.frame_fingerprint().ok().flatten(),
+            Err(_) => None,
+        };
         self.native.caret.arm(hwnd);
         painted
+    }
+    /// Whether the window shows something else than what it would paint now: false only
+    /// when both frames have the same fingerprint.
+    pub fn frame_changed(&self) -> bool {
+        self.native.shown.is_none() || self.frame_fingerprint().ok().flatten() != self.native.shown
     }
     fn paint_window_once(&mut self, hwnd: HWND, hdc: HDC) -> Result<()> {
         if let Some(surface) = &self.native.live_surface {
@@ -124,6 +134,57 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(5));
             s.accelerate().unwrap();
         }
+    }
+    #[test]
+    fn a_pointer_move_repaints_only_when_the_frame_changes() {
+        let _com = ComApartment::new().unwrap();
+        let mut s = Session::immediate(Image::solid(900, 600, [70, 110, 160, 255])).unwrap();
+        s.capture.region = Rect::new(Point { x: 100., y: 80. }, Point { x: 700., y: 500. });
+        s.capture.selecting = false;
+        s.capture.editor.tool = Tool::Rectangle;
+        s.capture
+            .editor
+            .begin(Point { x: 150., y: 150. }, Modifiers::default());
+        s.capture.editor.update(Point { x: 300., y: 300. });
+        s.capture.editor.finish();
+        s.capture.editor.tool = Tool::Select;
+        let paint = |s: &mut Session| {
+            paint_image(900, 600, |dc| s.paint_window(HWND::default(), dc)).unwrap();
+        };
+        let void = |x| Point { x, y: 420. };
+        assert!(!s.capture.toolbar_contains(void(500.)));
+        s.mouse_move(HWND::default(), void(500.));
+        paint(&mut s);
+        s.mouse_move(HWND::default(), void(520.));
+        assert!(
+            !s.frame_changed(),
+            "nothing under the pointer, nothing to repaint"
+        );
+        // The rectangle's edge: it is framed as hovered.
+        s.mouse_move(HWND::default(), Point { x: 151., y: 220. });
+        assert!(s.frame_changed());
+        paint(&mut s);
+        assert!(!s.frame_changed());
+        // A toolbar button lights under the pointer.
+        let button = s
+            .capture
+            .buttons()
+            .into_iter()
+            .find(|b| b.action == shotoshot_ui::toolbar::Action::Tool(Tool::Pen))
+            .unwrap()
+            .bounds;
+        s.mouse_move(HWND::default(), void(500.));
+        paint(&mut s);
+        s.mouse_move(HWND::default(), button.center());
+        assert!(s.frame_changed(), "the hovered button is drawn lit");
+        // Live capture paints only the overlay; its eyedropper reads the desktop again.
+        s.capture.live = true;
+        assert!(s.frame_fingerprint().unwrap().is_some());
+        s.capture.eyedropper = true;
+        assert!(s.frame_fingerprint().unwrap().is_none());
+        // Unknown frames always repaint: a gesture, or before any paint.
+        s.native.shown = None;
+        assert!(s.frame_changed());
     }
     #[test]
     fn the_software_first_frame_matches_the_hardware_frame_that_replaces_it() {

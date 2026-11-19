@@ -66,6 +66,7 @@ impl Preparation {
                 accelerate_after_paint: false,
                 caret: Default::default(),
                 cross_ink: Default::default(),
+                shown: None,
             },
             document: None,
             board: None,
