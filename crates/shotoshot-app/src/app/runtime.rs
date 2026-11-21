@@ -25,6 +25,15 @@ pub(super) const UNINSTALL_RESTORES: [&str; 2] = [RESTORE_PRINT_SCREEN, RESTORE_
 /// Passed by the Start menu shortcut (`[Icons]` in `packaging/shotoshot.iss`): a start by hand
 /// says that Shotoshot runs; the start with Windows, without it, stays silent.
 pub(super) const READY_ARG: &str = "--ready";
+/// Whether the user started Shotoshot, rather than Windows at sign in: the Start menu
+/// shortcut's `--ready`, or, from the Microsoft Store package, any start but its startup task.
+fn started_by_hand() -> bool {
+    if crate::package::is_packaged() {
+        crate::package::started_by_hand()
+    } else {
+        std::env::args().any(|a| a == READY_ARG)
+    }
+}
 /// The notice of a start by hand: the capture keys and where the menu is.
 pub(super) fn ready_text_in(
     settings: &crate::settings::Settings,
@@ -211,6 +220,12 @@ pub fn run() -> Result<()> {
             if prepared_editor {
                 return Err(Error::new(E_FAIL, "An editor already exists"));
             }
+            if !editor_process && !diagnostic && !started_by_hand() {
+                // Started with Windows while another Shotoshot runs (the website's and the
+                // Store's versions both installed): it already serves, nothing to say
+                // (Mickael, 2026-11-21, A1).
+                return Ok(());
+            }
             apply_saved_language();
             message(HWND::default(), &Text::new(Key::ErrorAlreadyRunning));
             return Ok(());
@@ -248,7 +263,22 @@ pub fn run() -> Result<()> {
             settings.live_capture = true;
         }
         if !diagnostic && !editor_process {
-            crate::startup::set_enabled(settings.start_with_windows)?;
+            if crate::package::is_packaged() {
+                use windows::Win32::System::Recovery::*;
+                // The startup task is Windows' to refuse (turned off in Task Manager): the
+                // resident starts anyway.
+                if let Err(error) = crate::startup::set_enabled(settings.start_with_windows) {
+                    eprintln!("The startup task could not follow the setting: {error}");
+                }
+                // The Store closes the resident to update its package: start it again
+                // afterwards. Never after a crash or a hang, nor a reboot (the startup task is).
+                let _ = RegisterApplicationRestart(
+                    PCWSTR::null(),
+                    RESTART_NO_CRASH | RESTART_NO_HANG | RESTART_NO_REBOOT,
+                );
+            } else {
+                crate::startup::set_enabled(settings.start_with_windows)?;
+            }
         }
         let instance = GetModuleHandleW(None)?;
         // Resource icons are shared for the process lifetime (LR_SHARED / LoadIconW).
@@ -427,7 +457,7 @@ pub fn run() -> Result<()> {
             }
             if app.setup {
                 app.show_setup(hwnd)?;
-            } else if std::env::args().any(|a| a == READY_ARG) && app.toast.is_none() {
+            } else if started_by_hand() && app.toast.is_none() {
                 // Started by hand (the Start menu shortcut passes the flag): say it runs and how
                 // to use it. The start with Windows stays silent (blind test of 2026-11-05).
                 app.toast = notice::Toast::new(

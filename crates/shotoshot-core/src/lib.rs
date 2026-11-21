@@ -17,6 +17,7 @@ pub mod pointer;
 pub mod rename_migration;
 pub mod settings;
 pub mod shoto;
+pub mod store;
 pub mod update;
 pub use bend::*;
 pub use blur::{BLUR_RADIUS, BlurPatch};

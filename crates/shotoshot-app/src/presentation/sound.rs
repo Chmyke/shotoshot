@@ -3,10 +3,7 @@
 //! INVARIANTS: Playback is asynchronous and never fails visibly: a missing device stays silent.
 use shotoshot_core::pointer::{ClickSound, Volume};
 use std::sync::OnceLock;
-use windows::{
-    Win32::{Media::Audio::*, UI::Shell::FOLDERID_LocalAppData},
-    core::PCWSTR,
-};
+use windows::{Win32::Media::Audio::*, core::PCWSTR};
 
 const RATE: u32 = 44_100;
 
@@ -92,8 +89,8 @@ pub(super) fn play(sound: ClickSound, volume: Volume) {
     if sound == ClickSound::Off {
         return;
     }
-    if let Ok(folder) = crate::settings::known_folder(&FOLDERID_LocalAppData) {
-        let custom = folder.join("Shotoshot").join("click-custom.wav");
+    if let Ok(folder) = crate::settings::data_folder() {
+        let custom = folder.join("click-custom.wav");
         if custom.is_file()
             && unsafe {
                 PlaySoundW(

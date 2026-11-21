@@ -60,6 +60,9 @@ try {
         }
         cargo build --workspace --release --locked
         if ($LASTEXITCODE -ne 0) { exit 1 }
+        # The Microsoft Store package of this binary packs and validates (manifest schema, logos,
+        # version): docs/contexte/microsoft-store.md. Its real trial installs: test-store.ps1.
+        & (Join-Path $PSScriptRoot 'packaging/build-store.ps1') -Check
         Get-ChildItem (Join-Path $PSScriptRoot 'target') -Filter 'shotoshot-*.png' | Remove-Item
         # The probes stand in for the user without being the user: the real settings and board
         # files must come out unchanged (2026-10-10: a probe rewrote the settings in its format).

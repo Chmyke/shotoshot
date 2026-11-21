@@ -34,6 +34,9 @@ windows = { workspace = true, features = [
     "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_UI_Controls", "Win32_UI_Controls_Dialogs", "Win32_UI_HiDpi",
     "Win32_UI_Accessibility",
+    # The Microsoft Store package: its identity, startup task and activation (src/package.rs).
+    "Win32_Storage_Packaging_Appx", "ApplicationModel", "ApplicationModel_Activation",
+    "Win32_System_Recovery",
     # The loupe captures the windows DWM thumbnails get wrong (the taskbar).
     "Foundation", "Graphics", "Graphics_Capture", "Graphics_DirectX", "Graphics_DirectX_Direct3D11",
     "Win32_System_WinRT", "Win32_System_WinRT_Direct3D11", "Win32_System_WinRT_Graphics_Capture",

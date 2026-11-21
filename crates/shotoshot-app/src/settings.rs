@@ -65,6 +65,15 @@ pub fn known_folder(id: &GUID) -> Result<PathBuf> {
         Ok(result)
     }
 }
+/// The folder of settings, board and personal sounds: `%LOCALAPPDATA%\Shotoshot`, or where the
+/// Microsoft Store package keeps it (`shotoshot_core::store::data_folder`).
+pub fn data_folder() -> Result<PathBuf> {
+    Ok(shotoshot_core::store::data_folder(
+        &known_folder(&FOLDERID_LocalAppData)?,
+        crate::package::family_name(),
+        |path| path.is_dir(),
+    ))
+}
 /// Windows storage of the settings file.
 pub trait Store: Sized {
     fn path() -> Result<PathBuf>;
@@ -86,9 +95,7 @@ pub trait Store: Sized {
 }
 impl Store for Settings {
     fn path() -> Result<PathBuf> {
-        Ok(known_folder(&FOLDERID_LocalAppData)?
-            .join("Shotoshot")
-            .join("settings.txt"))
+        Ok(data_folder()?.join("settings.txt"))
     }
     fn load() -> std::result::Result<Self, String> {
         let path = Self::path().map_err(|e| e.to_string())?;

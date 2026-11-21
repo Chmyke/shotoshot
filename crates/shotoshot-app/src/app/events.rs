@@ -396,6 +396,36 @@ impl App {
                 }
                 return Ok(Some(LRESULT(1)));
             }
+            WM_ENDSESSION
+                if shotoshot_core::store::gives_back_on_end_session(w.0 != 0, l.0 as u32) =>
+            {
+                // Windows closes Shotoshot to remove or update its Store package, which runs
+                // nothing at uninstall: give back now what the website's uninstaller gives back
+                // (Mickael, 2026-11-21). After an update, the restarted resident takes them again.
+                if let Err(error) = crate::print_screen::restore() {
+                    eprintln!("Print Screen could not be given back: {error}");
+                }
+                // PITFALL: this message is input-synchronous: a COM call to Explorer from this
+                // thread fails (RPC_E_CANTCALLOUT_ININPUTSYNCCALL), and Windows starts no new
+                // process of a package it is removing (both measured 2026-11-21). The wallpaper
+                // goes back from a thread of its own, with its own COM apartment.
+                let restored = std::thread::spawn(|| {
+                    let _com = crate::ComApartment::new()?;
+                    crate::board::bake::restore()
+                })
+                .join();
+                match restored {
+                    Ok(Err(error)) => eprintln!("The wallpaper could not be given back: {error}"),
+                    Err(_) => eprintln!("The wallpaper could not be given back."),
+                    Ok(Ok(())) => {}
+                }
+                // Windows ends the process after this message: stop now, before the change of
+                // wallpaper comes back as a reason to bake the board again.
+                unsafe {
+                    PostQuitMessage(0);
+                }
+                return Ok(Some(LRESULT(0)));
+            }
             WM_CLOSE => {
                 if self.session.is_some() {
                     self.close_session(hwnd);

@@ -3,6 +3,7 @@
 //! version's button opens the download page in the browser.
 //! OWNER: `SettingsUi` holds one `UpdateCheck`; it outlives the Settings window, so a window
 //! opened again shows what the last check found.
+//! From the Microsoft Store package, the button opens the Store's updates page instead.
 //! INVARIANTS: Nothing reaches the network before the click (law 4). The app never downloads
 //! nor runs an installer (Mickael, 2026-11-13, A1). One check at a time. A completion that
 //! arrives while App is borrowed is retried by timer, never lost: the row would stay
@@ -28,6 +29,14 @@ pub(super) struct UpdateCheck {
 impl App {
     /// Starts the one request of "Check for updates"; a check already running is left to end.
     pub(super) fn check_for_updates(&mut self, owner: HWND) {
+        if crate::package::is_packaged() {
+            // The Store updates its package itself: its own page shows and fetches updates,
+            // the site is not asked (Mickael, 2026-11-21, A1). The row keeps showing the version.
+            if let Err(error) = open(owner, shotoshot_core::store::UPDATES_PAGE) {
+                eprintln!("The Store could not be opened: {error}");
+            }
+            return;
+        }
         if self.settings_ui.update.pending.is_some() {
             return;
         }
@@ -68,11 +77,15 @@ impl App {
 
 /// Opens the download page in the default browser, which downloads as it always did.
 pub(super) fn open_download_page(owner: HWND) -> Result<()> {
+    open(owner, DOWNLOAD_PAGE)
+}
+
+fn open(owner: HWND, page: &str) -> Result<()> {
     let opened = unsafe {
         ShellExecuteW(
             Some(owner),
             w!("open"),
-            &HSTRING::from(DOWNLOAD_PAGE),
+            &HSTRING::from(page),
             None,
             None,
             SW_SHOWNORMAL,

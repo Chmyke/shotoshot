@@ -12,6 +12,7 @@ mod google_search;
 mod hotkey;
 mod image;
 mod language;
+mod package;
 mod presentation;
 mod print_screen;
 mod rename_migration;

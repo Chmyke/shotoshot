@@ -1,7 +1,10 @@
 # Rebuild the D2 vector geometry at Windows icon sizes. Uses only Windows GDI+.
+# -Sizes and -OutDir draw other sizes elsewhere, without the ICO (the Store package's logos,
+# packaging/build-store.ps1).
+param([int[]]$Sizes = @(16,20,24,32,48,256), [string]$OutDir = $PSScriptRoot, [switch]$NoIco)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
-$sizes = @(16,20,24,32,48,256)
+$sizes = $Sizes
 $frames = @()
 foreach ($size in $sizes) {
     $large = New-Object System.Drawing.Bitmap 1024,1024
@@ -38,10 +41,11 @@ foreach ($size in $sizes) {
     $stream = New-Object System.IO.MemoryStream
     $small.Save($stream,[System.Drawing.Imaging.ImageFormat]::Png)
     $frames += ,$stream.ToArray()
-    $small.Save((Join-Path $PSScriptRoot "shotoshot-$size.png"),[System.Drawing.Imaging.ImageFormat]::Png)
+    $small.Save((Join-Path $OutDir "shotoshot-$size.png"),[System.Drawing.Imaging.ImageFormat]::Png)
     $stream.Dispose(); $resample.Dispose(); $small.Dispose(); $core.Dispose()
     $corners.Dispose(); $pen.Dispose(); $blue.Dispose(); $path.Dispose(); $g.Dispose(); $large.Dispose()
 }
+if ($NoIco) { return }
 $file = [System.IO.File]::Create((Join-Path $PSScriptRoot 'shotoshot.ico'))
 $writer = New-Object System.IO.BinaryWriter $file
 $writer.Write([UInt16]0); $writer.Write([UInt16]1); $writer.Write([UInt16]$sizes.Count)

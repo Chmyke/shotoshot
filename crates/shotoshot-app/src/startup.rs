@@ -1,9 +1,15 @@
+//! ROLE: "Start with Windows": the user's Run value, or the package's startup task when
+//! Shotoshot runs from the Microsoft Store (a Run value would point into the package's versioned
+//! folder and outlive an uninstall).
 use windows::{
     Win32::{Foundation::*, System::Registry::*},
     core::*,
 };
 const RUN: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
 pub fn enabled() -> Result<bool> {
+    if crate::package::is_packaged() {
+        return crate::package::startup_enabled();
+    }
     unsafe {
         let status = RegGetValueW(
             HKEY_CURRENT_USER,
@@ -22,6 +28,9 @@ pub fn enabled() -> Result<bool> {
     }
 }
 pub fn set_enabled(enabled: bool) -> Result<()> {
+    if crate::package::is_packaged() {
+        return crate::package::set_startup_enabled(enabled);
+    }
     unsafe {
         let path = std::env::current_exe().map_err(|e| Error::new(E_FAIL, e.to_string()))?;
         let mut key = HKEY::default();

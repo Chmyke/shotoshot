@@ -196,8 +196,8 @@ fn sound_for(custom: &Path) -> Sound {
 fn play_sound() {
     use windows::Win32::Media::Audio::*;
     // Optional user-owned override stays outside the application and its installer.
-    if let Ok(folder) = crate::settings::known_folder(&FOLDERID_LocalAppData) {
-        let path = folder.join("Shotoshot").join("screenshot-custom.wav");
+    if let Ok(folder) = crate::settings::data_folder() {
+        let path = folder.join("screenshot-custom.wav");
         let sound = sound_for(&path);
         if sound == Sound::Silent {
             return;

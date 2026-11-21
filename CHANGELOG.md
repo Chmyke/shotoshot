@@ -2,6 +2,11 @@
 
 What changed in each version of Shotoshot, newest first.
 
+## 0.3.50 · 2026-11-21
+
+- Shotoshot is coming to the Microsoft Store: installed from there, Windows trusts it at once and updates arrive on their own. The Updates button simply opens the Store.
+- With both the website and Store versions set to start with Windows, the second one now steps aside quietly instead of announcing that Shotoshot is already running.
+
 ## 0.3.49 · 2026-11-19
 
 Nothing you would notice in this version: the work is under the hood.

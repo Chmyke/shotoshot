@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Template of the Microsoft Store package (MSIX), filled by packaging/build-store.ps1.
+     @NAME@, @PUBLISHER@ and @PUBLISHER_NAME@ come from packaging/store/identity.json (the values
+     Partner Center gives to the reserved name), @VERSION@ from Cargo.toml as (major + 1).minor.patch.0.
+     Why each part is here: docs/contexte/microsoft-store.md. -->
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+ xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+ xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+ xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+ xmlns:virtualization="http://schemas.microsoft.com/appx/manifest/virtualization/windows10"
+ IgnorableNamespaces="uap desktop rescap virtualization">
+ <Identity Name="@NAME@" Publisher="@PUBLISHER@" Version="@VERSION@" ProcessorArchitecture="x64"/>
+ <Properties>
+  <DisplayName>Shotoshot</DisplayName>
+  <PublisherDisplayName>@PUBLISHER_NAME@</PublisherDisplayName>
+  <Logo>Assets\StoreLogo.png</Logo>
+  <!-- Measured 2026-11-21: the package's own registry writes are kept private. These keys stay
+       real so that Print Screen is taken from the Snipping Tool, and the board's wallpaper set
+       and cleared, then both given back on uninstall, as with the website's installer
+       (src/print_screen.rs, src/board/wallpaper.rs; Mickael's choice, A1). Nothing else. -->
+  <virtualization:RegistryWriteVirtualization>
+   <virtualization:ExcludedKeys>
+    <virtualization:ExcludedKey>HKEY_CURRENT_USER\Control Panel\Keyboard</virtualization:ExcludedKey>
+    <virtualization:ExcludedKey>HKEY_CURRENT_USER\Control Panel\Desktop</virtualization:ExcludedKey>
+    <virtualization:ExcludedKey>HKEY_CURRENT_USER\Software\Shotoshot</virtualization:ExcludedKey>
+   </virtualization:ExcludedKeys>
+  </virtualization:RegistryWriteVirtualization>
+ </Properties>
+ <Resources><Resource Language="en-us"/></Resources>
+ <Dependencies>
+  <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.22000.0" MaxVersionTested="10.0.26100.0"/>
+ </Dependencies>
+ <Applications>
+  <Application Id="Shotoshot" Executable="shotoshot.exe" EntryPoint="Windows.FullTrustApplication">
+   <uap:VisualElements DisplayName="Shotoshot" Description="Shotoshot" BackgroundColor="transparent"
+    Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png"/>
+   <Extensions>
+    <!-- "Start with Windows": src/package.rs drives this task; the resident turns it on at its
+         first start when the setting asks for it. -->
+    <desktop:Extension Category="windows.startupTask" Executable="shotoshot.exe" EntryPoint="Windows.FullTrustApplication">
+     <desktop:StartupTask TaskId="ShotoshotStartup" Enabled="true" DisplayName="Shotoshot"/>
+    </desktop:Extension>
+    <!-- A double-click on an editable .shoto image reopens it, as the website's installer does. -->
+    <uap:Extension Category="windows.fileTypeAssociation">
+     <uap:FileTypeAssociation Name="shoto">
+      <uap:SupportedFileTypes><uap:FileType ContentType="image/png">.shoto</uap:FileType></uap:SupportedFileTypes>
+      <uap:Logo>Assets\Square44x44Logo.png</uap:Logo>
+     </uap:FileTypeAssociation>
+    </uap:Extension>
+   </Extensions>
+  </Application>
+ </Applications>
+ <Capabilities>
+  <!-- A desktop app: global capture key, every screen, the board's wallpaper. -->
+  <rescap:Capability Name="runFullTrust"/>
+  <!-- Required by the two ExcludedKeys above, and only for them. -->
+  <rescap:Capability Name="unvirtualizedResources"/>
+ </Capabilities>
+</Package>
