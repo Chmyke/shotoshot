@@ -1,0 +1,5 @@
+# The Windows binary carries its C runtime: no Visual C++ Redistributable to install
+# (Microsoft Store policy 10.2.4.1, and a fresh Windows without it could not start Shotoshot).
+# Read by every cargo build of the workspace: workstation, check.ps1, GitHub Actions, the store package.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

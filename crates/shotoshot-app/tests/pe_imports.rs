@@ -44,6 +44,25 @@ fn imports(image: &[u8], index: usize, entry: usize, name_at: usize) -> Vec<Stri
     }
 }
 
+/// The C runtime is linked in (`.cargo/config.toml`, `+crt-static`): Shotoshot needs no Visual
+/// C++ Redistributable, which the Microsoft Store refuses (policy 10.2.4.1) and a fresh Windows lacks.
+#[test]
+fn the_executable_needs_no_visual_cpp_runtime() {
+    let image = std::fs::read(env!("CARGO_BIN_EXE_shotoshot")).unwrap();
+    let mut all = imports(&image, 1, 20, 12);
+    all.extend(imports(&image, 13, 32, 4));
+    let runtime: Vec<_> = all
+        .iter()
+        .filter(|dll| {
+            dll.starts_with("vcruntime")
+                || dll.starts_with("msvcp")
+                || dll.starts_with("api-ms-win-crt-")
+                || dll.starts_with("ucrtbase")
+        })
+        .collect();
+    assert!(runtime.is_empty(), "{runtime:?}");
+}
+
 /// WinHTTP serves only the "Check for updates" click: it is loaded then, not when Shotoshot
 /// starts (build.rs, `/DELAYLOAD`).
 #[test]
